@@ -137,6 +137,7 @@
 			(__obj)->prev[__x]->next[__x] = (__obj)->next[__x]; \
 		if ((__obj)->next[__x]) \
 			(__obj)->next[__x]->prev[__x] = (__obj)->prev[__x]; \
+		(__obj)->prev[__x] = (__obj)->next[__x] = (void *) 0; \
 	} while (0)
 
 #define __iip_enqueue_obj(__queue, __obj, __x) \
