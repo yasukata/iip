@@ -1350,18 +1350,18 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 														{
 															uint8_t overlap = 0;
 															if (__p && __p->buf) { /* add next to __p */
-																if (__iip_ntohl(PB_TCP(_p->buf)->seq_be) - conn->seq_next_expected < (__iip_ntohl(PB_TCP(__p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(__p->buf)) - conn->seq_next_expected) { /* overlap check */
+																if (__iip_ntohl(PB_TCP(_p->buf)->seq_be) - conn->seq_next_expected < (__iip_ntohl(PB_TCP(__p->buf)->seq_be) + PB_TCP(__p->buf)->syn + PB_TCP(__p->buf)->fin + PB_TCP_PAYLOAD_LEN(__p->buf)) - conn->seq_next_expected) { /* overlap check */
 																	D("overlap _p %u-%u __p %u-%u",
 																			__iip_ntohl(PB_TCP(_p->buf)->seq_be),
-																			__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
-																			__iip_ntohl(PB_TCP(__p->buf)->seq_be), __iip_ntohl(PB_TCP(__p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(__p->buf));
+																			__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP(_p->buf)->syn + PB_TCP(_p->buf)->fin + PB_TCP_PAYLOAD_LEN(_p->buf),
+																			__iip_ntohl(PB_TCP(__p->buf)->seq_be), __iip_ntohl(PB_TCP(__p->buf)->seq_be) + PB_TCP(__p->buf)->syn + PB_TCP(__p->buf)->fin + PB_TCP_PAYLOAD_LEN(__p->buf));
 																	overlap = 1;
 
-																} else if (__p->next[0] && (__iip_ntohl(PB_TCP(__p->next[0]->buf)->seq_be) - conn->seq_next_expected < (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) - conn->seq_next_expected)) { /* overlap check */
+																} else if (__p->next[0] && (__iip_ntohl(PB_TCP(__p->next[0]->buf)->seq_be) - conn->seq_next_expected < (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP(_p->buf)->syn + PB_TCP(_p->buf)->fin + PB_TCP_PAYLOAD_LEN(_p->buf)) - conn->seq_next_expected)) { /* overlap check */
 																	D("overlap _pnext %u-%u _p %u-%u",
 																			__iip_ntohl(PB_TCP(__p->next[0]->buf)->seq_be),
-																			__iip_ntohl(PB_TCP(__p->next[0]->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(__p->next[0]->buf),
-																			__iip_ntohl(PB_TCP(_p->buf)->seq_be), __iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf));
+																			__iip_ntohl(PB_TCP(__p->next[0]->buf)->seq_be) + PB_TCP(__p->buf)->syn + PB_TCP(__p->buf)->fin + PB_TCP_PAYLOAD_LEN(__p->next[0]->buf),
+																			__iip_ntohl(PB_TCP(_p->buf)->seq_be), __iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP(_p->buf)->syn + PB_TCP(_p->buf)->fin + PB_TCP_PAYLOAD_LEN(_p->buf));
 																	overlap = 1;
 																} else {
 																	_p->prev[0] = __p;
@@ -1373,12 +1373,12 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 																		conn->head[4][1] = _p;
 																}
 															} else { /* this is the head */
-																if ((__iip_ntohl(PB_TCP(conn->head[4][0]->buf)->seq_be) - conn->seq_next_expected < (__iip_ntohl(PB_TCP(_p->buf)->seq_be )+ PB_TCP_PAYLOAD_LEN(_p->buf)) - conn->seq_next_expected)) { /* overlap check */
+																if ((__iip_ntohl(PB_TCP(conn->head[4][0]->buf)->seq_be) - conn->seq_next_expected < (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP(_p->buf)->syn + PB_TCP(_p->buf)->fin + PB_TCP_PAYLOAD_LEN(_p->buf)) - conn->seq_next_expected)) { /* overlap check */
 																	D("overlap head4t %u-%u _p %u-%u (%u %u)",
 																			__iip_ntohl(PB_TCP(conn->head[4][0]->buf)->seq_be),
-																			__iip_ntohl(PB_TCP(conn->head[4][0]->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(conn->head[4][0]->buf),
+																			__iip_ntohl(PB_TCP(conn->head[4][0]->buf)->seq_be) + PB_TCP(conn->head[4][0]->buf)->syn + PB_TCP(conn->head[4][0]->buf)->fin +  PB_TCP_PAYLOAD_LEN(conn->head[4][0]->buf),
 																			__iip_ntohl(PB_TCP(_p->buf)->seq_be), __iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
-																			__iip_ntohl(PB_TCP(conn->head[4][0]->buf)->seq_be) - conn->seq_next_expected, (PB_TCP(_p->buf)->seq_be + PB_TCP_PAYLOAD_LEN(_p->buf)) - conn->seq_next_expected);
+																			__iip_ntohl(PB_TCP(conn->head[4][0]->buf)->seq_be) - conn->seq_next_expected, (PB_TCP(_p->buf)->seq_be + PB_TCP(_p->buf)->syn + PB_TCP(_p->buf)->fin + PB_TCP_PAYLOAD_LEN(_p->buf)) - conn->seq_next_expected);
 																	overlap = 1;
 																} else {
 																	_p->next[0] = conn->head[4][0];
