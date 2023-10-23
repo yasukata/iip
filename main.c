@@ -1508,7 +1508,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 										struct pb *out_p = _conn.head[1][1];
 										__iip_dequeue_obj(_conn.head[1], out_p, 0);
 										{
-											void *clone_pkt = iip_ops_pkt_clone(p->pkt, opaque);
+											void *clone_pkt = iip_ops_pkt_clone(out_p->pkt, opaque);
 											__iip_assert(clone_pkt);
 											iip_ops_eth_push(clone_pkt, opaque);
 										}
