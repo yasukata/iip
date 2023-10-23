@@ -863,6 +863,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 {
 	struct workspace *s = (struct workspace *) _mem;
 	uint16_t ret = 0;
+	uint32_t _next_us = 1000000UL; /* 1 sec */
 	{ /* periodic timer */
 		uint32_t now_ms = __iip_now_in_ms();
 		if (1 <= now_ms - s->timer.prev_very_fast){ /* 1 ms */
@@ -910,6 +911,12 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 				}
 			}
 			s->timer.prev_very_slow = now_ms;
+		}
+		{
+			_next_us = (s->timer.prev_very_fast + 1000U - now_ms < _next_us * 1000U ? (s->timer.prev_very_fast + 1000U - now_ms) * 1000U : _next_us);
+			_next_us = (s->timer.prev_fast + 1000U - now_ms < _next_us * 1000U ? (s->timer.prev_fast + 1000U - now_ms) * 1000U : _next_us);
+			_next_us = (s->timer.prev_slow + 1000U - now_ms < _next_us * 1000U ? (s->timer.prev_slow + 1000U - now_ms) * 1000U : _next_us);
+			_next_us = (s->timer.prev_very_slow + 1000U - now_ms < _next_us * 1000U ? (s->timer.prev_very_slow + 1000U - now_ms) * 1000U : _next_us);
 		}
 	}
 	{ /* phase 1: steer packet to an ip4_rx queue or discard after executing callback  */
@@ -2392,7 +2399,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 		}
 	}
 	iip_ops_eth_flush(opaque);
-	*next_us = 0;
+	*next_us = _next_us;
 #if 0
 	{
 		uint32_t now = __iip_now_in_ms();
