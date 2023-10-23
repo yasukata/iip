@@ -322,6 +322,7 @@ static void iip_ops_util_now_ns(uint32_t [3]);
 struct pb {
 	void *pkt;
 	void *buf;
+	void *orig_pkt; /* for no scatter gather mode */
 
 	uint32_t ts;
 
@@ -459,6 +460,8 @@ struct workspace {
 static void __iip_free_pb(struct workspace *s, struct pb *p, void *opaque)
 {
 	iip_ops_pkt_free(p->pkt, opaque);
+	if (p->orig_pkt)
+		iip_ops_pkt_free(p->orig_pkt, opaque);
 	__iip_memset(p, 0, sizeof(struct pb));
 	__iip_enqueue_obj(s->pool.p, p, 0);
 	s->pool.p_cnt++;
@@ -681,7 +684,7 @@ static uint16_t __iip_tcp_push(struct workspace *s,
 	} else {
 		if (pkt) __iip_memcpy(PB_TCP_PAYLOAD(out_p->buf), iip_ops_pkt_get_data(pkt, opaque), payload_len);
 		iip_ops_pkt_set_len(out_p->pkt, sizeof(struct iip_eth_hdr) + PB_IP4(out_p->buf)->l * 4 + PB_TCP(out_p->buf)->doff * 4 + payload_len, opaque);
-		if (pkt) iip_ops_pkt_free(pkt, opaque);
+		if (pkt) out_p->orig_pkt = pkt;
 	}
 
 	conn->seq_be = __iip_htonl(__iip_ntohl(conn->seq_be) + payload_len + syn + fin);
@@ -2253,12 +2256,22 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 							uint32_t now = __iip_now_in_ms();
 							if (conn->head[2][0]->tcp.rto_ms < now - conn->head[2][0]->ts) { /* timeout and do retransmission */
 								void *cp;
-								if (iip_ops_pkt_scatter_gather_chain_get_next(conn->head[2][0]->pkt, opaque)) {
-									cp = iip_ops_pkt_clone(iip_ops_pkt_scatter_gather_chain_get_next(conn->head[2][0]->pkt, opaque), opaque);
-									__iip_assert(cp);
+								if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
+									if (iip_ops_pkt_scatter_gather_chain_get_next(conn->head[2][0]->pkt, opaque)) {
+										cp = iip_ops_pkt_clone(iip_ops_pkt_scatter_gather_chain_get_next(conn->head[2][0]->pkt, opaque), opaque);
+										__iip_assert(cp);
+									} else {
+										cp = (void *) 0;
+										__iip_assert(PB_TCP(conn->head[2][0]->buf)->syn || PB_TCP(conn->head[2][0]->buf)->fin);
+									}
 								} else {
-									cp = (void *) 0;
-									__iip_assert(PB_TCP(conn->head[2][0]->buf)->syn || PB_TCP(conn->head[2][0]->buf)->fin);
+									if (conn->head[2][0]->orig_pkt) {
+										cp = iip_ops_pkt_clone(conn->head[2][0]->orig_pkt, opaque);
+										__iip_assert(cp);
+									} else {
+										cp = (void *) 0;
+										__iip_assert(PB_TCP(conn->head[2][0]->buf)->syn || PB_TCP(conn->head[2][0]->buf)->fin);
+									}
 								}
 								{ /* CLONE */
 									struct iip_tcp_hdr_conn _conn;
