@@ -100,7 +100,7 @@
 #define __iip_assert(_cond) \
 	do { \
 		if (!(_cond))  { \
-			D("assertion fail"); \
+			printf("\x1b[31m(%u)[%s:%u]: assertion fail \x1b[39m\n", iip_ops_util_core(), __func__, __LINE__); \
 			while (1) ; \
 		} \
 	} while (0)
