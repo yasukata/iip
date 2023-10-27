@@ -8,10 +8,10 @@ iip is an integratable TCP/IP stack implementation, having the following propert
 ## other building blocks
 
 ### I/O subsystem
-- [iip-dpdk](https://github.com/yasukata/iip-dpdk): a DPDK-based backend for the iip TCP/IP stack.
+- [iip-dpdk](https://github.com/yasukata/iip-dpdk): a DPDK-based backend.
 
 ### example application
-- [bench-iip](https://github.com/yasukata/bench-iip): a benchmark tool for the iij TCP/IP stack.
+- [bench-iip](https://github.com/yasukata/bench-iip): a benchmark tool.
 
 ## getting started
 
