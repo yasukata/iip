@@ -16,5 +16,5 @@ iip is an integratable TCP/IP stack implementation, having the following propert
 
 ## getting started
 
-Please vist an example application page at [https://github.com/yasukata/bench-iip](https://github.com/yasukata/bench-iip) for testing iip. 
+Please visit an example application page at [https://github.com/yasukata/bench-iip](https://github.com/yasukata/bench-iip) for testing iip. 
 
