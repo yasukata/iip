@@ -1538,7 +1538,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 								{
 									uint16_t p_csum = __iip_ntohs(PB_UDP(p->buf)->csum_be), c_csum = __iip_netcsum16(_b, _l, 2, __iip_ntohs(PB_UDP(p->buf)->csum_be));
 									if ((p_csum == 0xffff ? 0 : p_csum) != (c_csum == 0xffff ? 0 : c_csum)) { /* 0xffff is 0 */
-										D("invalid udp checksum hdr: %u %u : payload len %u", p_csum, c_csum, PB_UDP(p->buf)->len_be);
+										D("invalid udp checksum hdr: %u %u : payload len %u", p_csum, c_csum, ntohs(PB_UDP(p->buf)->len_be));
 										break;
 									}
 								}
