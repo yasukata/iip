@@ -463,7 +463,19 @@ static void __iip_free_pb(struct workspace *s, struct pb *p, void *opaque)
 	if (p->orig_pkt)
 		iip_ops_pkt_free(p->orig_pkt, opaque);
 	__iip_memset(p, 0, sizeof(struct pb));
-	__iip_enqueue_obj(s->pool.p, p, 0);
+#define __iip_enqueue_obj_top(__queue, __obj, __x) \
+	do { \
+		(__obj)->prev[__x] = (__obj)->next[__x] = (void *) 0; \
+		if (!((__queue)[0])) { \
+			(__queue)[0] = (__queue)[1] = (__obj); \
+		} else { \
+			(__queue)[0]->prev[__x] = (__obj); \
+			(__obj)->next[__x] = (__queue)[0]; \
+			(__queue)[0] = (__obj); \
+		} \
+	} while (0)
+	__iip_enqueue_obj_top(s->pool.p, p, 0);
+#undef __iip_enqueue_obj_top
 	s->pool.p_cnt++;
 }
 
