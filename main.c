@@ -1354,7 +1354,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 													} else {
 														struct pb *__p = conn->head[4][1];
 														__iip_assert(__p->buf);
-														__iip_assert(__p->buf);
 														__iip_assert(conn);
 														while (__p && (__iip_ntohl(PB_TCP(_p->buf)->seq_be) - conn->seq_next_expected) < __iip_ntohl(PB_TCP(__p->buf)->seq_be) - conn->seq_next_expected) {
 															__p = __p->prev[0];
