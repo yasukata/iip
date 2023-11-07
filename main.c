@@ -410,7 +410,7 @@ struct iip_tcp_hdr_conn {
 
 	void *opaque;
 
-	struct pb *head[5][2];
+	struct pb *head[5][2]; /* 0: rx, 1: tx, 2: tx sent, 3: tx urgent, 4: rx out-of-order */
 
 	struct iip_tcp_hdr_conn *prev[2];
 	struct iip_tcp_hdr_conn *next[2];
