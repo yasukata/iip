@@ -582,95 +582,80 @@ static uint16_t __iip_tcp_push(struct workspace *s,
 {
 	struct pb *out_p = __iip_alloc_pb(s, iip_ops_pkt_alloc(opaque), opaque);
 	uint16_t payload_len = (pkt ? iip_ops_pkt_get_len(pkt, opaque) : 0);
-
 	{
-		struct iip_eth_hdr ethh = {
-			.src[0] = conn->local_mac[0],
-			.src[1] = conn->local_mac[1],
-			.src[2] = conn->local_mac[2],
-			.src[3] = conn->local_mac[3],
-			.src[4] = conn->local_mac[4],
-			.src[5] = conn->local_mac[5],
-			.dst[0] = conn->peer_mac[0],
-			.dst[1] = conn->peer_mac[1],
-			.dst[2] = conn->peer_mac[2],
-			.dst[3] = conn->peer_mac[3],
-			.dst[4] = conn->peer_mac[4],
-			.dst[5] = conn->peer_mac[5],
-			.type_be = __iip_htons(0x0800),
-		};
-		__iip_memcpy(PB_ETH(out_p->buf), &ethh, sizeof(struct iip_eth_hdr));
+		struct iip_eth_hdr *ethh = PB_ETH(out_p->buf);
+		__iip_memcpy(ethh->src, conn->local_mac, 6);
+		__iip_memcpy(ethh->dst, conn->peer_mac, 6);
+		ethh->type_be = __iip_htons(0x0800);
 	}
-
 	{
-		struct iip_ip4_hdr ip4h = {
-			.l = sizeof(struct iip_ip4_hdr) / 4,
-			.len_be = __iip_htons(sizeof(struct iip_ip4_hdr) + __iip_round_up(sizeof(struct iip_tcp_hdr) + (syn ? 4 + 3 + (conn->opt[1].sack_ok ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 10 : 0), 4) + payload_len),
-			.v = 4, /* ip4 */
-			.tos = 0,
-			.id_be = 0, /* no ip4 fragment */
-			.off_be = 0, /* no ip4 fragment */
-			.ttl = IIP_CONF_IP4_TTL,
-			.proto = 6, /* tcp */
-			.src_be = conn->local_ip4_be,
-			.dst_be = conn->peer_ip4_be,
-		};
+		struct iip_ip4_hdr *ip4h = PB_IP4(out_p->buf);
+		ip4h->l = sizeof(struct iip_ip4_hdr) / 4;
+		ip4h->len_be = __iip_htons(sizeof(struct iip_ip4_hdr) + __iip_round_up(sizeof(struct iip_tcp_hdr) + (syn ? 4 + 3 + (conn->opt[1].sack_ok ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 10 : 0), 4) + payload_len);
+		ip4h->v = 4; /* ip4 */
+		ip4h->tos = 0;
+		ip4h->id_be = 0; /* no ip4 fragment */
+		ip4h->off_be = 0; /* no ip4 fragment */
+		ip4h->ttl = IIP_CONF_IP4_TTL;
+		ip4h->proto = 6; /* tcp */
+		ip4h->src_be = conn->local_ip4_be;
+		ip4h->dst_be = conn->peer_ip4_be;
+		ip4h->csum_be = 0;
 		if (!iip_ops_nic_feature_offload_ip4_tx_checksum(opaque)) { /* ip4 csum */
-			uint8_t *_b[1] = { (uint8_t *) &ip4h, };
-			uint16_t _l[1] = { ip4h.l * 4, };
-			ip4h.csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1, 0));
-		}
-		__iip_memcpy(PB_IP4(out_p->buf), &ip4h, ip4h.l * 4);
-		if (iip_ops_nic_feature_offload_ip4_tx_checksum(opaque))
+			uint8_t *_b[1] = { (uint8_t *) ip4h, };
+			uint16_t _l[1] = { ip4h->l * 4, };
+			ip4h->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1, 0));
+		} else
 			iip_ops_nic_offload_ip4_tx_checksum_mark(out_p->pkt, opaque);
 	}
-
 	__iip_assert(conn->rx_buf_cnt.limit < (1U << 30) /* 1GB limit : RFC 7323 */ / conn->opt[1].mss);
 	{
-		struct iip_tcp_hdr tcph = {
-			.doff = __iip_round_up(sizeof(struct iip_tcp_hdr) + (syn ? 4 + 3 + (conn->opt[1].sack_ok ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 10 : 0), 4) / 4,
-			.src_be = conn->local_port_be,
-			.dst_be = conn->peer_port_be,
-			.seq_be = conn->seq_be,
-			.ack_seq_be = conn->ack_seq_be,
-			.syn = syn,
-			.ack = ack,
-			.rst = rst,
-			.fin = fin,
-			.win_be = __iip_htons((uint16_t) (((conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used) * conn->opt[1].mss) >> conn->opt[1].ws)),
-		};
-		uint8_t optbuf[64] = { 0 }, optlen = 0;
+		struct iip_tcp_hdr *tcph = PB_TCP(out_p->buf);
+		tcph->doff = __iip_round_up(sizeof(struct iip_tcp_hdr) + (syn ? 4 + 3 + (conn->opt[1].sack_ok ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 10 : 0), 4) / 4;
+		tcph->src_be = conn->local_port_be;
+		tcph->dst_be = conn->peer_port_be;
+		tcph->seq_be = conn->seq_be;
+		tcph->ack_seq_be = conn->ack_seq_be;
+		tcph->syn = syn;
+		tcph->ack = ack;
+		tcph->rst = rst;
+		tcph->fin = fin;
+		tcph->win_be = __iip_htons((uint16_t) (((conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used) * conn->opt[1].mss) >> conn->opt[1].ws));
 		{
-			if (syn) { /* mss */
-				optbuf[optlen + 0] = 2;
-				optbuf[optlen + 1] = 4;
-				*((uint16_t *) &(optbuf[optlen + 2])) = __iip_htons(conn->opt[1].mss);
-				optlen += optbuf[optlen + 1];
+			uint8_t *optbuf = PB_TCP_OPT(out_p->buf), optlen = 0;
+			{
+				if (syn) { /* mss */
+					optbuf[optlen + 0] = 2;
+					optbuf[optlen + 1] = 4;
+					*((uint16_t *) &(optbuf[optlen + 2])) = __iip_htons(conn->opt[1].mss);
+					optlen += optbuf[optlen + 1];
+				}
+				if (syn) { /* window scale */
+					optbuf[optlen + 0] = 3;
+					optbuf[optlen + 1] = 3;
+					__iip_assert(conn->opt[1].ws < 15); /* RFC 7323 */
+					optbuf[optlen + 2] = conn->opt[1].ws;
+					optlen += optbuf[optlen + 1];
+				}
+				if (syn && conn->opt[1].sack_ok) { /* sack ok */
+					optbuf[optlen + 0] = 4;
+					optbuf[optlen + 1] = 2;
+					optlen += optbuf[optlen + 1];
+				}
+				if (sackbuf) { /* sack */
+					__iip_memcpy(&optbuf[optlen], sackbuf, sackbuf[1]);
+					optlen += sackbuf[1];
+				}
+				if (IIP_CONF_TCP_TIMESTAMP_ENABLE) { /* time stamp */
+					optbuf[optlen + 0] = 8;
+					optbuf[optlen + 1] = 10;
+					((uint32_t *) &optbuf[optlen + 2])[0] = __iip_htonl(s->tcp.pkt_ts);
+					((uint32_t *) &optbuf[optlen + 2])[1] = __iip_htonl(conn->ts);
+					optlen += optbuf[optlen + 1];
+				}
+				__iip_assert(tcph->doff == __iip_round_up(sizeof(struct iip_tcp_hdr) + optlen, 4) / 4); /* we already have configured */
 			}
-			if (syn) { /* window scale */
-				optbuf[optlen + 0] = 3;
-				optbuf[optlen + 1] = 3;
-				__iip_assert(conn->opt[1].ws < 15); /* RFC 7323 */
-				optbuf[optlen + 2] = conn->opt[1].ws;
-				optlen += optbuf[optlen + 1];
-			}
-			if (syn && conn->opt[1].sack_ok) { /* sack ok */
-				optbuf[optlen + 0] = 4;
-				optbuf[optlen + 1] = 2;
-				optlen += optbuf[optlen + 1];
-			}
-			if (sackbuf) { /* sack */
-				__iip_memcpy(&optbuf[optlen], sackbuf, sackbuf[1]);
-				optlen += sackbuf[1];
-			}
-			if (IIP_CONF_TCP_TIMESTAMP_ENABLE) { /* time stamp */
-				optbuf[optlen + 0] = 8;
-				optbuf[optlen + 1] = 10;
-				((uint32_t *) &optbuf[optlen + 2])[0] = __iip_htonl(s->tcp.pkt_ts);
-				((uint32_t *) &optbuf[optlen + 2])[1] = __iip_htonl(conn->ts);
-				optlen += optbuf[optlen + 1];
-			}
-			__iip_assert(tcph.doff == __iip_round_up(sizeof(struct iip_tcp_hdr) + optlen, 4) / 4); /* we already have configured */
+			optbuf[optlen] = 0;
 		}
 		if (!iip_ops_nic_feature_offload_tcp_tx_checksum(opaque)) {
 			struct iip_l4_ip4_pseudo_hdr _pseudo = {
@@ -678,15 +663,12 @@ static uint16_t __iip_tcp_push(struct workspace *s,
 				.ip4_dst_be = conn->peer_ip4_be,
 				.pad = 0,
 				.proto = 6,
-				.len_be = __iip_htons(tcph.doff * 4 + payload_len),
+				.len_be = __iip_htons(tcph->doff * 4 + payload_len),
 			};
-			uint8_t *_b[4] = { (uint8_t *) &_pseudo, (uint8_t *) &tcph, optbuf, (pkt ? (uint8_t *) iip_ops_pkt_get_data(pkt, opaque) : (void *) 0), };
-			uint16_t _l[4] = { sizeof(_pseudo), sizeof(struct iip_tcp_hdr), optlen, payload_len, };
-			tcph.csum_be = __iip_htons(__iip_netcsum16(_b, _l, 4, 0));
-		}
-		__iip_memcpy(PB_TCP(out_p->buf), &tcph, sizeof(struct iip_tcp_hdr));
-		__iip_memcpy(PB_TCP_OPT(out_p->buf), optbuf, (uint16_t) __iip_round_up(optlen, 4));
-		if (iip_ops_nic_feature_offload_tcp_tx_checksum(opaque))
+			uint8_t *_b[3] = { (uint8_t *) &_pseudo, (uint8_t *) tcph, (pkt ? (uint8_t *) iip_ops_pkt_get_data(pkt, opaque) : (void *) 0), };
+			uint16_t _l[3] = { sizeof(_pseudo), tcph->doff * 4, payload_len, };
+			tcph->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 3, 0));
+		} else
 			iip_ops_nic_offload_tcp_tx_checksum_mark(out_p->pkt, opaque); /* relies on the value of doff on packet buf */
 	}
 
