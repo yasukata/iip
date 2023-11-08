@@ -782,54 +782,37 @@ static uint16_t iip_udp_send(void *_mem __attribute__((unused)),
 	uint16_t payload_len = (pkt ? iip_ops_pkt_get_len(pkt, opaque) : 0);
 	__iip_assert(out_pkt);
 	{
-		struct iip_eth_hdr ethh = {
-			.src[0] = local_mac[0],
-			.src[1] = local_mac[1],
-			.src[2] = local_mac[2],
-			.src[3] = local_mac[3],
-			.src[4] = local_mac[4],
-			.src[5] = local_mac[5],
-			.dst[0] = peer_mac[0],
-			.dst[1] = peer_mac[1],
-			.dst[2] = peer_mac[2],
-			.dst[3] = peer_mac[3],
-			.dst[4] = peer_mac[4],
-			.dst[5] = peer_mac[5],
-			.type_be = __iip_htons(0x0800),
-		};
-		__iip_memcpy(&((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque))[0], &ethh, sizeof(struct iip_eth_hdr));
+		struct iip_eth_hdr *ethh = PB_ETH(iip_ops_pkt_get_data(out_pkt, opaque));
+		__iip_memcpy(ethh->src, local_mac, 6);
+		__iip_memcpy(ethh->dst, peer_mac, 6);
+		ethh->type_be = __iip_htons(0x0800);
 	}
 	{
-		struct iip_ip4_hdr ip4h = {
-			.l = sizeof(struct iip_ip4_hdr) / 4,
-			.len_be = __iip_htons(ip4h.l * 4 + sizeof(struct iip_udp_hdr) + payload_len),
-			.v = 4, /* ip4 */
-			.tos = 0,
-			.id_be = 0, /* no ip4 fragment */
-			.off_be = 0, /* no ip4 fragment */
-			.ttl = IIP_CONF_IP4_TTL,
-			.proto = 17, /* udp */
-			.src_be = local_ip4_be,
-			.dst_be = peer_ip4_be,
-		};
+		struct iip_ip4_hdr *ip4h = PB_IP4(iip_ops_pkt_get_data(out_pkt, opaque));
+		ip4h->l = sizeof(struct iip_ip4_hdr) / 4;
+		ip4h->len_be = __iip_htons(ip4h->l * 4 + sizeof(struct iip_udp_hdr) + payload_len);
+		ip4h->v = 4; /* ip4 */
+		ip4h->tos = 0;
+		ip4h->id_be = 0; /* no ip4 fragment */
+		ip4h->off_be = 0; /* no ip4 fragment */
+		ip4h->ttl = IIP_CONF_IP4_TTL;
+		ip4h->proto = 17; /* udp */
+		ip4h->src_be = local_ip4_be;
+		ip4h->dst_be = peer_ip4_be;
+		ip4h->csum_be = 0;
 		if (!iip_ops_nic_feature_offload_ip4_tx_checksum(opaque)) { /* ip4 csum */
-			uint8_t *_b[1] = { (uint8_t *) &ip4h, };
-			uint16_t _l[1] = { ip4h.l * 4, };
-			ip4h.csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1, 0));
-		}
-		__iip_memcpy(&((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque))[sizeof(struct iip_eth_hdr)], &ip4h, ip4h.l * 4);
-		if (iip_ops_nic_feature_offload_ip4_tx_checksum(opaque))
+			uint8_t *_b[1] = { (uint8_t *) ip4h, };
+			uint16_t _l[1] = { ip4h->l * 4, };
+			ip4h->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1, 0));
+		} else
 			iip_ops_nic_offload_ip4_tx_checksum_mark(out_pkt, opaque);
-
 		{
-			struct iip_udp_hdr udph = {
-				.src_be = local_port_be,
-				.dst_be = peer_port_be,
-				.len_be = __iip_htons(sizeof(struct iip_udp_hdr) + payload_len),
-			};
-			if (iip_ops_nic_feature_offload_udp_tx_checksum(opaque)) { /* udp csum */
-				iip_ops_nic_offload_udp_tx_checksum_mark(out_pkt, opaque);
-			} else {
+			struct iip_udp_hdr *udph = PB_UDP(iip_ops_pkt_get_data(out_pkt, opaque));
+			udph->src_be = local_port_be;
+			udph->dst_be = peer_port_be;
+			udph->len_be = __iip_htons(sizeof(struct iip_udp_hdr) + payload_len);
+			udph->csum_be = 0;
+			if (!iip_ops_nic_feature_offload_udp_tx_checksum(opaque)) { /* udp csum */
 				struct iip_l4_ip4_pseudo_hdr _pseudo = {
 					.ip4_src_be = local_ip4_be,
 					.ip4_dst_be = peer_ip4_be,
@@ -837,18 +820,18 @@ static uint16_t iip_udp_send(void *_mem __attribute__((unused)),
 					.proto = 17,
 					.len_be = __iip_htons(sizeof(struct iip_udp_hdr) + payload_len),
 				};
-				uint8_t *_b[3] = { (uint8_t *) &_pseudo, (uint8_t *) &udph, (pkt ? (uint8_t *) iip_ops_pkt_get_data(pkt, opaque) : (void *) 0), };
+				uint8_t *_b[3] = { (uint8_t *) &_pseudo, (uint8_t *) udph, (pkt ? (uint8_t *) iip_ops_pkt_get_data(pkt, opaque) : (void *) 0), };
 				uint16_t _l[3] = { sizeof(_pseudo), sizeof(struct iip_udp_hdr), payload_len, };
-				udph.csum_be = __iip_htons(__iip_netcsum16(_b, _l, 3, 0));
-			}
-			__iip_memcpy(&((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque))[sizeof(struct iip_eth_hdr) + ip4h.l * 4], &udph, sizeof(struct iip_udp_hdr));
+				udph->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 3, 0));
+			} else
+				iip_ops_nic_offload_udp_tx_checksum_mark(out_pkt, opaque);
 
 			if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
 				if (pkt) iip_ops_pkt_scatter_gather_chain_append(out_pkt, pkt, opaque);
-				iip_ops_pkt_set_len(out_pkt, sizeof(struct iip_eth_hdr) + ip4h.l * 4 + sizeof(struct iip_udp_hdr), opaque);
+				iip_ops_pkt_set_len(out_pkt, sizeof(struct iip_eth_hdr) + ip4h->l * 4 + sizeof(struct iip_udp_hdr), opaque);
 			} else {
-				if (pkt) __iip_memcpy(&((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque))[sizeof(struct iip_eth_hdr) + ip4h.l * 4 + sizeof(struct iip_udp_hdr)], iip_ops_pkt_get_data(pkt, opaque), payload_len);
-				iip_ops_pkt_set_len(out_pkt, sizeof(struct iip_eth_hdr) + ip4h.l * 4 + __iip_ntohs(udph.len_be), opaque);
+				if (pkt) __iip_memcpy(&((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque))[sizeof(struct iip_eth_hdr) + ip4h->l * 4 + sizeof(struct iip_udp_hdr)], iip_ops_pkt_get_data(pkt, opaque), payload_len);
+				iip_ops_pkt_set_len(out_pkt, sizeof(struct iip_eth_hdr) + ip4h->l * 4 + __iip_ntohs(udph->len_be), opaque);
 				if (pkt) iip_ops_pkt_free(pkt, opaque);
 			}
 		}
