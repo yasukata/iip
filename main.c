@@ -56,20 +56,25 @@
 #error "invalid IIP_CONF_ENDIAN: it should be either 1 (little) or 2 (big)"
 #endif
 
+#ifndef __iip_memcpy
 #define __iip_memcpy(__dest, __src, __n) \
 	do { \
 		uint32_t __i; \
 		for (__i = 0; __i < __n; __i++) \
 			((uint8_t *) __dest)[__i] = ((uint8_t *) __src)[__i]; \
 	} while (0)
+#endif
 
+#ifndef __iip_memset
 #define __iip_memset(__s, __c, __n) \
 	do { \
 		uint32_t __i; \
 		for (__i = 0; __i < __n; __i++) \
 			((uint8_t *) __s)[__i] = __c; \
 	} while (0)
+#endif
 
+#ifndef __iip_memcmp
 #define __iip_memcmp(__s1, __s2, __n) \
 ({ \
 	uint32_t __i = 0, ret = 0; \
@@ -81,7 +86,9 @@
 	} \
 	ret; \
 })
+#endif
 
+#ifndef __iip_memmove
 #define __iip_memmove(__dst, __src, __n) \
 	do { \
 		if ((uintptr_t) __dst > (uintptr_t) __src) { \
@@ -96,7 +103,9 @@
 			} \
 		} \
 	} while (0)
+#endif
 
+#ifndef __iip_assert
 #define __iip_assert(_cond) \
 	do { \
 		if (!(_cond))  { \
@@ -104,7 +113,7 @@
 			while (1) ; \
 		} \
 	} while (0)
-
+#endif
 
 #define __iip_netcsum16(__b, __l, __c, __m) \
 	({ \
