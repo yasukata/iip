@@ -630,6 +630,7 @@ static uint16_t __iip_tcp_push(struct workspace *s,
 		tcph->rst = rst;
 		tcph->fin = fin;
 		tcph->win_be = __iip_htons((uint16_t) (((conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used) * conn->opt[1].mss) >> conn->opt[1].ws));
+		tcph->csum_be = 0;
 		{
 			uint8_t *optbuf = PB_TCP_OPT(out_p->buf), optlen = 0;
 			{
@@ -664,7 +665,7 @@ static uint16_t __iip_tcp_push(struct workspace *s,
 				}
 				__iip_assert(tcph->doff == __iip_round_up(sizeof(struct iip_tcp_hdr) + optlen, 4) / 4); /* we already have configured */
 			}
-			optbuf[optlen] = 0;
+			__iip_memset(&optbuf[optlen], 0, tcph->doff * 4 - optlen);
 		}
 		if (!iip_ops_nic_feature_offload_tcp_tx_checksum(opaque)) {
 			struct iip_l4_ip4_pseudo_hdr _pseudo = {
