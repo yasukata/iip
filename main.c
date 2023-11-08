@@ -1921,7 +1921,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 							/* we have received an ack telling the receiver successfully got the data  */
 						}
 						{ /* loss detected */
-							D("loss detected (3 dup ack)");
+							D("loss detected (3 dup ack) : %p seq %u ack %u", conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
 							conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
 							conn->cc.win = conn->cc.ssthresh; /* fast retransmission */
 							conn->inflight = 0;
@@ -2236,7 +2236,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 							}
 						}
 						{ /* loss detected */
-							D("loss detected (sack)");
+							D("loss detected (sack) : %p seq %u ack %u", conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
 							conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
 							conn->cc.win = 1;
 							conn->inflight = 0;
@@ -2286,7 +2286,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 								conn->head[2][0]->tcp.rto_ms = (conn->head[2][0]->tcp.rto_ms < 5000000 ? conn->head[2][0]->tcp.rto_ms * 4 : 5000000); /* TODO: proper setting */
 								s->monitor.tcp.tx_pkt_re++;
 								{ /* loss detected */
-									D("loss detected (timeout)");
+									D("loss detected (timeout) : %p seq %u ack %u", conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
 									conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
 									conn->cc.win = 1;
 									conn->inflight = 0;
