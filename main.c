@@ -1449,7 +1449,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 												__iip_enqueue_obj(conn->head[0], _p, 0);
 												pkt_used = 1;
 												s->monitor.tcp.rx_pkt++;
-												conn->rx_buf_cnt.used++;
 												conn->seq_next_expected += PB_TCP(_p->buf)->syn + PB_TCP(_p->buf)->fin + PB_TCP_PAYLOAD_LEN(_p->buf);
 												if (conn->dup_ack_throttle) {
 													D("throttle off by in-order packet");
@@ -1776,8 +1775,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 													ack = 1;
 													conn->state = __IIP_TCP_STATE_CLOSE_WAIT;
 													D("TCP_STATE_ESTABLISHED - TCP_STATE_CLOSE_WAIT");
-												} else if (PB_TCP(p->buf)->ack && PB_TCP_PAYLOAD_LEN(p->buf))
+												} else if (PB_TCP(p->buf)->ack && PB_TCP_PAYLOAD_LEN(p->buf)) {
+													conn->rx_buf_cnt.used++;
 													iip_ops_tcp_payload(s, conn, p->pkt, conn->opaque, opaque);
+												}
 												/* fall through */
 											case __IIP_TCP_STATE_CLOSE_WAIT:
 												if (PB_TCP(p->buf)->fin) {
