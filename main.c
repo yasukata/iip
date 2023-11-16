@@ -330,9 +330,13 @@ static uint8_t iip_verbose_level = 0;
 
 /* data structures */
 
+#define __IIP_PB_FLAGS_NEED_ACK_CB_PKT_FREE (1UL << 2)
+
 struct pb {
 	void *pkt;
 	void *buf;
+	void *ack_cb_pkt;
+	uint64_t flags;
 	void *orig_pkt; /* for no scatter gather mode */
 
 	uint32_t ts;
@@ -470,6 +474,8 @@ struct workspace {
 
 static void __iip_free_pb(struct workspace *s, struct pb *p, void *opaque)
 {
+	if (p->flags & __IIP_PB_FLAGS_NEED_ACK_CB_PKT_FREE)
+		iip_ops_pkt_free(p->ack_cb_pkt, opaque);
 	iip_ops_pkt_free(p->pkt, opaque);
 	if (p->orig_pkt)
 		iip_ops_pkt_free(p->orig_pkt, opaque);
@@ -587,12 +593,26 @@ static void iip_arp_request(void *_mem __attribute__((unused)),
 }
 
 static uint16_t __iip_tcp_push(struct workspace *s,
-			       struct iip_tcp_hdr_conn *conn, void *pkt,
+			       struct iip_tcp_hdr_conn *conn, void *_pkt,
 			       uint8_t syn, uint8_t ack, uint8_t fin, uint8_t rst,
 			       uint8_t *sackbuf, void *opaque)
 {
-	struct pb *out_p = __iip_alloc_pb(s, iip_ops_pkt_alloc(opaque), opaque);
-	uint16_t payload_len = (pkt ? iip_ops_pkt_get_len(pkt, opaque) : 0);
+	void *pkt;
+	struct pb *out_p;
+	uint16_t total_payload_len = (_pkt ? iip_ops_pkt_get_len(_pkt, opaque) : 0), payload_len = total_payload_len, pushed_payload_len = 0, frag_cnt = 0;
+again:
+	frag_cnt++;
+	pkt = _pkt;
+	out_p = __iip_alloc_pb(s, iip_ops_pkt_alloc(opaque), opaque);
+	if (!iip_ops_nic_feature_offload_tcp_tx_tso(opaque)) {
+		uint16_t l = 1500 - (sizeof(struct iip_ip4_hdr) + __iip_round_up(sizeof(struct iip_tcp_hdr) + (syn ? 4 + 3 + (conn->opt[1].sack_ok ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 10 : 0), 4));
+		payload_len = (l < (uint16_t) (total_payload_len - pushed_payload_len) ? l : total_payload_len - pushed_payload_len);
+		if (payload_len != total_payload_len) {
+			assert((pkt = iip_ops_pkt_clone(_pkt, opaque)) != (void *) 0);
+			iip_ops_pkt_increment_head(pkt, pushed_payload_len, opaque);
+			iip_ops_pkt_set_len(pkt, payload_len, opaque);
+		}
+	}
 	{
 		struct iip_eth_hdr *ethh = PB_ETH(out_p->buf);
 		__iip_memcpy(ethh->src, conn->local_mac, 6);
@@ -701,6 +721,15 @@ static uint16_t __iip_tcp_push(struct workspace *s,
 		iip_ops_nic_offload_tcp_tx_tso_mark(out_p->pkt, opaque);
 
 	__iip_enqueue_obj(conn->head[1], out_p, 0);
+
+	pushed_payload_len += payload_len;
+	if (pushed_payload_len != total_payload_len)
+		goto again;
+	else {
+		out_p->ack_cb_pkt = _pkt;
+		if (1 < frag_cnt)
+			out_p->flags |= __IIP_PB_FLAGS_NEED_ACK_CB_PKT_FREE;
+	}
 
 	return 0;
 }
@@ -1856,7 +1885,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 												/*D("fast increase win %u ssthresh %u", conn->cc.win, conn->cc.ssthresh);*/
 											}
 										}
-										iip_ops_tcp_acked(s, conn, p->pkt, conn->opaque, opaque);
+										if (p->ack_cb_pkt)
+											iip_ops_tcp_acked(s, conn, p->ack_cb_pkt, conn->opaque, opaque);
 									}
 									__iip_dequeue_obj(conn->head[2], p, 0);
 									__iip_free_pb(s, p, opaque);
