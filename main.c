@@ -399,7 +399,6 @@ struct iip_tcp_hdr_conn {
 	uint32_t seq_next_expected;
 	uint8_t dup_ack_received;
 	uint8_t dup_ack_sent;
-	uint32_t inflight;
 	uint32_t time_wait_ts_ms;
 
 	uint8_t dup_ack_throttle; /* non-standard optimization */
@@ -1872,10 +1871,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 								 */
 								if ((__iip_ntohl(conn->seq_be) - conn->acked_seq) <= (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(p->buf)->seq_be) + ((PB_TCP(p->buf)->syn || PB_TCP(p->buf)->fin) ? 1 : PB_TCP_PAYLOAD_LEN(p->buf))))) { /* A or B */
 									if (PB_TCP_PAYLOAD_LEN(p->buf)) {
-										if (conn->inflight < (uint32_t) PB_TCP_PAYLOAD_LEN(p->buf)) /* TODO: properly count */
-											conn->inflight = 0;
-										else
-											conn->inflight -= PB_TCP_PAYLOAD_LEN(p->buf);
 										{ /* increase window size for congestion control */
 											if (conn->cc.ssthresh < conn->cc.win) {
 												conn->cc.win = (conn->cc.win < 65535U ? conn->cc.win + 1 : conn->cc.win);
@@ -1967,7 +1962,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 							D("loss detected (3 dup ack) : %p seq %u ack %u", conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
 							conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
 							conn->cc.win = conn->cc.ssthresh; /* fast retransmission */
-							conn->inflight = 0;
 						}
 					}
 					/* sack check */
@@ -2298,7 +2292,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 							D("loss detected (sack) : %p seq %u ack %u", conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
 							conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
 							conn->cc.win = 1;
-							conn->inflight = 0;
 						}
 					}
 					/* timeout check */
@@ -2348,7 +2341,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 									D("loss detected (timeout) : %p seq %u ack %u", conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
 									conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
 									conn->cc.win = 1;
-									conn->inflight = 0;
 								}
 							}
 						}
@@ -2368,7 +2360,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 								if (queue != conn->head[3]) {
 									if (PB_TCP_PAYLOAD_LEN(p->buf)) {
 										/* congestion control */
-										if (conn->cc.win * 0xffff <= conn->inflight) {
+										if (conn->cc.win * 0xffff <= (__iip_ntohl(PB_TCP(p->buf)->seq_be) - conn->acked_seq) + PB_TCP_PAYLOAD_LEN(p->buf)) {
 											s->monitor.tcp.cc_stop++;
 											break;
 										}
@@ -2389,7 +2381,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 									__iip_assert(p->pkt);
 									void *clone_pkt = iip_ops_pkt_clone(p->pkt, opaque);
 									__iip_assert(clone_pkt);
-									conn->inflight += PB_TCP_PAYLOAD_LEN(p->buf);
 									/*D("seq %u len %u", __iip_ntohl(PB_TCP(p->buf)->seq_be), PB_TCP_PAYLOAD_LEN(p->buf));*/
 									iip_ops_eth_push(clone_pkt, opaque);
 									s->monitor.tcp.tx_pkt++;
@@ -2462,15 +2453,15 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 			{
 				struct iip_tcp_hdr_conn *conn, *_conn_n;
 				__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
-					D("tcp %p fc-win %u (win %u ws %u) cc-win %u (win %u) inflight %u acked %u",
+					D("tcp %p fc-win %u (win %u ws %u) cc-win %u (win %u) acked %u (unacked %u)",
 							conn,
 							(uint32_t) conn->peer_win << conn->opt[0].ws,
 							(uint32_t) conn->peer_win,
 							conn->opt[0].ws,
 							(uint32_t) conn->cc.win * 0x0000ffffU,
 							conn->cc.win,
-							conn->inflight,
-							conn->acked_seq);
+							conn->acked_seq,
+							__iip_ntohl(conn->seq_be) - conn->acked_seq);
 				}
 			}
 			s->monitor.prev_print_ts = now;
