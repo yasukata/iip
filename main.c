@@ -1907,12 +1907,22 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 						__iip_assert(!(conn->head[2][0] && !conn->head[2][1]));
 						if (conn->head[2][0]) {
 							void *cp;
-							if (iip_ops_pkt_scatter_gather_chain_get_next(conn->head[2][0]->pkt, opaque)) {
-								cp = iip_ops_pkt_clone(iip_ops_pkt_scatter_gather_chain_get_next(conn->head[2][0]->pkt, opaque), opaque);
-								__iip_assert(cp);
+							if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
+								if (iip_ops_pkt_scatter_gather_chain_get_next(conn->head[2][0]->pkt, opaque)) {
+									cp = iip_ops_pkt_clone(iip_ops_pkt_scatter_gather_chain_get_next(conn->head[2][0]->pkt, opaque), opaque);
+									__iip_assert(cp);
+								} else {
+									cp = (void *) 0;
+									__iip_assert(PB_TCP(conn->head[2][0]->buf)->syn || PB_TCP(conn->head[2][0]->buf)->fin);
+								}
 							} else {
-								cp = (void *) 0;
-								__iip_assert(PB_TCP(conn->head[2][0]->buf)->syn || PB_TCP(conn->head[2][0]->buf)->fin);
+								if (conn->head[2][0]->orig_pkt) {
+									cp = iip_ops_pkt_clone(conn->head[2][0]->orig_pkt, opaque);
+									__iip_assert(cp);
+								} else {
+									cp = (void *) 0;
+									__iip_assert(PB_TCP(conn->head[2][0]->buf)->syn || PB_TCP(conn->head[2][0]->buf)->fin);
+								}
 							}
 							if (conn->acked_seq != __iip_ntohl(PB_TCP(conn->head[2][0]->buf)->seq_be)) {
 								__iip_assert(cp);
@@ -2097,15 +2107,21 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 													 */
 													uint16_t i;
 													for (i = 0; i < _p->clone.to_be_updated - 1; i++) {
-														if (_p->clone.range[_p->clone.to_be_updated - 1].increment_head > iip_ops_pkt_get_len(iip_ops_pkt_scatter_gather_chain_get_next(_p->pkt, opaque), opaque) /* TODO: no multi segment */ - _p->clone.range[i].decrement_tail) {
+														void *_p_pkt;
+														if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque))
+															_p_pkt = iip_ops_pkt_scatter_gather_chain_get_next(_p->pkt, opaque);
+														else
+															_p_pkt = _p->orig_pkt;
+														assert(_p_pkt);
+														if (_p->clone.range[_p->clone.to_be_updated - 1].increment_head > iip_ops_pkt_get_len(_p_pkt, opaque) /* TODO: no multi segment */ - _p->clone.range[i].decrement_tail) {
 															/*
 															 * pattern 1
 															 * new:      |  |
 															 * i  : |  |
 															 */
 															D("1: sack[%u/%u]: head %u tail %u : %u %u", i, _p->clone.to_be_updated, _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
-														} else if (iip_ops_pkt_get_len(iip_ops_pkt_scatter_gather_chain_get_next(_p->pkt, opaque), opaque) /* TODO: no multi segment */ - _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail < _p->clone.range[i].increment_head) {
-															D("2: sack[%u/%u]: (%u) head %u tail %u : %u %u", i, _p->clone.to_be_updated, iip_ops_pkt_get_len(iip_ops_pkt_scatter_gather_chain_get_next(_p->pkt, opaque), opaque), _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
+														} else if (iip_ops_pkt_get_len(_p_pkt, opaque) /* TODO: no multi segment */ - _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail < _p->clone.range[i].increment_head) {
+															D("2: sack[%u/%u]: (%u) head %u tail %u : %u %u", i, _p->clone.to_be_updated, iip_ops_pkt_get_len(_p_pkt, opaque), _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
 															/*
 															 * pattern 2
 															 * new:      |  |
@@ -2144,7 +2160,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 															i = (uint16_t) -1; /* check the coverage of other parts */
 														} else if (_p->clone.range[_p->clone.to_be_updated - 1].increment_head > _p->clone.range[i].increment_head
 																&& _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail < _p->clone.range[i].decrement_tail
-																&& _p->clone.range[_p->clone.to_be_updated - 1].increment_head <= iip_ops_pkt_get_len(iip_ops_pkt_scatter_gather_chain_get_next(_p->pkt, opaque), opaque) /* TODO: no multi segment */ - _p->clone.range[i].decrement_tail /* to be sure for debug */) {
+																&& _p->clone.range[_p->clone.to_be_updated - 1].increment_head <= iip_ops_pkt_get_len(_p_pkt, opaque) /* TODO: no multi segment */ - _p->clone.range[i].decrement_tail /* to be sure for debug */) {
 															D("5: sack[%u/%u]: head %u tail %u : %u %u", i, _p->clone.to_be_updated, _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
 															/*
 															 * pattern 5: merge
@@ -2165,7 +2181,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 															}
 														} else if (_p->clone.range[_p->clone.to_be_updated - 1].increment_head < _p->clone.range[i].increment_head
 																&& _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail > _p->clone.range[i].decrement_tail
-																&& iip_ops_pkt_get_len(iip_ops_pkt_scatter_gather_chain_get_next(_p->pkt, opaque), opaque) /* TODO: no multi segment */ -  _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail >= _p->clone.range[i].increment_head /* to be sure for debug */) {
+																&& iip_ops_pkt_get_len(_p_pkt, opaque) /* TODO: no multi segment */ -  _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail >= _p->clone.range[i].increment_head /* to be sure for debug */) {
 															D("6: sack[%u/%u]: head %u tail %u : %u %u", i, _p->clone.to_be_updated, _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
 															/*
 															 * pattern 6
@@ -2241,14 +2257,24 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 								uint16_t i;
 								for (i = 0; i < p->clone.to_be_updated; i++) {
 									void *cp;
-									if (iip_ops_pkt_scatter_gather_chain_get_next(p->pkt, opaque)) {
-										cp = iip_ops_pkt_clone(iip_ops_pkt_scatter_gather_chain_get_next(p->pkt, opaque), opaque);
-										__iip_assert(cp);
-										if (p->clone.range[i].increment_head) iip_ops_pkt_increment_head(cp, p->clone.range[i].increment_head, opaque);
-										if (p->clone.range[i].decrement_tail) iip_ops_pkt_decrement_tail(cp, p->clone.range[i].decrement_tail, opaque);
+									if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
+										if (iip_ops_pkt_scatter_gather_chain_get_next(p->pkt, opaque)) {
+											cp = iip_ops_pkt_clone(iip_ops_pkt_scatter_gather_chain_get_next(p->pkt, opaque), opaque);
+											__iip_assert(cp);
+											if (p->clone.range[i].increment_head) iip_ops_pkt_increment_head(cp, p->clone.range[i].increment_head, opaque);
+											if (p->clone.range[i].decrement_tail) iip_ops_pkt_decrement_tail(cp, p->clone.range[i].decrement_tail, opaque);
+										} else {
+											cp = (void *) 0;
+											__iip_assert(PB_TCP(p->buf)->syn || PB_TCP(p->buf)->fin);
+										}
 									} else {
-										cp = (void *) 0;
-										__iip_assert(PB_TCP(p->buf)->syn || PB_TCP(p->buf)->fin);
+										if (p->orig_pkt) {
+											cp = iip_ops_pkt_clone(p->orig_pkt, opaque);
+											__iip_assert(cp);
+										} else {
+											cp = (void *) 0;
+											__iip_assert(PB_TCP(p->buf)->syn || PB_TCP(p->buf)->fin);
+										}
 									}
 									{ /* CLONE */
 										struct iip_tcp_hdr_conn _conn;
