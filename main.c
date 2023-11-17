@@ -2366,7 +2366,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 							__iip_q_for_each_safe(queue, p, _n, 0) {
 								/* check if flow/congestion control stops tx */
 								if (queue != conn->head[3]) {
-									if (PB_TCP_PAYLOAD_LEN(p->buf) || PB_TCP(p->buf)->fin) {
+									if (PB_TCP_PAYLOAD_LEN(p->buf)) {
 										/* congestion control */
 										if (conn->cc.win * 0xffff <= conn->inflight) {
 											s->monitor.tcp.cc_stop++;
