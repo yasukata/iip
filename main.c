@@ -1902,7 +1902,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 					 */
 					/* dup ack check */
 					if (conn->dup_ack_received > 2) { /* 3 dup acks are received, we do retransmission for fast recovery, or sack */
-						/* merge un-sent queue (head[1]) and sent queue (head[2]) */
 						__iip_assert(!(!conn->head[2][0] && conn->head[2][1]));
 						__iip_assert(!(conn->head[2][0] && !conn->head[2][1]));
 						if (conn->head[2][0]) {
