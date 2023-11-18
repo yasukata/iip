@@ -1757,6 +1757,15 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 															conn->state = __IIP_TCP_STATE_FIN_WAIT2;
 															D("TCP_STATE_FIN_WAIT1 - TCP_STATE_FIN_WAIT2");
 														}
+													} else if (PB_TCP(p->buf)->fin) {
+														/*
+														 * this is the case where the peer also sent fin mostly at the same time,
+														 * and especially here is for close initiators sending fin-ack
+														 * rather than than only fin
+														 */
+														ack = 1;
+														conn->state = __IIP_TCP_STATE_CLOSING;
+														D("TCP_STATE_FIN_WAIT1 - TCP_STATE_CLOSING");
 													}
 												} else {
 													if (PB_TCP(p->buf)->fin) {
