@@ -1716,7 +1716,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 									}
 									conn->peer_win = __iip_ntohs(PB_TCP(p->buf)->win_be);
 									conn->ts = p->tcp.opt.ts[0];
-									conn->ack_seq_be = __iip_htonl(__iip_ntohl(PB_TCP(p->buf)->seq_be) + (((PB_TCP_PAYLOAD_LEN(p->buf) == 0) && (PB_TCP(p->buf)->syn || PB_TCP(p->buf)->fin)) ? 1 : PB_TCP_PAYLOAD_LEN(p->buf)));
+									conn->ack_seq_be = __iip_htonl(__iip_ntohl(PB_TCP(p->buf)->seq_be) + PB_TCP(p->buf)->syn + PB_TCP(p->buf)->fin + PB_TCP_PAYLOAD_LEN(p->buf));
 									conn->acked_seq = __iip_ntohl(PB_TCP(p->buf)->ack_seq_be);
 									/*D("tcp-in I src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u",
 									  (PB_IP4(p->buf)->src_be >>  0) & 0x0ff,
