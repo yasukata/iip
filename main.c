@@ -646,11 +646,17 @@ again:
 		tcph->dst_be = conn->peer_port_be;
 		tcph->seq_be = conn->seq_be;
 		tcph->ack_seq_be = conn->ack_seq_be;
+		tcph->res1 = 0;
+		tcph->psh = 0;
+		tcph->urg = 0;
+		tcph->ece = 0;
+		tcph->cwr = 0;
 		tcph->syn = syn;
 		tcph->ack = ack;
 		tcph->rst = rst;
 		tcph->fin = fin;
 		tcph->win_be = __iip_htons((uint16_t) (((conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used) * conn->opt[1].mss) >> conn->opt[1].ws));
+		tcph->urg_p_be = 0;
 		tcph->csum_be = 0;
 		{
 			uint8_t *optbuf = PB_TCP_OPT(out_p->buf), optlen = 0;
