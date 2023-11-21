@@ -165,7 +165,13 @@
 #define __iip_q_for_each_safe(__queue, _i, _n, __x) \
 	for ((_i) = (__queue)[0], _n = ((_i) ? _i->next[__x] : ((void *) 0)); (_i); (_i) = _n, _n = ((_i) ? (_i)->next[__x] : ((void *) 0)))
 
-#define D(fmt, ...) do { if (iip_verbose_level) printf("\x1b[32m(%u)[%s:%u]: " fmt "\x1b[39m\n", iip_ops_util_core(), __func__, __LINE__, ##__VA_ARGS__); } while (0)
+#define D(fmt, ...) \
+	do { \
+		if (iip_verbose_level) { \
+			printf("\x1b[32m(%u)[%s:%u]: " fmt "\x1b[39m\n", iip_ops_util_core(), __func__, __LINE__, ##__VA_ARGS__); \
+			fflush(stdout); \
+		} \
+	} while (0)
 
 #define __iip_now_in_ms() \
 	({ \
