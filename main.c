@@ -1754,7 +1754,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 										}
 									} else {
 										uint8_t is_connected = 0, is_accepted = 0;
-										uint8_t syn = 0, ack = 0, fin = 0;
+										uint8_t syn = 0, ack = 0, fin = 0, rst = 0;
 										switch (conn->state) {
 											/* client */
 											case __IIP_TCP_STATE_FIN_WAIT1:
@@ -1776,8 +1776,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 														 * rather than than only fin
 														 */
 														ack = 1;
-														conn->state = __IIP_TCP_STATE_CLOSING;
-														D("TCP_STATE_FIN_WAIT1 - TCP_STATE_CLOSING");
+														rst = 1;
+														conn->state = __IIP_TCP_STATE_TIME_WAIT;
+														conn->time_wait_ts_ms = __iip_now_in_ms();
+														D("TCP_STATE_FIN_WAIT1 - TCP_STATE_TIME_WAIT");
 													}
 												} else {
 													if (PB_TCP(p->buf)->fin) {
@@ -1855,8 +1857,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 												__iip_assert(0);
 												break;
 										}
-										if (syn || ack || fin) {
-											__iip_tcp_push(s, conn, (void *) 0, syn, ack, fin, 0, (void *) 0, opaque);
+										if (syn || ack || fin || rst) {
+											__iip_tcp_push(s, conn, (void *) 0, syn, ack, fin, rst, (void *) 0, opaque);
 											if (fin)
 												conn->fin_ack_seq_be = conn->seq_be;
 										}
