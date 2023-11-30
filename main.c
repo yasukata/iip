@@ -175,6 +175,7 @@
 #define __iip_q_for_each_safe(__queue, _i, _n, __x) \
 	for ((_i) = (__queue)[0], _n = ((_i) ? _i->next[__x] : ((void *) 0)); (_i); (_i) = _n, _n = ((_i) ? (_i)->next[__x] : ((void *) 0)))
 
+#ifndef D
 #define D(fmt, ...) \
 	do { \
 		if (iip_verbose_level) { \
@@ -182,21 +183,13 @@
 			fflush(stdout); \
 		} \
 	} while (0)
+#endif
 
 #define __iip_now_in_ms() \
 	({ \
 		uint32_t t[3]; \
 		iip_ops_util_now_ns(t); \
-		uint64_t _t = (((uint64_t) t[0] << 32) + (uint64_t) t[1]) * 1000000000UL + t[2]; \
-		((uint32_t) ((_t / 1000000UL) & 0xffffffff)); \
-	})
-
-#define __iip_now_in_us() \
-	({ \
-		uint32_t t[3]; \
-		iip_ops_util_now_ns(t); \
-		uint64_t _t = (((uint64_t) t[0] << 32) + (uint64_t) t[1]) * 1000000000UL + t[2]; \
-		((uint32_t) ((_t / 1000UL) & 0xffffffff)); \
+		(t[1] * 1000UL + t[2] / 1000000UL); \
 	})
 
 /* protocol headers */
@@ -346,13 +339,12 @@ static uint8_t iip_verbose_level = 0;
 
 /* data structures */
 
-#define __IIP_PB_FLAGS_NEED_ACK_CB_PKT_FREE (1UL << 2)
-
 struct pb {
 	void *pkt;
 	void *buf;
 	void *ack_cb_pkt;
-	uint64_t flags;
+	uint32_t flags;
+#define __IIP_PB_FLAGS_NEED_ACK_CB_PKT_FREE (1UL << 2)
 	void *orig_pkt; /* for no scatter gather mode */
 
 	uint32_t ts;
@@ -418,7 +410,7 @@ struct iip_tcp_hdr_conn {
 	uint32_t time_wait_ts_ms;
 
 	uint8_t dup_ack_throttle; /* non-standard optimization */
-	uint32_t dup_ack_throttle_ts_us;
+	uint32_t dup_ack_throttle_ts_ms;
 
 	uint32_t fin_ack_seq_be;
 
@@ -623,7 +615,7 @@ again:
 		uint16_t l = 1500 - (sizeof(struct iip_ip4_hdr) + __iip_round_up(sizeof(struct iip_tcp_hdr) + (syn ? 4 + 3 + (conn->opt[1].sack_ok ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 10 : 0), 4));
 		payload_len = (l < (uint16_t) (total_payload_len - pushed_payload_len) ? l : total_payload_len - pushed_payload_len);
 		if (payload_len != total_payload_len) {
-			assert((pkt = iip_ops_pkt_clone(_pkt, opaque)) != (void *) 0);
+			__iip_assert((pkt = iip_ops_pkt_clone(_pkt, opaque)) != (void *) 0);
 			iip_ops_pkt_increment_head(pkt, pushed_payload_len, opaque);
 			iip_ops_pkt_set_len(pkt, payload_len, opaque);
 		}
@@ -1441,7 +1433,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 														pkt_used = 1;
 													/* D("out-of-order: %u %u", __iip_ntohl(PB_TCP(_p->buf)->seq_be), conn->seq_next_expected); */
 													if (conn->dup_ack_throttle) {
-														if (100000U < __iip_now_in_us() - conn->dup_ack_throttle_ts_us) {
+														if (100U < __iip_now_in_ms() - conn->dup_ack_throttle_ts_ms) {
 															conn->dup_ack_throttle = 0;
 															D("throttle off by timer");
 														}
@@ -1491,7 +1483,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 														if (conn->dup_ack_sent == 3) {
 															conn->dup_ack_sent = 0;
 															conn->dup_ack_throttle = 1;
-															conn->dup_ack_throttle_ts_us = __iip_now_in_us();
+															conn->dup_ack_throttle_ts_ms = __iip_now_in_ms();
 															D("throttle on");
 														}
 													}
@@ -1575,7 +1567,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 								{
 									uint16_t p_csum = __iip_ntohs(PB_UDP(p->buf)->csum_be), c_csum = __iip_netcsum16(_b, _l, 2, __iip_ntohs(PB_UDP(p->buf)->csum_be));
 									if ((p_csum == 0xffff ? 0 : p_csum) != (c_csum == 0xffff ? 0 : c_csum)) { /* 0xffff is 0 */
-										D("invalid udp checksum hdr: %u %u : payload len %u", p_csum, c_csum, ntohs(PB_UDP(p->buf)->len_be));
+										D("invalid udp checksum hdr: %u %u : payload len %u", p_csum, c_csum, __iip_ntohs(PB_UDP(p->buf)->len_be));
 										break;
 									}
 								}
@@ -2138,7 +2130,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 															_p_pkt = iip_ops_pkt_scatter_gather_chain_get_next(_p->pkt, opaque);
 														else
 															_p_pkt = _p->orig_pkt;
-														assert(_p_pkt);
+														__iip_assert(_p_pkt);
 														if (_p->clone.range[_p->clone.to_be_updated - 1].increment_head > iip_ops_pkt_get_len(_p_pkt, opaque) /* TODO: no multi segment */ - _p->clone.range[i].decrement_tail) {
 															/*
 															 * pattern 1
