@@ -1,7 +1,7 @@
 # iip: an integratable TCP/IP stack
 
 iip is an integratable TCP/IP stack implementation, having the following properties:
-- portable: iip does not rely on specific CPUs, NICs, libraries, and compiler features.
+- portable: iip aims to minimize dependencies on CPU architectures, NICs, libraries, and compiler features.
 - aware of multi-core scalability: iip does not maintain in-memory objects shared across different CPU cores.
 - aiming at high-performance: iip handles millions packets in one second for a short TCP messaging workload; please see https://github.com/yasukata/bench-iip#rough-numbers for rough performance numbers.
 
