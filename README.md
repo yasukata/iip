@@ -27,7 +27,7 @@ typedef unsigned short	uint16_t;
 typedef unsigned int	uint32_t;
 typedef unsigned long	uintptr_t;
 
-#ifdef _IS_CPP
+#ifdef __cplusplus
 #define NULL (0)
 #else
 #define NULL ((void *) 0)
@@ -35,6 +35,8 @@ typedef unsigned long	uintptr_t;
 #define D(_a, ...)
 
 int printf(const char *, ...) { return 0; }
+
+#include "main.c"
 
 static void *   iip_ops_pkt_alloc(void *opaque __attribute__((unused))) { return (void *) 0; }
 static void     iip_ops_pkt_free(void *pkt __attribute__((unused)), void *opaque __attribute__((unused))) { }
@@ -81,8 +83,6 @@ static void     iip_ops_tcp_acked(void *mem __attribute__((unused)), void *handl
 static void     iip_ops_tcp_closed(void *handle __attribute__((unused)), void *tcp_opaque __attribute__((unused)), void *opaque __attribute__((unused))) { }
 static void     iip_ops_udp_payload(void *mem __attribute__((unused)), void *m __attribute__((unused)), void *opaque __attribute__((unused))) { }
 
-#include "main.c"
-
 void _start(void) {
   (void) iip_run;
   (void) iip_udp_send;
@@ -107,7 +107,7 @@ gcc -Werror -Wextra -Wall -m32 -std=c89 -nostartfiles -nodefaultlibs -nostdlib -
 ```
 
 ```
-g++ -D_IS_CPP=1 -Werror -Wextra -Wall -m32 -std=c++98 -nostartfiles -nodefaultlibs -nostdlib -nostdinc stub.c
+g++ -Werror -Wextra -Wall -m32 -std=c++98 -nostartfiles -nodefaultlibs -nostdlib -nostdinc stub.c
 ```
 
 Note that the program above is just for checking whether ```main.c``` can be compiled or not, and the generated binary ```a.out``` is not runnable.
