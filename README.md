@@ -27,11 +27,14 @@ typedef unsigned short	uint16_t;
 typedef unsigned int	uint32_t;
 typedef unsigned long	uintptr_t;
 
-#define D
-#define __iip_memcpy
-#define __iip_memset
-#define __iip_memmove
-#define __iip_assert
+#ifdef _IS_CPP
+#define NULL (0)
+#else
+#define NULL ((void *) 0)
+#endif
+#define D(_a, ...)
+
+int printf(const char *, ...) { return 0; }
 
 static void *   iip_ops_pkt_alloc(void *opaque __attribute__((unused))) { return (void *) 0; }
 static void     iip_ops_pkt_free(void *pkt __attribute__((unused)), void *opaque __attribute__((unused))) { }
@@ -51,7 +54,6 @@ static void     iip_ops_eth_flush(void *opaque __attribute__((unused))) { }
 static void     iip_ops_eth_push(void *_m __attribute__((unused)), void *opaque __attribute__((unused))) { }
 
 static uint8_t  iip_ops_nic_feature_offload_tx_scatter_gather(void *opaque __attribute__((unused))) { return 0; }
-static uint8_t  iip_ops_nic_feature_offload_rx_checksum(void *opaque __attribute__((unused))) { return 0; }
 static uint8_t  iip_ops_nic_feature_offload_ip4_rx_checksum(void *opaque __attribute__((unused))) { return 0; }
 static uint8_t  iip_ops_nic_feature_offload_ip4_tx_checksum(void *opaque __attribute__((unused))) { return 0; }
 static uint8_t  iip_ops_nic_offload_ip4_rx_checksum(void *m __attribute__((unused)), void *opaque __attribute__((unused))) { return 0; }
@@ -81,13 +83,31 @@ static void     iip_ops_udp_payload(void *mem __attribute__((unused)), void *m _
 
 #include "main.c"
 
-void _start(void) { }
+void _start(void) {
+  (void) iip_run;
+  (void) iip_udp_send;
+  (void) iip_tcp_connect;
+  (void) iip_tcp_rxbuf_consumed;
+  (void) iip_tcp_close;
+  (void) iip_tcp_send;
+  (void) iip_arp_request;
+  (void) iip_add_tcp_conn;
+  (void) iip_add_pb;
+  (void) iip_tcp_conn_size;
+  (void) iip_pb_size;
+  (void) iip_workspace_size;
+  (void) iip_verbose_level;
+}
 ```
 
 When the code above is saved in a file named ```stub.c```, the following command supposedly generates a binary ```a.out```.
 
 ```
-gcc -m32 -std=c89 -nostartfiles -nodefaultlibs -nostdlib -nostdinc stub.c
+gcc -Werror -Wextra -Wall -m32 -std=c89 -nostartfiles -nodefaultlibs -nostdlib -nostdinc stub.c
+```
+
+```
+g++ -D_IS_CPP=1 -Werror -Wextra -Wall -m32 -std=c++98 -nostartfiles -nodefaultlibs -nostdlib -nostdinc stub.c
 ```
 
 Note that the program above is just for checking whether ```main.c``` can be compiled or not, and the generated binary ```a.out``` is not runnable.
