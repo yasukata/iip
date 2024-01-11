@@ -244,7 +244,7 @@ struct iip_eth_hdr {
 	uint8_t dst[6];
 	uint8_t src[6];
 	uint16_t type_be; /* type in big endian */
-} __attribute__((packed));
+};
 
 struct iip_ip4_hdr {
 #if IIP_CONF_ENDIAN == 1
@@ -263,7 +263,7 @@ struct iip_ip4_hdr {
 	uint16_t csum_be;
 	uint32_t src_be;
 	uint32_t dst_be;
-} __attribute__((packed));
+};
 
 struct iip_arp_hdr {
 	uint16_t hw_be;
@@ -275,7 +275,7 @@ struct iip_arp_hdr {
 	uint8_t ip_sender[4];
 	uint8_t mac_target[6];
 	uint8_t ip_target[4];
-} __attribute__((packed));
+};
 
 struct iip_icmp_hdr {
 	uint8_t type;
@@ -287,7 +287,7 @@ struct iip_icmp_hdr {
 			uint16_t seq_be;
 		} echo;
 	};
-} __attribute__((packed));
+};
 
 struct iip_l4_ip4_pseudo_hdr {
 	uint32_t ip4_src_be;
@@ -295,7 +295,7 @@ struct iip_l4_ip4_pseudo_hdr {
 	uint8_t pad;
 	uint8_t proto;
 	uint16_t len_be;
-} __attribute__((packed));
+};
 
 struct iip_tcp_hdr {
 	uint16_t src_be;
@@ -312,14 +312,14 @@ struct iip_tcp_hdr {
 	uint16_t win_be;
 	uint16_t csum_be;
 	uint16_t urg_p_be;
-} __attribute__((packed));
+};
 
 struct iip_udp_hdr {
 	uint16_t src_be;
 	uint16_t dst_be;
 	uint16_t len_be;
 	uint16_t csum_be;
-} __attribute__((packed));
+};
 
 #define PB_ETH(__b) ((struct iip_eth_hdr *)(__b))
 #define PB_IP4(__b) ((struct iip_ip4_hdr *)((uintptr_t) PB_ETH(__b) + sizeof(struct iip_eth_hdr)))
