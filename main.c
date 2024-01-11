@@ -546,12 +546,15 @@ static void iip_add_tcp_conn(void *_mem, void *_conn)
 
 /* protocol stack implementation */
 
-static void iip_arp_request(void *_mem __attribute__((unused)),
+static void iip_arp_request(void *_mem,
 			    uint8_t local_mac[6],
 			    uint32_t local_ip4_be,
 			    uint32_t target_ip4_be,
 			    void *opaque)
 {
+	{ /* unused */
+		(void) _mem;
+	}
 	void *out_pkt = iip_ops_pkt_alloc(opaque);
 	__iip_assert(out_pkt);
 	{
@@ -746,8 +749,12 @@ static uint16_t iip_tcp_close(void *_mem, void *_handle, void *opaque)
 		return 0;
 }
 
-static void iip_tcp_rxbuf_consumed(void *_mem __attribute__((unused)), void *_handle, uint16_t cnt, void *opaque __attribute__((unused)))
+static void iip_tcp_rxbuf_consumed(void *_mem, void *_handle, uint16_t cnt, void *opaque)
 {
+	{ /* unused */
+		(void) _mem;
+		(void) opaque;
+	}
 	struct iip_tcp_hdr_conn *conn = (struct iip_tcp_hdr_conn *) _handle;
 	__iip_assert(cnt <= conn->rx_buf_cnt.used);
 	conn->rx_buf_cnt.used -= cnt;
@@ -756,8 +763,11 @@ static void iip_tcp_rxbuf_consumed(void *_mem __attribute__((unused)), void *_ha
 static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_hdr_conn *conn,
 				uint8_t local_mac[6], uint32_t local_ip4_be, uint16_t local_port_be,
 				uint8_t peer_mac[6], uint32_t peer_ip4_be, uint16_t peer_port_be,
-				uint8_t state, void *opaque __attribute__((unused)))
+				uint8_t state, void *opaque)
 {
+	{ /* unused */
+		(void) opaque;
+	}
 	__iip_memset(conn, 0, sizeof(*conn));
 	__iip_memcpy(conn->local_mac, local_mac, sizeof(conn->local_mac));
 	conn->local_ip4_be = local_ip4_be;
@@ -795,11 +805,14 @@ static uint16_t iip_tcp_connect(void *_mem,
 	return __iip_tcp_push(s, conn, NULL, 1, 0, 0, 0, NULL, opaque);
 }
 
-static uint16_t iip_udp_send(void *_mem __attribute__((unused)),
+static uint16_t iip_udp_send(void *_mem,
 			     uint8_t local_mac[6], uint32_t local_ip4_be, uint16_t local_port_be,
 			     uint8_t peer_mac[6], uint32_t peer_ip4_be, uint16_t peer_port_be,
 			     void *pkt, void *opaque)
 {
+	{ /* unused */
+		(void) _mem;
+	}
 	void *out_pkt = iip_ops_pkt_alloc(opaque);
 	uint16_t payload_len = (pkt ? iip_ops_pkt_get_len(pkt, opaque) : 0);
 	__iip_assert(out_pkt);
