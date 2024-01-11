@@ -37,6 +37,51 @@
 #error "byte order is not defined"
 #endif
 
+int printf(const char *, ...); /* assuming someone implements this */
+
+/* functions implemented by app and io subsystems */
+
+static void *iip_ops_pkt_alloc(void *);
+static void iip_ops_pkt_free(void *, void *);
+static void *iip_ops_pkt_get_data(void *, void *);
+static uint16_t iip_ops_pkt_get_len(void *, void *);
+static void iip_ops_pkt_set_len(void *, uint16_t, void *);
+static void iip_ops_pkt_increment_head(void *, uint16_t, void *);
+static void iip_ops_pkt_decrement_tail(void *, uint16_t, void *);
+static void *iip_ops_pkt_clone(void *, void *); /* assuming the entire packet chain is cloned while reference counts to the payload buffers are also incremented */
+static void iip_ops_pkt_scatter_gather_chain_append(void *, void *, void *);
+static void *iip_ops_pkt_scatter_gather_chain_get_next(void *, void *);
+static void iip_ops_eth_flush(void *);
+static void iip_ops_eth_push(void *, void *); /* assuming packet object is released by app */
+static void iip_ops_arp_reply(void *, void *, void *);
+static void iip_ops_icmp_reply(void *, void *, void *);
+static uint8_t iip_ops_tcp_accept(void *, void *, void *);
+static void *iip_ops_tcp_accepted(void *, void *, void *, void *);
+static void *iip_ops_tcp_connected(void *, void *, void *, void *);
+static void iip_ops_tcp_closed(void *, void *, void *);
+static void iip_ops_tcp_payload(void *, void *, void *, void *, void *);
+static void iip_ops_tcp_acked(void *, void *, void *, void *, void *);
+static void iip_ops_udp_payload(void *, void *, void *);
+static uint8_t iip_ops_nic_feature_offload_tx_scatter_gather(void *);
+static uint8_t iip_ops_nic_feature_offload_ip4_rx_checksum(void *);
+static uint8_t iip_ops_nic_feature_offload_ip4_tx_checksum(void *);
+static uint8_t iip_ops_nic_feature_offload_tcp_rx_checksum(void *);
+static uint8_t iip_ops_nic_feature_offload_tcp_tx_checksum(void *);
+static uint8_t iip_ops_nic_feature_offload_tcp_tx_tso(void *);
+static uint8_t iip_ops_nic_feature_offload_udp_rx_checksum(void *);
+static uint8_t iip_ops_nic_feature_offload_udp_tx_checksum(void *);
+static uint8_t iip_ops_nic_feature_offload_udp_tx_tso(void *);
+static uint8_t iip_ops_nic_offload_ip4_rx_checksum(void *, void *);
+static uint8_t iip_ops_nic_offload_udp_rx_checksum(void *, void *);
+static uint8_t iip_ops_nic_offload_tcp_rx_checksum(void *, void *);
+static void iip_ops_nic_offload_ip4_tx_checksum_mark(void *, void *);
+static void iip_ops_nic_offload_tcp_tx_checksum_mark(void *, void *);
+static void iip_ops_nic_offload_tcp_tx_tso_mark(void *, void *);
+static void iip_ops_nic_offload_udp_tx_checksum_mark(void *, void *);
+static void iip_ops_nic_offload_udp_tx_tso_mark(void *, void *);
+static uint16_t iip_ops_util_core(void);
+static void iip_ops_util_now_ns(uint32_t [3]);
+
 /* utilities */
 
 #define __iip_bsw16(_n) ((((_n) >> 8) | ((_n) << 8)) & 0xffff)
@@ -289,51 +334,6 @@ struct iip_udp_hdr {
 #define PB_UDP(__b) ((struct iip_udp_hdr *)((uintptr_t) PB_IP4(__b) + PB_IP4(__b)->l * 4))
 #define PB_UDP_PAYLOAD(__b) ((uint8_t *)((uintptr_t) PB_UDP(__b) + sizeof(struct iip_udp_hdr)))
 #define PB_UDP_PAYLOAD_LEN(__b) ((uint16_t)(__iip_ntohs(PB_UDP(__b)->len_be)))
-
-int printf(const char *, ...); /* assuming someone implements this */
-
-/* functions implemented by app and io subsystems */
-
-static void *iip_ops_pkt_alloc(void *);
-static void iip_ops_pkt_free(void *, void *);
-static void *iip_ops_pkt_get_data(void *, void *);
-static uint16_t iip_ops_pkt_get_len(void *, void *);
-static void iip_ops_pkt_set_len(void *, uint16_t, void *);
-static void iip_ops_pkt_increment_head(void *, uint16_t, void *);
-static void iip_ops_pkt_decrement_tail(void *, uint16_t, void *);
-static void *iip_ops_pkt_clone(void *, void *); /* assuming the entire packet chain is cloned while reference counts to the payload buffers are also incremented */
-static void iip_ops_pkt_scatter_gather_chain_append(void *, void *, void *);
-static void *iip_ops_pkt_scatter_gather_chain_get_next(void *, void *);
-static void iip_ops_eth_flush(void *);
-static void iip_ops_eth_push(void *, void *); /* assuming packet object is released by app */
-static void iip_ops_arp_reply(void *, void *, void *);
-static void iip_ops_icmp_reply(void *, void *, void *);
-static uint8_t iip_ops_tcp_accept(void *, void *, void *);
-static void *iip_ops_tcp_accepted(void *, void *, void *, void *);
-static void *iip_ops_tcp_connected(void *, void *, void *, void *);
-static void iip_ops_tcp_closed(void *, void *, void *);
-static void iip_ops_tcp_payload(void *, void *, void *, void *, void *);
-static void iip_ops_tcp_acked(void *, void *, void *, void *, void *);
-static void iip_ops_udp_payload(void *, void *, void *);
-static uint8_t iip_ops_nic_feature_offload_tx_scatter_gather(void *);
-static uint8_t iip_ops_nic_feature_offload_ip4_rx_checksum(void *);
-static uint8_t iip_ops_nic_feature_offload_ip4_tx_checksum(void *);
-static uint8_t iip_ops_nic_feature_offload_tcp_rx_checksum(void *);
-static uint8_t iip_ops_nic_feature_offload_tcp_tx_checksum(void *);
-static uint8_t iip_ops_nic_feature_offload_tcp_tx_tso(void *);
-static uint8_t iip_ops_nic_feature_offload_udp_rx_checksum(void *);
-static uint8_t iip_ops_nic_feature_offload_udp_tx_checksum(void *);
-static uint8_t iip_ops_nic_feature_offload_udp_tx_tso(void *);
-static uint8_t iip_ops_nic_offload_ip4_rx_checksum(void *, void *);
-static uint8_t iip_ops_nic_offload_udp_rx_checksum(void *, void *);
-static uint8_t iip_ops_nic_offload_tcp_rx_checksum(void *, void *);
-static void iip_ops_nic_offload_ip4_tx_checksum_mark(void *, void *);
-static void iip_ops_nic_offload_tcp_tx_checksum_mark(void *, void *);
-static void iip_ops_nic_offload_tcp_tx_tso_mark(void *, void *);
-static void iip_ops_nic_offload_udp_tx_checksum_mark(void *, void *);
-static void iip_ops_nic_offload_udp_tx_tso_mark(void *, void *);
-static uint16_t iip_ops_util_core(void);
-static void iip_ops_util_now_ns(uint32_t [3]);
 
 static uint8_t iip_verbose_level = 0;
 
