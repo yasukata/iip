@@ -1503,20 +1503,21 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 									break;
 								}
 							} else {
-								struct iip_l4_ip4_pseudo_hdr _pseudo = {
-									.ip4_src_be = PB_IP4(p->buf)->src_be,
-									.ip4_dst_be = PB_IP4(p->buf)->dst_be,
-									.pad = 0,
-									.proto = 17,
-									.len_be = PB_UDP(p->buf)->len_be,
-								};
-								uint8_t *_b[2] = { (uint8_t *) &_pseudo, (uint8_t *) PB_UDP(p->buf), };
-								uint16_t _l[2] = { sizeof(_pseudo), (uint16_t) __iip_ntohs(PB_UDP(p->buf)->len_be), };
+								struct iip_l4_ip4_pseudo_hdr _pseudo;
+								_pseudo.ip4_src_be = PB_IP4(p->buf)->src_be;
+								_pseudo.ip4_dst_be = PB_IP4(p->buf)->dst_be;
+								_pseudo.pad = 0;
+								_pseudo.proto = 17;
+								_pseudo.len_be = PB_UDP(p->buf)->len_be;
 								{
-									uint16_t p_csum = __iip_ntohs(PB_UDP(p->buf)->csum_be), c_csum = __iip_netcsum16(_b, _l, 2, __iip_ntohs(PB_UDP(p->buf)->csum_be));
-									if ((p_csum == 0xffff ? 0 : p_csum) != (c_csum == 0xffff ? 0 : c_csum)) { /* 0xffff is 0 */
-										D("invalid udp checksum hdr: %u %u : payload len %u", p_csum, c_csum, __iip_ntohs(PB_UDP(p->buf)->len_be));
-										break;
+									uint8_t *_b[2] = { (uint8_t *) &_pseudo, (uint8_t *) PB_UDP(p->buf), };
+									uint16_t _l[2] = { sizeof(_pseudo), (uint16_t) __iip_ntohs(PB_UDP(p->buf)->len_be), };
+									{
+										uint16_t p_csum = __iip_ntohs(PB_UDP(p->buf)->csum_be), c_csum = __iip_netcsum16(_b, _l, 2, __iip_ntohs(PB_UDP(p->buf)->csum_be));
+										if ((p_csum == 0xffff ? 0 : p_csum) != (c_csum == 0xffff ? 0 : c_csum)) { /* 0xffff is 0 */
+											D("invalid udp checksum hdr: %u %u : payload len %u", p_csum, c_csum, __iip_ntohs(PB_UDP(p->buf)->len_be));
+											break;
+										}
 									}
 								}
 							}
