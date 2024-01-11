@@ -2334,7 +2334,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 								if (queue != conn->head[3]) {
 									if (PB_TCP_PAYLOAD_LEN(p->buf)) {
 										/* congestion control */
-										if (conn->cc.win * 0xffff <= (__iip_ntohl(PB_TCP(p->buf)->seq_be) - conn->acked_seq) + PB_TCP_PAYLOAD_LEN(p->buf)) {
+										if ((uint32_t) conn->cc.win * 0xffff <= (uint32_t)((__iip_ntohl(PB_TCP(p->buf)->seq_be) - conn->acked_seq) + PB_TCP_PAYLOAD_LEN(p->buf))) {
 											s->monitor.tcp.cc_stop++;
 											break;
 										}
