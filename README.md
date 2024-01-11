@@ -34,54 +34,54 @@ typedef unsigned long	uintptr_t;
 #endif
 #define D(_a, ...)
 
-int printf(const char *, ...) { return 0; }
+int printf(const char *format, ...) { (void) format; return 0; }
 
 #include "main.c"
 
-static void *   iip_ops_pkt_alloc(void *opaque __attribute__((unused))) { return (void *) 0; }
-static void     iip_ops_pkt_free(void *pkt __attribute__((unused)), void *opaque __attribute__((unused))) { }
-static void *   iip_ops_pkt_get_data(void *pkt __attribute__((unused)), void *opaque __attribute__((unused))) { return (void *) 0; }
-static uint16_t iip_ops_pkt_get_len(void *pkt __attribute__((unused)), void *opaque __attribute__((unused))) { return 0; }
-static void     iip_ops_pkt_set_len(void *pkt __attribute__((unused)), uint16_t len __attribute__((unused)), void *opaque __attribute__((unused))) { }
-static void     iip_ops_pkt_increment_head(void *pkt __attribute__((unused)), uint16_t len __attribute__((unused)), void *opaque __attribute__((unused))) { }
-static void     iip_ops_pkt_decrement_tail(void *pkt __attribute__((unused)), uint16_t len __attribute__((unused)), void *opaque __attribute__((unused))) { }
-static void *   iip_ops_pkt_clone(void *pkt __attribute__((unused)), void *opaque __attribute__((unused))) { return (void *) 0; }
-static void     iip_ops_pkt_scatter_gather_chain_append(void *pkt_head __attribute__((unused)), void *pkt_tail __attribute__((unused)), void *opaque __attribute__((unused))) { }
-static void *   iip_ops_pkt_scatter_gather_chain_get_next(void *pkt_head __attribute__((unused)), void *opaque __attribute__((unused))) { return (void *) 0; }
+static void *   iip_ops_pkt_alloc(void *opaque) { (void) opaque; return (void *) 0; }
+static void     iip_ops_pkt_free(void *pkt, void *opaque) { (void) pkt; (void) opaque; }
+static void *   iip_ops_pkt_get_data(void *pkt, void *opaque) { (void) pkt; (void) opaque; return (void *) 0; }
+static uint16_t iip_ops_pkt_get_len(void *pkt, void *opaque) { (void) pkt; (void) opaque; return 0; }
+static void     iip_ops_pkt_set_len(void *pkt, uint16_t len, void *opaque) { (void) pkt; (void) len; (void) opaque; }
+static void     iip_ops_pkt_increment_head(void *pkt, uint16_t len, void *opaque) { (void) pkt; (void) len; (void) opaque; }
+static void     iip_ops_pkt_decrement_tail(void *pkt, uint16_t len, void *opaque) { (void) pkt; (void) len; (void) opaque; }
+static void *   iip_ops_pkt_clone(void *pkt, void *opaque) { (void) pkt; (void) opaque; return (void *) 0; }
+static void     iip_ops_pkt_scatter_gather_chain_append(void *pkt_head, void *pkt_tail, void *opaque) { (void) pkt_head; (void) pkt_tail; (void) opaque; }
+static void *   iip_ops_pkt_scatter_gather_chain_get_next(void *pkt_head, void *opaque) { (void) pkt_head; (void) opaque; return (void *) 0; }
 
 static uint16_t iip_ops_util_core(void) { return 0; }
-static void     iip_ops_util_now_ns(uint32_t t[3] __attribute__((unused))) { }
+static void     iip_ops_util_now_ns(uint32_t t[3]) { (void) t; }
 
-static void     iip_ops_eth_flush(void *opaque __attribute__((unused))) { }
-static void     iip_ops_eth_push(void *_m __attribute__((unused)), void *opaque __attribute__((unused))) { }
+static void     iip_ops_eth_flush(void *opaque) { (void) opaque; }
+static void     iip_ops_eth_push(void *_m, void *opaque) { (void) _m; (void) opaque; }
 
-static uint8_t  iip_ops_nic_feature_offload_tx_scatter_gather(void *opaque __attribute__((unused))) { return 0; }
-static uint8_t  iip_ops_nic_feature_offload_ip4_rx_checksum(void *opaque __attribute__((unused))) { return 0; }
-static uint8_t  iip_ops_nic_feature_offload_ip4_tx_checksum(void *opaque __attribute__((unused))) { return 0; }
-static uint8_t  iip_ops_nic_offload_ip4_rx_checksum(void *m __attribute__((unused)), void *opaque __attribute__((unused))) { return 0; }
-static uint8_t  iip_ops_nic_offload_tcp_rx_checksum(void *m __attribute__((unused)), void *opaque __attribute__((unused))) { return 0; }
-static uint8_t  iip_ops_nic_offload_udp_rx_checksum(void *m __attribute__((unused)), void *opaque __attribute__((unused))) { return 0; }
-static void     iip_ops_nic_offload_ip4_tx_checksum_mark(void *m __attribute__((unused)), void *opaque __attribute__((unused))) { }
-static uint8_t  iip_ops_nic_feature_offload_tcp_rx_checksum(void *opaque __attribute__((unused))) { return 0; }
-static uint8_t  iip_ops_nic_feature_offload_tcp_tx_checksum(void *opaque __attribute__((unused))) { return 0; }
-static uint8_t  iip_ops_nic_feature_offload_tcp_tx_tso(void *opaque __attribute__((unused))) { return 0; }
-static void     iip_ops_nic_offload_tcp_tx_checksum_mark(void *m __attribute__((unused)), void *opaque __attribute__((unused))) { }
-static void     iip_ops_nic_offload_tcp_tx_tso_mark(void *m __attribute__((unused)), void *opaque __attribute__((unused))) { }
-static uint8_t  iip_ops_nic_feature_offload_udp_rx_checksum(void *opaque __attribute__((unused))) { return 0; }
-static uint8_t  iip_ops_nic_feature_offload_udp_tx_checksum(void *opaque __attribute__((unused))) { return 0; }
-static uint8_t  iip_ops_nic_feature_offload_udp_tx_tso(void *opaque __attribute__((unused))) { return 0; }
-static void     iip_ops_nic_offload_udp_tx_checksum_mark(void *m __attribute__((unused)), void *opaque __attribute__((unused))) { }
-static void     iip_ops_nic_offload_udp_tx_tso_mark(void *m __attribute__((unused)), void *opaque __attribute__((unused))) { }
+static uint8_t  iip_ops_nic_feature_offload_tx_scatter_gather(void *opaque) { (void) opaque; return 0; }
+static uint8_t  iip_ops_nic_feature_offload_ip4_rx_checksum(void *opaque) { (void) opaque; return 0; }
+static uint8_t  iip_ops_nic_feature_offload_ip4_tx_checksum(void *opaque) { (void) opaque; return 0; }
+static uint8_t  iip_ops_nic_offload_ip4_rx_checksum(void *m, void *opaque) { (void) m; (void) opaque; return 0; }
+static uint8_t  iip_ops_nic_offload_tcp_rx_checksum(void *m, void *opaque) { (void) m; (void) opaque; return 0; }
+static uint8_t  iip_ops_nic_offload_udp_rx_checksum(void *m, void *opaque) { (void) m; (void) opaque; return 0; }
+static void     iip_ops_nic_offload_ip4_tx_checksum_mark(void *m, void *opaque) { (void) m; (void) opaque; }
+static uint8_t  iip_ops_nic_feature_offload_tcp_rx_checksum(void *opaque) { (void) opaque; return 0; }
+static uint8_t  iip_ops_nic_feature_offload_tcp_tx_checksum(void *opaque) { (void) opaque; return 0; }
+static uint8_t  iip_ops_nic_feature_offload_tcp_tx_tso(void *opaque) { (void) opaque; return 0; }
+static void     iip_ops_nic_offload_tcp_tx_checksum_mark(void *m, void *opaque) { (void) m; (void) opaque; }
+static void     iip_ops_nic_offload_tcp_tx_tso_mark(void *m, void *opaque) { (void) m; (void) opaque; }
+static uint8_t  iip_ops_nic_feature_offload_udp_rx_checksum(void *opaque) { (void) opaque; return 0; }
+static uint8_t  iip_ops_nic_feature_offload_udp_tx_checksum(void *opaque) { (void) opaque; return 0; }
+static uint8_t  iip_ops_nic_feature_offload_udp_tx_tso(void *opaque) { (void) opaque; return 0; }
+static void     iip_ops_nic_offload_udp_tx_checksum_mark(void *m, void *opaque) { (void) m; (void) opaque; }
+static void     iip_ops_nic_offload_udp_tx_tso_mark(void *m, void *opaque) { (void) m; (void) opaque; }
 
-static void     iip_ops_arp_reply(void *_mem __attribute__((unused)), void *m __attribute__((unused)), void *opaque __attribute__((unused))) { }
-static void     iip_ops_icmp_reply(void *_mem __attribute__((unused)), void *m __attribute__((unused)), void *opaque __attribute__((unused))) { }
-static uint8_t  iip_ops_tcp_accept(void *mem __attribute__((unused)), void *m __attribute__((unused)), void *opaque __attribute__((unused))) { return 0; }
-static void *   iip_ops_tcp_accepted(void *mem __attribute__((unused)), void *handle __attribute__((unused)), void *m __attribute__((unused)), void *opaque __attribute__((unused))) { return (void *) 0; }
-static void *   iip_ops_tcp_connected(void *mem __attribute__((unused)), void *handle __attribute__((unused)), void *m __attribute__((unused)), void *opaque __attribute__((unused))) { return (void *) 0; }
-static void     iip_ops_tcp_payload(void *mem __attribute__((unused)), void *handle __attribute__((unused)), void *m __attribute__((unused)), void *tcp_opaque __attribute__((unused)), void *opaque __attribute__((unused))) { }
-static void     iip_ops_tcp_acked(void *mem __attribute__((unused)), void *handle __attribute__((unused)), void *m __attribute__((unused)), void *tcp_opaque __attribute__((unused)), void *opaque __attribute__((unused))) { }
-static void     iip_ops_tcp_closed(void *handle __attribute__((unused)), void *tcp_opaque __attribute__((unused)), void *opaque __attribute__((unused))) { }
-static void     iip_ops_udp_payload(void *mem __attribute__((unused)), void *m __attribute__((unused)), void *opaque __attribute__((unused))) { }
+static void     iip_ops_arp_reply(void *_mem, void *m, void *opaque) { (void) _mem; (void) m; (void) opaque; }
+static void     iip_ops_icmp_reply(void *_mem, void *m, void *opaque) { (void) _mem; (void) m; (void) opaque; }
+static uint8_t  iip_ops_tcp_accept(void *mem, void *m, void *opaque) { (void) mem; (void) m; (void) opaque; return 0; }
+static void *   iip_ops_tcp_accepted(void *mem, void *handle, void *m, void *opaque) { (void) mem; (void) handle; (void) m; (void) opaque; return (void *) 0; }
+static void *   iip_ops_tcp_connected(void *mem, void *handle, void *m, void *opaque) { (void) mem; (void) handle; (void) m; (void) opaque; return (void *) 0; }
+static void     iip_ops_tcp_payload(void *mem, void *handle, void *m, void *tcp_opaque, void *opaque) { (void) mem; (void) handle; (void) m; (void) tcp_opaque; (void) opaque; }
+static void     iip_ops_tcp_acked(void *mem, void *handle, void *m, void *tcp_opaque, void *opaque) { (void) mem; (void) handle; (void) m; (void) tcp_opaque; (void) opaque; }
+static void     iip_ops_tcp_closed(void *handle, void *tcp_opaque, void *opaque) { (void) handle; (void) tcp_opaque; (void) opaque; }
+static void     iip_ops_udp_payload(void *mem, void *m, void *opaque) { (void) mem; (void) m; (void) opaque; }
 
 void _start(void) {
   (void) iip_run;
