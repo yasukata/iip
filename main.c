@@ -120,17 +120,18 @@ static void iip_ops_util_now_ns(uint32_t [3]);
 #endif
 
 #ifndef __iip_memcmp
-#define __iip_memcmp(__s1, __s2, __n) \
-({ \
-	uint32_t __i = 0, ret = 0; \
-	for (__i = 0; __i < (uint32_t)(__n); __i++) { \
-		if (((uint8_t *) __s1)[__i] != ((uint8_t *) __s2)[__i]) { \
-			ret = __i + 1; \
-			break; \
-		} \
-	} \
-	ret; \
-})
+static uint32_t __iip_memcmp_impl(void *__s1, void *__s2, uint32_t __n)
+{
+	uint32_t __i = 0, ret = 0;
+	for (__i = 0; __i < (uint32_t)(__n); __i++) {
+		if (((uint8_t *) __s1)[__i] != ((uint8_t *) __s2)[__i]) {
+			ret = __i + 1;
+			break;
+		}
+	}
+	return ret;
+}
+#define __iip_memcmp(__s1, __s2, __n) __iip_memcmp_impl(__s1, __s2, __n)
 #endif
 
 #ifndef __iip_memmove
@@ -160,34 +161,34 @@ static void iip_ops_util_now_ns(uint32_t [3]);
 	} while (0)
 #endif
 
-#define __iip_netcsum16(__b, __l, __c, __m) \
-	({ \
-		uint32_t __r = 0; uint16_t __n; uint8_t __k; \
-		for (__n = 0, __k = 0; __n < (__c); __n++) { \
-			uint32_t __i, __o = __k; \
-			for (__i = __k; __i < (__l)[__n]; ) { \
-				if ((__k == 1) || ((__l)[__n] - __i == 1)) { \
-					uint16_t __v = ((uint8_t *)((__b)[__n]))[__i] & 0x00ff; \
-					if (__k == 0) { \
-						__v <<= 8; \
-						__k = 1; \
-					} else { \
-						__k = 0; \
-					} \
-					__r += __v; \
-					__i += 1; \
-				} else { \
-					uint16_t __v = ((uint16_t *)((__b)[__n]))[__i / 2 + __o]; \
-					__r += __iip_htons(__v); \
-					__i += 2; \
-				} \
-			} \
-		} \
-		__r -= (__m); \
-		__r = (__r >> 16) + (__r & 0x0000ffff); \
-		__r = (__r >> 16) + __r; \
-		(uint16_t)~((uint16_t) __r); \
-	})
+static uint16_t __iip_netcsum16(uint8_t *__b[], uint16_t __l[], uint16_t __c, uint16_t __m)
+{
+	uint32_t __r = 0; uint16_t __n; uint8_t __k;
+	for (__n = 0, __k = 0; __n < (__c); __n++) {
+		uint32_t __i, __o = __k;
+		for (__i = __k; __i < (__l)[__n]; ) {
+			if ((__k == 1) || ((__l)[__n] - __i == 1)) {
+				uint16_t __v = ((uint8_t *)((__b)[__n]))[__i] & 0x00ff;
+				if (__k == 0) {
+					__v <<= 8;
+					__k = 1;
+				} else {
+					__k = 0;
+				}
+				__r += __v;
+				__i += 1;
+			} else {
+				uint16_t __v = ((uint16_t *)((__b)[__n]))[__i / 2 + __o];
+				__r += __iip_htons(__v);
+				__i += 2;
+			}
+		}
+	}
+	__r -= (__m);
+	__r = (__r >> 16) + (__r & 0x0000ffff);
+	__r = (__r >> 16) + __r;
+	return (uint16_t)~((uint16_t) __r);
+}
 
 #define __iip_round_up(_v, _r) ((((_v) / (_r)) + ((_v) % (_r) ? 1 : 0)) * (_r))
 
@@ -230,12 +231,12 @@ static void iip_ops_util_now_ns(uint32_t [3]);
 	} while (0)
 #endif
 
-#define __iip_now_in_ms() \
-	({ \
-		uint32_t t[3]; \
-		iip_ops_util_now_ns(t); \
-		(t[1] * 1000UL + t[2] / 1000000UL); \
-	})
+static uint32_t __iip_now_in_ms(void)
+{
+	uint32_t t[3];
+	iip_ops_util_now_ns(t);
+	return (t[1] * 1000UL + t[2] / 1000000UL);
+}
 
 /* protocol headers */
 
