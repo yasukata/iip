@@ -52,8 +52,16 @@ static void *   iip_ops_pkt_scatter_gather_chain_get_next(void *pkt_head, void *
 static uint16_t iip_ops_util_core(void) { return 0; }
 static void     iip_ops_util_now_ns(uint32_t t[3]) { (void) t; }
 
-static void     iip_ops_eth_flush(void *opaque) { (void) opaque; }
-static void     iip_ops_eth_push(void *_m, void *opaque) { (void) _m; (void) opaque; }
+static uint16_t iip_ops_l2_hdr_len(void *pkt, void *opaque) { (void) pkt; (void) opaque; return 0; }
+static uint8_t*	iip_ops_l2_hdr_src_ptr(void *pkt, void *opaque) { (void) pkt; (void) opaque; return (uint8_t *) 0; }
+static uint8_t*	iip_ops_l2_hdr_dst_ptr(void *pkt, void *opaque) { (void) pkt; (void) opaque; return (uint8_t *) 0; }
+static uint16_t	iip_ops_l2_ethertype_be(void *pkt, void *opaque) { (void) pkt; (void) opaque; return 0; }
+static uint16_t	iip_ops_l2_addr_len(void *opaque) { (void) opaque; return 0; }
+static void	iip_ops_l2_broadcast_addr(uint8_t bcaddr[], void *opaque) { (void) bcaddr; (void) opaque; }
+static void	iip_ops_l2_hdr_craft(void *pkt, uint8_t src[], uint8_t dst[], uint16_t ethertype_be, void *opaque) { (void) pkt; (void) src; (void) src; (void) dst; (void) ethertype_be; (void) opaque; }
+static uint8_t	iip_ops_l2_skip(void *pkt, void *opaque) { (void) pkt; (void) opaque; return 0; }
+static void     iip_ops_l2_flush(void *opaque) { (void) opaque; }
+static void     iip_ops_l2_push(void *_m, void *opaque) { (void) _m; (void) opaque; }
 
 static uint8_t  iip_ops_nic_feature_offload_tx_scatter_gather(void *opaque) { (void) opaque; return 0; }
 static uint8_t  iip_ops_nic_feature_offload_ip4_rx_checksum(void *opaque) { (void) opaque; return 0; }
@@ -73,6 +81,8 @@ static uint8_t  iip_ops_nic_feature_offload_udp_tx_tso(void *opaque) { (void) op
 static void     iip_ops_nic_offload_udp_tx_checksum_mark(void *m, void *opaque) { (void) m; (void) opaque; }
 static void     iip_ops_nic_offload_udp_tx_tso_mark(void *m, void *opaque) { (void) m; (void) opaque; }
 
+static uint8_t	iip_ops_arp_lhw(void *opaque) { (void) opaque; return 0; }
+static uint8_t	iip_ops_arp_lproto(void *opaque) { (void) opaque; return 0; }
 static void     iip_ops_arp_reply(void *_mem, void *m, void *opaque) { (void) _mem; (void) m; (void) opaque; }
 static void     iip_ops_icmp_reply(void *_mem, void *m, void *opaque) { (void) _mem; (void) m; (void) opaque; }
 static uint8_t  iip_ops_tcp_accept(void *mem, void *m, void *opaque) { (void) mem; (void) m; (void) opaque; return 0; }
