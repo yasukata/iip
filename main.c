@@ -1108,6 +1108,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 											ip4h->proto = 1; /* icmp */
 											ip4h->src_be = PB_IP4(p->buf)->dst_be;
 											ip4h->dst_be = PB_IP4(p->buf)->src_be;
+											ip4h->csum_be = 0;
 											if (!iip_ops_nic_feature_offload_ip4_tx_checksum(opaque)) { /* ip4 csum */
 												uint8_t *_b[1] = { (uint8_t *) ip4h, };
 												uint16_t _l[1] = { (uint16_t) (ip4h->l * 4), };
