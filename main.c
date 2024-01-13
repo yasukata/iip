@@ -32,6 +32,7 @@
 #define IIP_CONF_TCP_RTO_MS_INIT	(200U) /* 200 ms */
 #define IIP_CONF_TCP_CONN_HT_SIZE	(829) /* generally bigger is faster at the cost of memory consumption */
 #define IIP_CONF_TCP_TIMESTAMP_ENABLE	(1)
+#define IIP_CONF_L2ADDR_LEN_MAX		(6)
 
 #if !defined(IIP_CONF_ENDIAN)
 #error "byte order is not defined"
@@ -51,8 +52,18 @@ static void iip_ops_pkt_decrement_tail(void *, uint16_t, void *);
 static void *iip_ops_pkt_clone(void *, void *); /* assuming the entire packet chain is cloned while reference counts to the payload buffers are also incremented */
 static void iip_ops_pkt_scatter_gather_chain_append(void *, void *, void *);
 static void *iip_ops_pkt_scatter_gather_chain_get_next(void *, void *);
-static void iip_ops_eth_flush(void *);
-static void iip_ops_eth_push(void *, void *); /* assuming packet object is released by app */
+static uint16_t iip_ops_l2_hdr_len(void *, void *);
+static uint8_t *iip_ops_l2_hdr_src_ptr(void *, void *);
+static uint8_t *iip_ops_l2_hdr_dst_ptr(void *, void *);
+static uint16_t iip_ops_l2_ethertype_be(void *, void *);
+static uint16_t iip_ops_l2_addr_len(void *);
+static void iip_ops_l2_broadcast_addr(uint8_t [], void *);
+static void iip_ops_l2_hdr_craft(void *, uint8_t [], uint8_t [], uint16_t, void *);
+static uint8_t iip_ops_l2_skip(void *, void *);
+static void iip_ops_l2_flush(void *);
+static void iip_ops_l2_push(void *, void *); /* assuming packet object is released by app */
+static uint8_t iip_ops_arp_lhw(void *);
+static uint8_t iip_ops_arp_lproto(void *);
 static void iip_ops_arp_reply(void *, void *, void *);
 static void iip_ops_icmp_reply(void *, void *, void *);
 static uint8_t iip_ops_tcp_accept(void *, void *, void *);
@@ -240,12 +251,6 @@ static uint32_t __iip_now_in_ms(void)
 
 /* protocol headers */
 
-struct iip_eth_hdr {
-	uint8_t dst[6];
-	uint8_t src[6];
-	uint16_t type_be; /* type in big endian */
-};
-
 struct iip_ip4_hdr {
 #if IIP_CONF_ENDIAN == 1
 	uint8_t l:4, v:4; /* the unit of l is 4 octet */
@@ -271,10 +276,6 @@ struct iip_arp_hdr {
 	uint8_t lhw;
 	uint8_t lproto;
 	uint16_t op_be;
-	uint8_t mac_sender[6];
-	uint8_t ip_sender[4];
-	uint8_t mac_target[6];
-	uint8_t ip_target[4];
 };
 
 struct iip_icmp_hdr {
@@ -321,9 +322,12 @@ struct iip_udp_hdr {
 	uint16_t csum_be;
 };
 
-#define PB_ETH(__b) ((struct iip_eth_hdr *)(__b))
-#define PB_IP4(__b) ((struct iip_ip4_hdr *)((uintptr_t) PB_ETH(__b) + sizeof(struct iip_eth_hdr)))
+#define PB_IP4(__b) ((struct iip_ip4_hdr *)((uintptr_t) (__b) + iip_ops_l2_hdr_len(__b, opaque)))
 #define PB_ARP(__b) ((struct iip_arp_hdr *)(PB_IP4(__b)))
+#define PB_ARP_HW_SENDER(__b) ((uint8_t *)((uintptr_t) PB_ARP(__b) + sizeof(struct iip_arp_hdr)))
+#define PB_ARP_IP_SENDER(__b) ((uint8_t *)((uintptr_t) PB_ARP_HW_SENDER(__b) + PB_ARP(__b)->lhw))
+#define PB_ARP_HW_TARGET(__b) ((uint8_t *)((uintptr_t) PB_ARP_IP_SENDER(__b) + PB_ARP(__b)->lproto))
+#define PB_ARP_IP_TARGET(__b) ((uint8_t *)((uintptr_t) PB_ARP_HW_TARGET(__b) + PB_ARP(__b)->lhw))
 #define PB_ICMP(__b) ((struct iip_icmp_hdr *)((uintptr_t) PB_IP4(__b) + PB_IP4(__b)->l * 4))
 #define PB_ICMP_PAYLOAD(__b) ((uint8_t *)((uintptr_t) PB_ICMP(__b) + sizeof(struct iip_icmp_hdr)))
 #define PB_ICMP_PAYLOAD_LEN(__b) ((uint16_t)(__iip_htons(PB_IP4(__b)->len_be) - PB_IP4(__b)->l * 4 - sizeof(struct iip_icmp_hdr)))
@@ -393,8 +397,8 @@ struct iip_tcp_hdr_conn {
 	uint16_t peer_port_be;
 	uint32_t local_ip4_be;
 	uint32_t peer_ip4_be;
-	uint8_t local_mac[6];
-	uint8_t peer_mac[6];
+	uint8_t local_mac[IIP_CONF_L2ADDR_LEN_MAX];
+	uint8_t peer_mac[IIP_CONF_L2ADDR_LEN_MAX];
 
 	uint32_t seq_be;
 	uint32_t ack_seq_be;
@@ -547,7 +551,7 @@ static void iip_add_tcp_conn(void *_mem, void *_conn)
 /* protocol stack implementation */
 
 static void iip_arp_request(void *_mem,
-			    uint8_t local_mac[6],
+			    uint8_t local_mac[],
 			    uint32_t local_ip4_be,
 			    uint32_t target_ip4_be,
 			    void *opaque)
@@ -558,25 +562,24 @@ static void iip_arp_request(void *_mem,
 	void *out_pkt = iip_ops_pkt_alloc(opaque);
 	__iip_assert(out_pkt);
 	{
-		struct iip_eth_hdr *ethh = PB_ETH(iip_ops_pkt_get_data(out_pkt, opaque));
-		__iip_memcpy(ethh->src, local_mac, 6);
-		__iip_memset(ethh->dst, 0xff, 6);
-		ethh->type_be = __iip_htons(0x0806);
+		uint8_t bc_mac[IIP_CONF_L2ADDR_LEN_MAX];
+		iip_ops_l2_broadcast_addr(bc_mac, opaque);
+		iip_ops_l2_hdr_craft(out_pkt, local_mac, bc_mac, __iip_htons(0x0806), opaque);
 	}
 	{
 		struct iip_arp_hdr *arph = PB_ARP(iip_ops_pkt_get_data(out_pkt, opaque));
 		arph->hw_be = __iip_htons(0x0001);
 		arph->proto_be = __iip_htons(0x0800);
-		arph->lhw = 6;
-		arph->lproto = 4;
+		arph->lhw = iip_ops_arp_lhw(opaque);
+		arph->lproto = iip_ops_arp_lproto(opaque);
 		arph->op_be = __iip_htons(0x0001);
-		__iip_memcpy(arph->mac_sender, local_mac, 6);
-		__iip_memset(arph->mac_target, 0, 6);
-		__iip_memcpy(arph->ip_sender, (uint8_t *) &local_ip4_be, 4);
-		__iip_memcpy(arph->ip_target, (uint8_t *) &target_ip4_be, 4);
+		__iip_memcpy(PB_ARP_HW_SENDER(iip_ops_pkt_get_data(out_pkt, opaque)), local_mac, 6);
+		__iip_memset(PB_ARP_HW_TARGET(iip_ops_pkt_get_data(out_pkt, opaque)), 0, 6);
+		__iip_memcpy(PB_ARP_IP_SENDER(iip_ops_pkt_get_data(out_pkt, opaque)), (uint8_t *) &local_ip4_be, 4);
+		__iip_memcpy(PB_ARP_IP_TARGET(iip_ops_pkt_get_data(out_pkt, opaque)), (uint8_t *) &target_ip4_be, 4);
+		iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(struct iip_arp_hdr) + arph->lhw * 2 + arph->lproto * 2, opaque);
 	}
-	iip_ops_pkt_set_len(out_pkt, sizeof(struct iip_eth_hdr) + sizeof(struct iip_arp_hdr), opaque);
-	iip_ops_eth_push(out_pkt, opaque);
+	iip_ops_l2_push(out_pkt, opaque);
 }
 
 static uint16_t __iip_tcp_push(struct workspace *s,
@@ -600,12 +603,7 @@ again:
 			iip_ops_pkt_set_len(pkt, payload_len, opaque);
 		}
 	}
-	{
-		struct iip_eth_hdr *ethh = PB_ETH(out_p->buf);
-		__iip_memcpy(ethh->src, conn->local_mac, 6);
-		__iip_memcpy(ethh->dst, conn->peer_mac, 6);
-		ethh->type_be = __iip_htons(0x0800);
-	}
+	iip_ops_l2_hdr_craft(out_p->pkt, conn->local_mac, conn->peer_mac, __iip_htons(0x0800), opaque);
 	{
 		struct iip_ip4_hdr *ip4h = PB_IP4(out_p->buf);
 		ip4h->l = sizeof(struct iip_ip4_hdr) / 4;
@@ -698,10 +696,10 @@ again:
 
 	if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
 		if (pkt) iip_ops_pkt_scatter_gather_chain_append(out_p->pkt, pkt, opaque);
-		iip_ops_pkt_set_len(out_p->pkt, sizeof(struct iip_eth_hdr) + PB_IP4(out_p->buf)->l * 4 + PB_TCP(out_p->buf)->doff * 4, opaque);
+		iip_ops_pkt_set_len(out_p->pkt, iip_ops_l2_hdr_len(out_p->pkt, opaque) + PB_IP4(out_p->buf)->l * 4 + PB_TCP(out_p->buf)->doff * 4, opaque);
 	} else {
 		if (pkt) __iip_memcpy(PB_TCP_PAYLOAD(out_p->buf), iip_ops_pkt_get_data(pkt, opaque), payload_len);
-		iip_ops_pkt_set_len(out_p->pkt, sizeof(struct iip_eth_hdr) + PB_IP4(out_p->buf)->l * 4 + PB_TCP(out_p->buf)->doff * 4 + payload_len, opaque);
+		iip_ops_pkt_set_len(out_p->pkt, iip_ops_l2_hdr_len(out_p->pkt, opaque) + PB_IP4(out_p->buf)->l * 4 + PB_TCP(out_p->buf)->doff * 4 + payload_len, opaque);
 		if (pkt) out_p->orig_pkt = pkt;
 	}
 
@@ -761,8 +759,8 @@ static void iip_tcp_rxbuf_consumed(void *_mem, void *_handle, uint16_t cnt, void
 }
 
 static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_hdr_conn *conn,
-				uint8_t local_mac[6], uint32_t local_ip4_be, uint16_t local_port_be,
-				uint8_t peer_mac[6], uint32_t peer_ip4_be, uint16_t peer_port_be,
+				uint8_t local_mac[], uint32_t local_ip4_be, uint16_t local_port_be,
+				uint8_t peer_mac[], uint32_t peer_ip4_be, uint16_t peer_port_be,
 				uint8_t state, void *opaque)
 {
 	{ /* unused */
@@ -793,8 +791,8 @@ static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_hdr_conn *co
 }
 
 static uint16_t iip_tcp_connect(void *_mem,
-				uint8_t local_mac[6], uint32_t local_ip4_be, uint16_t local_port_be,
-				uint8_t peer_mac[6], uint32_t peer_ip4_be, uint16_t peer_port_be,
+				uint8_t local_mac[], uint32_t local_ip4_be, uint16_t local_port_be,
+				uint8_t peer_mac[], uint32_t peer_ip4_be, uint16_t peer_port_be,
 				void *opaque)
 {
 	struct workspace *s = (struct workspace *) _mem;
@@ -806,8 +804,8 @@ static uint16_t iip_tcp_connect(void *_mem,
 }
 
 static uint16_t iip_udp_send(void *_mem,
-			     uint8_t local_mac[6], uint32_t local_ip4_be, uint16_t local_port_be,
-			     uint8_t peer_mac[6], uint32_t peer_ip4_be, uint16_t peer_port_be,
+			     uint8_t local_mac[], uint32_t local_ip4_be, uint16_t local_port_be,
+			     uint8_t peer_mac[], uint32_t peer_ip4_be, uint16_t peer_port_be,
 			     void *pkt, void *opaque)
 {
 	{ /* unused */
@@ -816,12 +814,7 @@ static uint16_t iip_udp_send(void *_mem,
 	void *out_pkt = iip_ops_pkt_alloc(opaque);
 	uint16_t payload_len = (pkt ? iip_ops_pkt_get_len(pkt, opaque) : 0);
 	__iip_assert(out_pkt);
-	{
-		struct iip_eth_hdr *ethh = PB_ETH(iip_ops_pkt_get_data(out_pkt, opaque));
-		__iip_memcpy(ethh->src, local_mac, 6);
-		__iip_memcpy(ethh->dst, peer_mac, 6);
-		ethh->type_be = __iip_htons(0x0800);
-	}
+	iip_ops_l2_hdr_craft(out_pkt, local_mac, peer_mac, __iip_htons(0x0800), opaque);
 	{
 		struct iip_ip4_hdr *ip4h = PB_IP4(iip_ops_pkt_get_data(out_pkt, opaque));
 		ip4h->l = sizeof(struct iip_ip4_hdr) / 4;
@@ -862,10 +855,10 @@ static uint16_t iip_udp_send(void *_mem,
 
 			if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
 				if (pkt) iip_ops_pkt_scatter_gather_chain_append(out_pkt, pkt, opaque);
-				iip_ops_pkt_set_len(out_pkt, sizeof(struct iip_eth_hdr) + ip4h->l * 4 + sizeof(struct iip_udp_hdr), opaque);
+				iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + ip4h->l * 4 + sizeof(struct iip_udp_hdr), opaque);
 			} else {
-				if (pkt) __iip_memcpy(&((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque))[sizeof(struct iip_eth_hdr) + ip4h->l * 4 + sizeof(struct iip_udp_hdr)], iip_ops_pkt_get_data(pkt, opaque), payload_len);
-				iip_ops_pkt_set_len(out_pkt, sizeof(struct iip_eth_hdr) + ip4h->l * 4 + __iip_ntohs(udph->len_be), opaque);
+				if (pkt) __iip_memcpy(&((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque))[iip_ops_l2_hdr_len(out_pkt, opaque) + ip4h->l * 4 + sizeof(struct iip_udp_hdr)], iip_ops_pkt_get_data(pkt, opaque), payload_len);
+				iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + ip4h->l * 4 + __iip_ntohs(udph->len_be), opaque);
 				if (pkt) iip_ops_pkt_free(pkt, opaque);
 			}
 		}
@@ -874,12 +867,12 @@ static uint16_t iip_udp_send(void *_mem,
 	if (iip_ops_nic_feature_offload_udp_tx_tso(opaque))
 		iip_ops_nic_offload_udp_tx_tso_mark(out_pkt, opaque);
 
-	iip_ops_eth_push(out_pkt, opaque);
+	iip_ops_l2_push(out_pkt, opaque);
 
 	return 0;
 }
 
-static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[], uint16_t cnt, uint32_t *next_us, void *opaque)
+static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[], uint16_t cnt, uint32_t *next_us, void *opaque)
 {
 	struct workspace *s = (struct workspace *) _mem;
 	uint16_t ret = 0;
@@ -944,128 +937,129 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 		{
 			uint16_t i;
 			for (i = 0; i < cnt; i++) {
-				uint8_t pkt_used = 0;
-				struct pb *p = __iip_alloc_pb(s, pkt[i], opaque);
-				switch (__iip_ntohs(PB_ETH(p->buf)->type_be)) {
-				case 0x0800: /* ip */
-					if (!__iip_memcmp(mac, PB_ETH(p->buf)->dst, 6)) {
-						/*D("ip4-in : src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u v %u, l %u, proto %u",
-								(PB_IP4(p->buf)->src_be >>  0) & 0x0ff,
-								(PB_IP4(p->buf)->src_be >>  8) & 0x0ff,
-								(PB_IP4(p->buf)->src_be >> 16) & 0x0ff,
-								(PB_IP4(p->buf)->src_be >> 24) & 0x0ff,
-								(PB_IP4(p->buf)->dst_be >>  0) & 0x0ff,
-								(PB_IP4(p->buf)->dst_be >>  8) & 0x0ff,
-								(PB_IP4(p->buf)->dst_be >> 16) & 0x0ff,
-								(PB_IP4(p->buf)->dst_be >> 24) & 0x0ff,
-								PB_IP4(p->buf)->v, PB_IP4(p->buf)->l,
-								PB_IP4(p->buf)->proto);*/
-						if (PB_IP4(p->buf)->v != 4) { /* ip version*/
-							D("this is not ipv4 (%u)", PB_IP4(p->buf)->v);
-							break;
-						}
-						if (PB_IP4(p->buf)->l * 4 > iip_ops_pkt_get_len(pkt[i], opaque)) {
-							D("ip4 hdr invalid length");
-							break;
-						}
-						if (iip_ops_nic_feature_offload_ip4_rx_checksum(opaque)) {
-							if (!iip_ops_nic_offload_ip4_rx_checksum(p->pkt, opaque)) {
-								D("invalid ip4 csum");
+				if (iip_ops_l2_skip(pkt[i], opaque))
+					iip_ops_pkt_free(pkt[i], opaque);
+				else {
+					uint8_t pkt_used = 0;
+					struct pb *p = __iip_alloc_pb(s, pkt[i], opaque);
+					switch (__iip_ntohs(iip_ops_l2_ethertype_be(p->pkt, opaque))) {
+					case 0x0800: /* ip */
+						if (!__iip_memcmp(mac, iip_ops_l2_hdr_dst_ptr(p->pkt, opaque), iip_ops_l2_addr_len(opaque))) {
+							/*D("ip4-in : src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u v %u, l %u, proto %u",
+									(PB_IP4(p->buf)->src_be >>  0) & 0x0ff,
+									(PB_IP4(p->buf)->src_be >>  8) & 0x0ff,
+									(PB_IP4(p->buf)->src_be >> 16) & 0x0ff,
+									(PB_IP4(p->buf)->src_be >> 24) & 0x0ff,
+									(PB_IP4(p->buf)->dst_be >>  0) & 0x0ff,
+									(PB_IP4(p->buf)->dst_be >>  8) & 0x0ff,
+									(PB_IP4(p->buf)->dst_be >> 16) & 0x0ff,
+									(PB_IP4(p->buf)->dst_be >> 24) & 0x0ff,
+									PB_IP4(p->buf)->v, PB_IP4(p->buf)->l,
+									PB_IP4(p->buf)->proto);*/
+							if (PB_IP4(p->buf)->v != 4) { /* ip version*/
+								D("this is not ipv4 (%u)", PB_IP4(p->buf)->v);
 								break;
 							}
-						} else {
-							uint8_t *_b[1] = { (uint8_t *) PB_IP4(p->buf), };
-							uint16_t _l[1] = { (uint16_t) (PB_IP4(p->buf)->l * 4), };
-							if (__iip_ntohs(PB_IP4(p->buf)->csum_be) != __iip_netcsum16(_b, _l, 1, __iip_ntohs(PB_IP4(p->buf)->csum_be))) {
-								D("invalid ip4 csum");
+							if (PB_IP4(p->buf)->l * 4 > iip_ops_pkt_get_len(pkt[i], opaque)) {
+								D("ip4 hdr invalid length");
 								break;
 							}
+							if (iip_ops_nic_feature_offload_ip4_rx_checksum(opaque)) {
+								if (!iip_ops_nic_offload_ip4_rx_checksum(p->pkt, opaque)) {
+									D("invalid ip4 csum");
+									break;
+								}
+							} else {
+								uint8_t *_b[1] = { (uint8_t *) PB_IP4(p->buf), };
+								uint16_t _l[1] = { (uint16_t) (PB_IP4(p->buf)->l * 4), };
+								if (__iip_ntohs(PB_IP4(p->buf)->csum_be) != __iip_netcsum16(_b, _l, 1, __iip_ntohs(PB_IP4(p->buf)->csum_be))) {
+									D("invalid ip4 csum");
+									break;
+								}
+							}
+							if (PB_IP4(p->buf)->dst_be != ip4_be) {
+								D("ip4 but not for me");
+								break;
+							}
+							/* TODO: handling ip options */
+							if (__iip_ntohs(PB_IP4(p->buf)->off_be) & (0x2000 /* more packet flag */ | 0x1fff /* offset */)) {
+								D("fragmented ip4");
+								__iip_enqueue_obj(s->queue.ip4_rx_fragment, p, 0);
+							} else
+								__iip_enqueue_obj(ip4_rx, p, 0);
+							pkt_used = 1;
 						}
-						if (PB_IP4(p->buf)->dst_be != ip4_be) {
-							D("ip4 but not for me");
-							break;
-						}
-						/* TODO: handling ip options */
-						if (__iip_ntohs(PB_IP4(p->buf)->off_be) & (0x2000 /* more packet flag */ | 0x1fff /* offset */)) {
-							D("fragmented ip4");
-							__iip_enqueue_obj(s->queue.ip4_rx_fragment, p, 0);
-						} else
-							__iip_enqueue_obj(ip4_rx, p, 0);
-						pkt_used = 1;
-					}
-					break;
-				case 0x0806: /* arp */
-					{
-						uint8_t bc_mac[] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, };
-						if (!__iip_memcmp(mac, PB_ETH(p->buf)->dst, 6) || !__iip_memcmp(bc_mac, PB_ETH(p->buf)->dst, 6)) {
-							switch (__iip_ntohs(PB_ARP(p->buf)->hw_be)) {
-							case 0x0001: /* ethernet */
-								switch (__iip_ntohs(PB_ARP(p->buf)->proto_be)) {
-								case 0x0800: /* ipv4 */
-									if (PB_ARP(p->buf)->lhw != 6) {
-										D("unknown hardawre addr size %u", PB_ARP(p->buf)->lhw);
-										break;
-									}
-									if (PB_ARP(p->buf)->lproto != 4) {
-										D("unknown ip addr size %u", PB_ARP(p->buf)->lproto);
-										break;
-									}
-									switch (__iip_ntohs(PB_ARP(p->buf)->op_be)) {
-									case 0x0001: /* request */
-										if (ip4_be == *((uint32_t *) PB_ARP(p->buf)->ip_target)) { /* arp response */
-											void *out_pkt = iip_ops_pkt_alloc(opaque);
-											__iip_assert(out_pkt);
-											{
-												struct iip_eth_hdr *ethh = PB_ETH(iip_ops_pkt_get_data(out_pkt, opaque));
-												__iip_memcpy(ethh->src, mac, 6);
-												__iip_memcpy(ethh->dst, PB_ARP(p->buf)->mac_sender, 6);
-												ethh->type_be = __iip_htons(0x0806);
+						break;
+					case 0x0806: /* arp */
+						{
+							uint8_t bc_mac[IIP_CONF_L2ADDR_LEN_MAX];
+							iip_ops_l2_broadcast_addr(bc_mac, opaque);
+							if (!__iip_memcmp(mac, iip_ops_l2_hdr_dst_ptr(p->pkt, opaque), iip_ops_l2_addr_len(opaque))
+									|| !__iip_memcmp(bc_mac, iip_ops_l2_hdr_dst_ptr(p->pkt, opaque), iip_ops_l2_addr_len(opaque))) {
+								switch (__iip_ntohs(PB_ARP(p->buf)->hw_be)) {
+								case 0x0001: /* ethernet */
+									switch (__iip_ntohs(PB_ARP(p->buf)->proto_be)) {
+									case 0x0800: /* ipv4 */
+										if (PB_ARP(p->buf)->lhw != 6) {
+											D("unknown hardawre addr size %u", PB_ARP(p->buf)->lhw);
+											break;
+										}
+										if (PB_ARP(p->buf)->lproto != 4) {
+											D("unknown ip addr size %u", PB_ARP(p->buf)->lproto);
+											break;
+										}
+										switch (__iip_ntohs(PB_ARP(p->buf)->op_be)) {
+										case 0x0001: /* request */
+											if (ip4_be == *((uint32_t *) PB_ARP_IP_TARGET(p->buf))) { /* arp response */
+												void *out_pkt = iip_ops_pkt_alloc(opaque);
+												__iip_assert(out_pkt);
+												iip_ops_l2_hdr_craft(out_pkt, mac, PB_ARP_HW_SENDER(p->buf), __iip_htons(0x0806), opaque);
+												{
+													struct iip_arp_hdr *arph = PB_ARP(iip_ops_pkt_get_data(out_pkt, opaque));
+													arph->hw_be = __iip_htons(0x0001);
+													arph->proto_be = __iip_htons(0x0800);
+													arph->lhw = iip_ops_arp_lhw(opaque);
+													arph->lproto = iip_ops_arp_lproto(opaque);
+													arph->op_be = __iip_htons(0x0002);
+													__iip_memcpy(PB_ARP_HW_SENDER(iip_ops_pkt_get_data(out_pkt, opaque)), mac, 6);
+													__iip_memcpy(PB_ARP_HW_TARGET(iip_ops_pkt_get_data(out_pkt, opaque)), PB_ARP_HW_SENDER(p->buf), 6);
+													__iip_memcpy(PB_ARP_IP_SENDER(iip_ops_pkt_get_data(out_pkt, opaque)), PB_ARP_IP_TARGET(p->buf), 4);
+													__iip_memcpy(PB_ARP_IP_TARGET(iip_ops_pkt_get_data(out_pkt, opaque)), PB_ARP_IP_SENDER(p->buf), 4);
+													iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(struct iip_arp_hdr) + arph->lhw * 2 + arph->lproto * 2, opaque);
+												}
+												iip_ops_l2_push(out_pkt, opaque);
 											}
-											{
-												struct iip_arp_hdr *arph = PB_ARP(iip_ops_pkt_get_data(out_pkt, opaque));
-												arph->hw_be = __iip_htons(0x0001);
-												arph->proto_be = __iip_htons(0x0800);
-												arph->lhw = 6;
-												arph->lproto = 4;
-												arph->op_be = __iip_htons(0x0002);
-												__iip_memcpy(arph->mac_sender, mac, 6);
-												__iip_memcpy(arph->mac_target, PB_ARP(p->buf)->mac_sender, 6);
-												__iip_memcpy(arph->ip_sender, PB_ARP(p->buf)->ip_target, 4);
-												__iip_memcpy(arph->ip_target, PB_ARP(p->buf)->ip_sender, 4);
-											}
-											iip_ops_pkt_set_len(out_pkt, sizeof(struct iip_eth_hdr) + sizeof(struct iip_arp_hdr), opaque);
-											iip_ops_eth_push(out_pkt, opaque);
+											break;
+										case 0x0002: /* reply */
+											if (ip4_be == *((uint32_t *) PB_ARP_IP_TARGET(p->buf)))
+												iip_ops_arp_reply(s, pkt[i], opaque);
+											break;
+										default:
+											D("unknown arp op 0x%x", __iip_ntohs(PB_ARP(p->buf)->op_be));
+											break;
 										}
 										break;
-									case 0x0002: /* reply */
-										if (ip4_be == *((uint32_t *) PB_ARP(p->buf)->ip_target))
-											iip_ops_arp_reply(s, pkt[i], opaque);
-										break;
 									default:
-										D("unknown arp op 0x%x", __iip_ntohs(PB_ARP(p->buf)->op_be));
+										D("unknown protocol type 0x%x", __iip_ntohs(PB_ARP(p->buf)->proto_be));
 										break;
 									}
 									break;
 								default:
-									D("unknown protocol type 0x%x", __iip_ntohs(PB_ARP(p->buf)->proto_be));
+									D("unknown hardware type 0x%x", __iip_ntohs(PB_ARP(p->buf)->hw_be));
 									break;
 								}
-								break;
-							default:
-								D("unknown hardware type 0x%x", __iip_ntohs(PB_ARP(p->buf)->hw_be));
-								break;
+							} else {
+								D("arp but not for me");
 							}
-						} else {
-							D("arp but not for me");
+							break;
 						}
+					default:
+						D("unknown ether type 0x%x", __iip_ntohs(iip_ops_l2_ethertype_be(p->pkt, opaque)));
+						break;
 					}
-					break;
-				default:
-					D("unknown ether type 0x%x", __iip_ntohs(PB_ETH(p->buf)->type_be));
-					break;
+					if (!pkt_used)
+						__iip_free_pb(s, p, opaque);
 				}
-				if (!pkt_used)
-					__iip_free_pb(s, p, opaque);
 			}
 			ret = i;
 		}
@@ -1090,12 +1084,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 									{
 										void *out_pkt = iip_ops_pkt_alloc(opaque);
 										__iip_assert(out_pkt);
-										{
-											struct iip_eth_hdr *ethh = PB_ETH(iip_ops_pkt_get_data(out_pkt, opaque));
-											__iip_memcpy(ethh->src, PB_ETH(p->buf)->dst, 6);
-											__iip_memcpy(ethh->dst, PB_ETH(p->buf)->src, 6);
-											ethh->type_be = __iip_htons(0x0800);
-										}
+										iip_ops_l2_hdr_craft(out_pkt, iip_ops_l2_hdr_dst_ptr(p->pkt, opaque), iip_ops_l2_hdr_src_ptr(p->pkt, opaque), __iip_htons(0x0800), opaque);
 										{
 											struct iip_ip4_hdr *ip4h = PB_IP4(iip_ops_pkt_get_data(out_pkt, opaque));
 											ip4h->l = sizeof(struct iip_ip4_hdr) / 4;
@@ -1131,8 +1120,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 												icmph->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 2, 0));
 											}
 										}
-										iip_ops_pkt_set_len(out_pkt, sizeof(struct iip_eth_hdr) + __iip_htons(PB_IP4(p->buf)->len_be), opaque);
-										iip_ops_eth_push(out_pkt, opaque);
+										iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + __iip_htons(PB_IP4(p->buf)->len_be), opaque);
+										iip_ops_l2_push(out_pkt, opaque);
 									}
 									break;
 								default: /* TODO */
@@ -1255,8 +1244,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 												__iip_assert(conn);
 												__iip_dequeue_obj(s->pool.conn, conn, 0);
 												__iip_tcp_conn_init(s, conn,
-														PB_ETH(p->buf)->dst, PB_IP4(p->buf)->dst_be, PB_TCP(p->buf)->dst_be,
-														PB_ETH(p->buf)->src, PB_IP4(p->buf)->src_be, PB_TCP(p->buf)->src_be,
+														iip_ops_l2_hdr_dst_ptr(p->pkt, opaque), PB_IP4(p->buf)->dst_be, PB_TCP(p->buf)->dst_be,
+														iip_ops_l2_hdr_src_ptr(p->pkt, opaque), PB_IP4(p->buf)->src_be, PB_TCP(p->buf)->src_be,
 														__IIP_TCP_STATE_SYN_RECVD, opaque);
 											}
 										}
@@ -1477,8 +1466,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 									/* we send rst as a reply */
 									struct iip_tcp_hdr_conn _conn;
 									__iip_tcp_conn_init(s, &_conn,
-											PB_ETH(p->buf)->dst, PB_IP4(p->buf)->dst_be, PB_TCP(p->buf)->dst_be,
-											PB_ETH(p->buf)->src, PB_IP4(p->buf)->src_be, PB_TCP(p->buf)->src_be,
+											iip_ops_l2_hdr_dst_ptr(p->pkt, opaque), PB_IP4(p->buf)->dst_be, PB_TCP(p->buf)->dst_be,
+											iip_ops_l2_hdr_src_ptr(p->pkt, opaque), PB_IP4(p->buf)->src_be, PB_TCP(p->buf)->src_be,
 											__IIP_TCP_STATE_SYN_RECVD, opaque);
 									_conn.ack_seq_be = __iip_ntohl(PB_TCP(p->buf)->seq_be) + PB_TCP(p->buf)->syn + PB_TCP(p->buf)->fin + PB_TCP_PAYLOAD_LEN(p->buf);
 									__iip_tcp_push(s, &_conn, NULL, 0, 0, 0, 1, NULL, opaque);
@@ -1488,7 +1477,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 										{
 											void *clone_pkt = iip_ops_pkt_clone(out_p->pkt, opaque);
 											__iip_assert(clone_pkt);
-											iip_ops_eth_push(clone_pkt, opaque);
+											iip_ops_l2_push(clone_pkt, opaque);
 										}
 										__iip_free_pb(s, out_p, opaque);
 									}
@@ -2357,7 +2346,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 									void *clone_pkt = iip_ops_pkt_clone(p->pkt, opaque);
 									__iip_assert(clone_pkt);
 									/*D("seq %u len %u", __iip_ntohl(PB_TCP(p->buf)->seq_be), PB_TCP_PAYLOAD_LEN(p->buf));*/
-									iip_ops_eth_push(clone_pkt, opaque);
+									iip_ops_l2_push(clone_pkt, opaque);
 									s->monitor.tcp.tx_pkt++;
 								}
 								p->tcp.rto_ms = IIP_CONF_TCP_RTO_MS_INIT;
@@ -2408,7 +2397,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[6], uint32_t ip4_be, void *pkt[]
 			}
 		}
 	}
-	iip_ops_eth_flush(opaque);
+	iip_ops_l2_flush(opaque);
 	*next_us = _next_us;
 #if 0
 	{
