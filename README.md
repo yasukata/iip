@@ -32,9 +32,9 @@ typedef unsigned long	uintptr_t;
 #else
 #define NULL ((void *) 0)
 #endif
-#define D(_a, ...)
 
-int printf(const char *format, ...) { (void) format; return 0; }
+int printf_nothing(const char *format, ...) { (void) format; return 0; }
+#define IIP_OPS_DEBUG_PRINTF printf_nothing
 
 #include "main.c"
 
@@ -106,18 +106,17 @@ void _start(void) {
   (void) iip_tcp_conn_size;
   (void) iip_pb_size;
   (void) iip_workspace_size;
-  (void) iip_verbose_level;
 }
 ```
 
 When the code above is saved in a file named ```stub.c```, the following command supposedly generates a binary ```a.out```.
 
 ```
-gcc -Werror -Wextra -Wall -m32 -std=c89 -nostartfiles -nodefaultlibs -nostdlib -nostdinc stub.c
+gcc -Werror -Wextra -Wall -pedantic -m32 -std=c89 -nostartfiles -nodefaultlibs -nostdlib -nostdinc stub.c
 ```
 
 ```
-g++ -Werror -Wextra -Wall -m32 -std=c++98 -nostartfiles -nodefaultlibs -nostdlib -nostdinc stub.c
+g++ -Werror -Wextra -Wall -pedantic -m32 -std=c++98 -nostartfiles -nodefaultlibs -nostdlib -nostdinc stub.c
 ```
 
 Note that the program above is just for checking whether ```main.c``` can be compiled or not, and the generated binary ```a.out``` is not runnable.
