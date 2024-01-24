@@ -49,7 +49,7 @@ static void *   iip_ops_pkt_clone(void *pkt, void *opaque) { (void) pkt; (void) 
 static void     iip_ops_pkt_scatter_gather_chain_append(void *pkt_head, void *pkt_tail, void *opaque) { (void) pkt_head; (void) pkt_tail; (void) opaque; }
 static void *   iip_ops_pkt_scatter_gather_chain_get_next(void *pkt_head, void *opaque) { (void) pkt_head; (void) opaque; return (void *) 0; }
 
-static void     iip_ops_util_now_ns(uint32_t t[3]) { (void) t; }
+static void     iip_ops_util_now_ns(uint32_t t[3], void *opaque) { (void) t; (void) opaque; }
 
 static uint16_t iip_ops_l2_hdr_len(void *pkt, void *opaque) { (void) pkt; (void) opaque; return 0; }
 static uint8_t*	iip_ops_l2_hdr_src_ptr(void *pkt, void *opaque) { (void) pkt; (void) opaque; return (uint8_t *) 0; }
