@@ -84,7 +84,7 @@ static void iip_ops_nic_offload_tcp_tx_checksum_mark(void *, void *);
 static void iip_ops_nic_offload_tcp_tx_tso_mark(void *, void *);
 static void iip_ops_nic_offload_udp_tx_checksum_mark(void *, void *);
 static void iip_ops_nic_offload_udp_tx_tso_mark(void *, void *);
-static void iip_ops_util_now_ns(uint32_t [3]);
+static void iip_ops_util_now_ns(uint32_t [3], void *);
 
 /* utilities */
 
@@ -225,10 +225,10 @@ static uint16_t __iip_netcsum16(uint8_t *__b[], uint16_t __l[], uint16_t __c, ui
 #define __iip_q_for_each_safe(__queue, _i, _n, __x) \
 	for ((_i) = (__queue)[0], _n = ((_i) ? _i->next[__x] : (NULL)); (_i); (_i) = _n, _n = ((_i) ? (_i)->next[__x] : (NULL)))
 
-static uint32_t __iip_now_in_ms(void)
+static uint32_t __iip_now_in_ms(void *opaque)
 {
 	uint32_t t[3];
-	iip_ops_util_now_ns(t);
+	iip_ops_util_now_ns(t, opaque);
 	return (t[1] * 1000UL + t[2] / 1000000UL);
 }
 
@@ -860,7 +860,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 	uint16_t ret = 0;
 	uint32_t _next_us = 1000000UL; /* 1 sec */
 	{ /* periodic timer */
-		uint32_t now_ms = __iip_now_in_ms();
+		uint32_t now_ms = __iip_now_in_ms(opaque);
 		if (1 <= now_ms - s->timer.prev_very_fast){ /* 1 ms */
 			s->timer.prev_very_fast = now_ms;
 		}
@@ -1375,9 +1375,9 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														pkt_used = 1;
 													/* IIP_OPS_DEBUG_PRINTF("out-of-order: %u %u\n", __iip_ntohl(PB_TCP(_p->buf)->seq_be), conn->seq_next_expected); */
 													if (conn->dup_ack_throttle) {
-														if (100U < __iip_now_in_ms() - conn->dup_ack_throttle_ts_ms) {
+														if (100U < __iip_now_in_ms(opaque) - conn->dup_ack_throttle_ts_ms) {
 															conn->dup_ack_throttle = 0;
-															IIP_OPS_DEBUG_PRINTF("throttle off by timer (now in ms %u)\n", __iip_now_in_ms());
+															IIP_OPS_DEBUG_PRINTF("throttle off by timer (now in ms %u)\n", __iip_now_in_ms(opaque));
 														}
 													}
 													if (!conn->dup_ack_throttle && !_p->tcp.dup_ack) {
@@ -1425,8 +1425,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														if (conn->dup_ack_sent == 3) {
 															conn->dup_ack_sent = 0;
 															conn->dup_ack_throttle = 1;
-															conn->dup_ack_throttle_ts_ms = __iip_now_in_ms();
-															IIP_OPS_DEBUG_PRINTF("throttle on (now in ms %u)\n", __iip_now_in_ms());
+															conn->dup_ack_throttle_ts_ms = __iip_now_in_ms(opaque);
+															IIP_OPS_DEBUG_PRINTF("throttle on (now in ms %u)\n", __iip_now_in_ms(opaque));
 														}
 													}
 													break;
@@ -1437,7 +1437,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												s->monitor.tcp.rx_pkt++;
 												conn->seq_next_expected += PB_TCP_HDR_HAS_SYN(_p->buf) + PB_TCP_HDR_HAS_FIN(_p->buf) + PB_TCP_PAYLOAD_LEN(_p->buf);
 												if (conn->dup_ack_throttle) {
-													IIP_OPS_DEBUG_PRINTF("throttle off by in-order packet (now in ms %u)\n", __iip_now_in_ms());
+													IIP_OPS_DEBUG_PRINTF("throttle off by in-order packet (now in ms %u)\n", __iip_now_in_ms(opaque));
 													conn->dup_ack_throttle = 0;
 												}
 												if (_p->tcp.dup_ack) {
@@ -1712,7 +1712,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														if (PB_TCP_HDR_HAS_FIN(p->buf)) {
 															ack = 1;
 															conn->state = __IIP_TCP_STATE_TIME_WAIT;
-															conn->time_wait_ts_ms = __iip_now_in_ms();
+															conn->time_wait_ts_ms = __iip_now_in_ms(opaque);
 															IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT1 - TCP_STATE_TIME_WAIT\n", (void *) conn);
 														} else {
 															conn->state = __IIP_TCP_STATE_FIN_WAIT2;
@@ -1727,7 +1727,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														ack = 1;
 														rst = 1;
 														conn->state = __IIP_TCP_STATE_TIME_WAIT;
-														conn->time_wait_ts_ms = __iip_now_in_ms();
+														conn->time_wait_ts_ms = __iip_now_in_ms(opaque);
 														IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT1 - TCP_STATE_TIME_WAIT\n", (void *) conn);
 													}
 												} else {
@@ -1742,14 +1742,14 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												if (PB_TCP_HDR_HAS_FIN(p->buf)) {
 													ack = 1;
 													conn->state = __IIP_TCP_STATE_TIME_WAIT;
-													conn->time_wait_ts_ms = __iip_now_in_ms();
+													conn->time_wait_ts_ms = __iip_now_in_ms(opaque);
 													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT2 - TCP_STATE_TIME_WAIT\n", (void *) conn);
 												}
 												break;
 											case __IIP_TCP_STATE_CLOSING:
 												if (PB_TCP_HDR_HAS_ACK(p->buf)) {
 													conn->state = __IIP_TCP_STATE_TIME_WAIT;
-													conn->time_wait_ts_ms = __iip_now_in_ms();
+													conn->time_wait_ts_ms = __iip_now_in_ms(opaque);
 													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_CLOSING - TCP_STATE_TIME_WAIT\n", (void *) conn);
 												}
 												break;
@@ -2268,7 +2268,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 					/* timeout check */
 					if (!conn->head[3][0]) { /* not in recovery mode */
 						if (conn->head[2][0]) {
-							uint32_t now = __iip_now_in_ms();
+							uint32_t now = __iip_now_in_ms(opaque);
 							if (conn->head[2][0]->tcp.rto_ms < now - conn->head[2][0]->ts) { /* timeout and do retransmission */
 								void *cp;
 								if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
@@ -2359,7 +2359,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									}
 								}
 								p->tcp.rto_ms = IIP_CONF_TCP_RTO_MS_INIT;
-								p->ts = __iip_now_in_ms();
+								p->ts = __iip_now_in_ms(opaque);
 								/*IIP_OPS_DEBUG_PRINTF("tcp-out: src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
 								   (PB_IP4(p->buf)->src_be >>  0) & 0x0ff,
 								   (PB_IP4(p->buf)->src_be >>  8) & 0x0ff,
@@ -2410,7 +2410,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 	*next_us = _next_us;
 #if 0
 	{
-		uint32_t now = __iip_now_in_ms();
+		uint32_t now = __iip_now_in_ms(opaque);
 		if (1000U < now - s->monitor.prev_print_ts) {
 			IIP_OPS_DEBUG_PRINTF("tcp rx %u keep-alive %u, dup-ack %u, win-update %u, tx %u re-tx %u (stop fc %u cc %u th %u)\n",
 				s->monitor.tcp.rx_pkt,
