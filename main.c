@@ -84,7 +84,6 @@ static void iip_ops_nic_offload_tcp_tx_checksum_mark(void *, void *);
 static void iip_ops_nic_offload_tcp_tx_tso_mark(void *, void *);
 static void iip_ops_nic_offload_udp_tx_checksum_mark(void *, void *);
 static void iip_ops_nic_offload_udp_tx_tso_mark(void *, void *);
-static uint16_t iip_ops_util_core(void);
 static void iip_ops_util_now_ns(uint32_t [3]);
 
 /* utilities */
@@ -160,7 +159,7 @@ static uint32_t __iip_memcmp_impl(void *__s1, void *__s2, uint32_t __n)
 #define __iip_assert(_cond) \
 	do { \
 		if (!(_cond))  { \
-			IIP_OPS_DEBUG_PRINTF("(%u)[%s:%u]: assertion fail\n", iip_ops_util_core(), __FILE__, __LINE__); \
+			IIP_OPS_DEBUG_PRINTF("[%s:%u]: assertion fail\n", __FILE__, __LINE__); \
 			while (1) ; \
 		} \
 	} while (0)
@@ -1243,7 +1242,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									} else { /* accept */
 										if (iip_ops_tcp_accept(s, p->pkt, opaque)) {
 											if (PB_TCP_HDR_HAS_ACK(p->buf)) {
-												IIP_OPS_DEBUG_PRINTF("WARNING: got syn-ack for non-existing connection, maybe RSS sterring would be wrong (this is core %u)\n", iip_ops_util_core());
+												IIP_OPS_DEBUG_PRINTF("WARNING: got syn-ack for non-existing connection, maybe RSS sterring would be wrong\n");
 											} else { /* got a new connection request, so allocate conn obj */
 												conn = s->pool.conn[0];
 												__iip_assert(conn);
