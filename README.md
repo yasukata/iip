@@ -9,6 +9,7 @@ iip is an integratable TCP/IP stack implementation, aiming to offer the followin
 ### I/O subsystem
 - [iip-dpdk](https://github.com/yasukata/iip-dpdk): a DPDK-based backend.
 - [iip-af_xdp](https://github.com/yasukata/iip-af_xdp): an AF_XDP-based backend.
+- [iip-netmap](https://github.com/yasukata/iip-netmap): a netmap-based backend.
 
 ### example application
 - [bench-iip](https://github.com/yasukata/bench-iip): a benchmark tool.
