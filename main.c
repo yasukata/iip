@@ -28,8 +28,8 @@
 #define IIP_CONF_TCP_RX_BUF_CNT		(512U) /* should be smaller than 735439 (1GB with 1460 mss) : limit by RFC 7323 */
 #define IIP_CONF_TCP_WIN_INIT		(1)
 #define IIP_CONF_TCP_MSL_SEC		(1) /* maximum segment lifetime, in second : RFC 793 recommends 2 min, but we can choose as we wish */
+#define IIP_CONF_TCP_RETRANS_CNT	(4) /* maximum retransmission count */
 #define IIP_CONF_TCP_SSTHRESH_INIT	(256)
-#define IIP_CONF_TCP_RTO_MS_INIT	(200U) /* 200 ms */
 #define IIP_CONF_TCP_CONN_HT_SIZE	(829) /* generally bigger is faster at the cost of memory consumption */
 #define IIP_CONF_TCP_TIMESTAMP_ENABLE	(1)
 #define IIP_CONF_L2ADDR_LEN_MAX		(6)
@@ -384,13 +384,14 @@ struct iip_tcp_hdr_conn {
 
 	/* management */
 	uint32_t acked_seq;
-	uint32_t ts;
+	uint32_t ts; /* latest timestamp of peer host */
 	uint16_t peer_win;
 	uint32_t ack_seq_sent;
 	uint32_t seq_next_expected;
 	uint8_t dup_ack_received;
 	uint8_t dup_ack_sent;
 	uint32_t time_wait_ts_ms;
+	uint32_t retrans_cnt;
 
 	uint8_t dup_ack_throttle; /* non-standard optimization */
 	uint32_t dup_ack_throttle_ts_ms;
@@ -412,6 +413,12 @@ struct iip_tcp_hdr_conn {
 		uint16_t ssthresh;
 		uint16_t win;
 	} cc; /* congestion control */
+
+	struct {
+		uint32_t ts; /* latest acked timestamp */
+		uint32_t srtt; /* smoothed RTT estimator */
+		uint32_t rttvar; /* smoothed mean RTT estimator */
+	} rtt;
 
 	void *opaque;
 
@@ -683,6 +690,9 @@ again:
 	if (ack)
 		conn->ack_seq_sent = __iip_ntohl(PB_TCP(out_p->buf)->ack_seq_be);
 
+	if (syn)
+		conn->rtt.ts = s->tcp.pkt_ts;
+
 	if (iip_ops_nic_feature_offload_tcp_tx_tso(opaque))
 		iip_ops_nic_offload_tcp_tx_tso_mark(out_p->pkt, opaque);
 
@@ -755,6 +765,8 @@ static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_hdr_conn *co
 	conn->opt[1].mss = IIP_CONF_TCP_OPT_MSS;
 	conn->cc.win = IIP_CONF_TCP_WIN_INIT;
 	conn->cc.ssthresh = IIP_CONF_TCP_SSTHRESH_INIT;
+	conn->rtt.srtt = 0;
+	conn->rtt.rttvar = 24;
 	__iip_assert(conn->rx_buf_cnt.limit * conn->opt[1].mss < (1U << 30));
 	conn->win_be = __iip_htons((conn->rx_buf_cnt.limit * conn->opt[1].mss) >> conn->opt[1].ws);
 	conn->opt[1].sack_ok = IIP_CONF_TCP_OPT_SACK_OK;
@@ -1674,7 +1686,30 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										conn->dup_ack_sent = 0;
 									}
 									conn->peer_win = __iip_ntohs(PB_TCP(p->buf)->win_be);
-									conn->ts = p->tcp.opt.ts[0];
+									if (p->tcp.opt.has_ts) {
+										conn->ts = p->tcp.opt.ts[0];
+										if (!conn->retrans_cnt && PB_TCP_HDR_HAS_ACK(p->buf)) {
+											uint32_t nticks = p->tcp.opt.ts[1] - conn->rtt.ts;
+											{
+												uint32_t delta = (nticks < conn->rtt.srtt ? conn->rtt.srtt - nticks : nticks - conn->rtt.srtt);
+												if (nticks < conn->rtt.srtt)
+													conn->rtt.srtt -= delta / 8;
+												else
+													conn->rtt.srtt += delta / 8;
+												{
+													uint32_t d2 = (delta < conn->rtt.rttvar ? conn->rtt.rttvar - delta : delta - conn->rtt.rttvar);
+													if (delta < conn->rtt.rttvar)
+														conn->rtt.rttvar -= d2 / 4;
+													else
+														conn->rtt.rttvar += d2 / 4;
+												}
+
+											}
+											conn->rtt.ts = p->tcp.opt.ts[1];
+										}
+									}
+									if (PB_TCP_HDR_HAS_ACK(p->buf))
+										conn->retrans_cnt = 0;
 									conn->ack_seq_be = __iip_htonl(__iip_ntohl(PB_TCP(p->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(p->buf) + PB_TCP_HDR_HAS_FIN(p->buf) + PB_TCP_PAYLOAD_LEN(p->buf));
 									conn->acked_seq = __iip_ntohl(PB_TCP(p->buf)->ack_seq_be);
 									/*IIP_OPS_DEBUG_PRINTF("tcp-in I src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
@@ -2263,48 +2298,60 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						if (conn->head[2][0]) {
 							uint32_t now = __iip_now_in_ms(opaque);
 							if (conn->head[2][0]->tcp.rto_ms < now - conn->head[2][0]->ts) { /* timeout and do retransmission */
-								void *cp;
-								if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
-									if (iip_ops_pkt_scatter_gather_chain_get_next(conn->head[2][0]->pkt, opaque)) {
-										cp = iip_ops_pkt_clone(iip_ops_pkt_scatter_gather_chain_get_next(conn->head[2][0]->pkt, opaque), opaque);
-										__iip_assert(cp);
+								if (conn->retrans_cnt < IIP_CONF_TCP_RETRANS_CNT) {
+									void *cp;
+									if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
+										if (iip_ops_pkt_scatter_gather_chain_get_next(conn->head[2][0]->pkt, opaque)) {
+											cp = iip_ops_pkt_clone(iip_ops_pkt_scatter_gather_chain_get_next(conn->head[2][0]->pkt, opaque), opaque);
+											__iip_assert(cp);
+										} else {
+											cp = NULL;
+											__iip_assert(PB_TCP_HDR_HAS_SYN(conn->head[2][0]->buf) || PB_TCP_HDR_HAS_FIN(conn->head[2][0]->buf));
+										}
 									} else {
-										cp = NULL;
-										__iip_assert(PB_TCP_HDR_HAS_SYN(conn->head[2][0]->buf) || PB_TCP_HDR_HAS_FIN(conn->head[2][0]->buf));
+										if (conn->head[2][0]->orig_pkt) {
+											cp = iip_ops_pkt_clone(conn->head[2][0]->orig_pkt, opaque);
+											__iip_assert(cp);
+										} else {
+											cp = NULL;
+											__iip_assert(PB_TCP_HDR_HAS_SYN(conn->head[2][0]->buf) || PB_TCP_HDR_HAS_FIN(conn->head[2][0]->buf));
+										}
+									}
+									{ /* CLONE */
+										struct iip_tcp_hdr_conn _conn;
+										__iip_memcpy(&_conn, conn, sizeof(_conn));
+										_conn.seq_be = PB_TCP(conn->head[2][0]->buf)->seq_be;
+										__iip_tcp_push(s, &_conn, cp,
+												PB_TCP_HDR_HAS_SYN(conn->head[2][0]->buf),
+												PB_TCP_HDR_HAS_ACK(conn->head[2][0]->buf),
+												PB_TCP_HDR_HAS_FIN(conn->head[2][0]->buf),
+												PB_TCP_HDR_HAS_RST(conn->head[2][0]->buf),
+												NULL,
+												opaque);
+										{
+											struct pb *out_p = _conn.head[1][1];
+											__iip_dequeue_obj(_conn.head[1], out_p, 0);
+											__iip_enqueue_obj(conn->head[3], out_p, 0); /* workaround to bypass the ordered queue */
+										}
+									}
+									conn->head[2][0]->ts = now;
+									conn->head[2][0]->tcp.rto_ms *= 2;
+									if (60000U /* 60 sec */ < conn->head[2][0]->tcp.rto_ms)
+										conn->head[2][0]->tcp.rto_ms = 60000U;
+									conn->retrans_cnt++;
+									s->monitor.tcp.tx_pkt_re++;
+									{ /* loss detected */
+										IIP_OPS_DEBUG_PRINTF("loss detected (timeout retransmit cnt %u) : %p seq %u ack %u\n", conn->retrans_cnt, (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
+										conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
+										conn->cc.win = 1;
 									}
 								} else {
-									if (conn->head[2][0]->orig_pkt) {
-										cp = iip_ops_pkt_clone(conn->head[2][0]->orig_pkt, opaque);
-										__iip_assert(cp);
-									} else {
-										cp = NULL;
-										__iip_assert(PB_TCP_HDR_HAS_SYN(conn->head[2][0]->buf) || PB_TCP_HDR_HAS_FIN(conn->head[2][0]->buf));
-									}
-								}
-								{ /* CLONE */
-									struct iip_tcp_hdr_conn _conn;
-									__iip_memcpy(&_conn, conn, sizeof(_conn));
-									_conn.seq_be = PB_TCP(conn->head[2][0]->buf)->seq_be;
-									__iip_tcp_push(s, &_conn, cp,
-											PB_TCP_HDR_HAS_SYN(conn->head[2][0]->buf),
-											PB_TCP_HDR_HAS_ACK(conn->head[2][0]->buf),
-											PB_TCP_HDR_HAS_FIN(conn->head[2][0]->buf),
-											PB_TCP_HDR_HAS_RST(conn->head[2][0]->buf),
-											NULL,
-											opaque);
-									{
-										struct pb *out_p = _conn.head[1][1];
-										__iip_dequeue_obj(_conn.head[1], out_p, 0);
-										__iip_enqueue_obj(conn->head[3], out_p, 0); /* workaround to bypass the ordered queue */
-									}
-								}
-								conn->head[2][0]->ts = now;
-								conn->head[2][0]->tcp.rto_ms = (conn->head[2][0]->tcp.rto_ms < 5000000 ? conn->head[2][0]->tcp.rto_ms * 4 : 5000000); /* TODO: proper setting */
-								s->monitor.tcp.tx_pkt_re++;
-								{ /* loss detected */
-									IIP_OPS_DEBUG_PRINTF("loss detected (timeout) : %p seq %u ack %u\n", (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
-									conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
-									conn->cc.win = 1;
+									conn->state = __IIP_TCP_STATE_CLOSED;
+									__iip_dequeue_obj(s->tcp.conns_ht[(conn->peer_ip4_be + conn->local_port_be + conn->peer_port_be) % IIP_CONF_TCP_CONN_HT_SIZE], conn, 1);
+									__iip_dequeue_obj(s->tcp.conns, conn, 0);
+									__iip_enqueue_obj(s->tcp.closed_conns, conn, 0);
+									IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_CLOSED because of timeout after %u retransmission\n", (void *) conn, IIP_CONF_TCP_RETRANS_CNT);
+									continue;
 								}
 							}
 						}
@@ -2350,7 +2397,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										s->monitor.tcp.tx_pkt++;
 									}
 								}
-								p->tcp.rto_ms = IIP_CONF_TCP_RTO_MS_INIT;
+								p->tcp.rto_ms = (conn->rtt.srtt + 4 * conn->rtt.rttvar) * 200 /* tick is incremented every 200 ms by fast timer */;
+								if (!p->tcp.rto_ms)
+									p->tcp.rto_ms = 200U;
+								if (60000U /* 60 sec */ < p->tcp.rto_ms)
+									p->tcp.rto_ms = 60000U;
 								p->ts = __iip_now_in_ms(opaque);
 								/*IIP_OPS_DEBUG_PRINTF("tcp-out: src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
 								   (PB_IP4(p->buf)->src_be >>  0) & 0x0ff,
