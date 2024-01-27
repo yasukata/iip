@@ -368,7 +368,7 @@ struct pb {
 #define __IIP_TCP_STATE_CLOSE_WAIT  (9)
 #define __IIP_TCP_STATE_LAST_ACK    (10)
 
-struct iip_tcp_hdr_conn {
+struct iip_tcp_conn {
 	uint8_t state;
 
 	uint16_t local_port_be;
@@ -424,8 +424,8 @@ struct iip_tcp_hdr_conn {
 
 	struct pb *head[5][2]; /* 0: rx, 1: tx, 2: tx sent, 3: tx urgent, 4: rx out-of-order */
 
-	struct iip_tcp_hdr_conn *prev[2];
-	struct iip_tcp_hdr_conn *next[2];
+	struct iip_tcp_conn *prev[2];
+	struct iip_tcp_conn *next[2];
 };
 
 struct workspace {
@@ -435,7 +435,7 @@ struct workspace {
 	struct {
 		uint32_t p_cnt;
 		struct pb *p[2];
-		struct iip_tcp_hdr_conn *conn[2];
+		struct iip_tcp_conn *conn[2];
 	} pool;
 	struct {
 		uint32_t prev_fast;
@@ -445,9 +445,9 @@ struct workspace {
 	struct {
 		uint32_t iss; /* initial send sequence number */
 		uint32_t pkt_ts;
-		struct iip_tcp_hdr_conn *conns[2];
-		struct iip_tcp_hdr_conn *conns_ht[IIP_CONF_TCP_CONN_HT_SIZE][2];
-		struct iip_tcp_hdr_conn *closed_conns[2];
+		struct iip_tcp_conn *conns[2];
+		struct iip_tcp_conn *conns_ht[IIP_CONF_TCP_CONN_HT_SIZE][2];
+		struct iip_tcp_conn *closed_conns[2];
 	} tcp;
 
 	struct {
@@ -518,7 +518,7 @@ static uint32_t iip_pb_size(void)
 
 static uint32_t iip_tcp_conn_size(void)
 {
-	return sizeof(struct iip_tcp_hdr_conn);
+	return sizeof(struct iip_tcp_conn);
 }
 
 static void iip_add_pb(void *_mem, void *_p)
@@ -529,7 +529,7 @@ static void iip_add_pb(void *_mem, void *_p)
 
 static void iip_add_tcp_conn(void *_mem, void *_conn)
 {
-	__iip_enqueue_obj(((struct workspace *) _mem)->pool.conn, (struct iip_tcp_hdr_conn *) _conn, 0);
+	__iip_enqueue_obj(((struct workspace *) _mem)->pool.conn, (struct iip_tcp_conn *) _conn, 0);
 }
 
 /* protocol stack implementation */
@@ -567,7 +567,7 @@ static void iip_arp_request(void *_mem,
 }
 
 static uint16_t __iip_tcp_push(struct workspace *s,
-			       struct iip_tcp_hdr_conn *conn, void *_pkt,
+			       struct iip_tcp_conn *conn, void *_pkt,
 			       uint8_t syn, uint8_t ack, uint8_t fin, uint8_t rst,
 			       uint8_t *sackbuf, void *opaque)
 {
@@ -711,7 +711,7 @@ again:
 
 static uint16_t iip_tcp_send(void *_mem, void *_handle, void *pkt, void *opaque)
 {
-	struct iip_tcp_hdr_conn *conn = (struct iip_tcp_hdr_conn *) _handle;
+	struct iip_tcp_conn *conn = (struct iip_tcp_conn *) _handle;
 	if (conn->state != __IIP_TCP_STATE_ESTABLISHED)
 		return 0;
 	return __iip_tcp_push((struct workspace *) _mem, conn, pkt, 0, 1, 0, 0, NULL, opaque);
@@ -719,7 +719,7 @@ static uint16_t iip_tcp_send(void *_mem, void *_handle, void *pkt, void *opaque)
 
 static uint16_t iip_tcp_close(void *_mem, void *_handle, void *opaque)
 {
-	struct iip_tcp_hdr_conn *conn = (struct iip_tcp_hdr_conn *) _handle;
+	struct iip_tcp_conn *conn = (struct iip_tcp_conn *) _handle;
 	if (conn->state == __IIP_TCP_STATE_ESTABLISHED) {
 		conn->state = __IIP_TCP_STATE_FIN_WAIT1;
 		IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT1\n", (void *) conn);
@@ -734,7 +734,7 @@ static uint16_t iip_tcp_close(void *_mem, void *_handle, void *opaque)
 
 static void iip_tcp_rxbuf_consumed(void *_mem, void *_handle, uint16_t cnt, void *opaque)
 {
-	struct iip_tcp_hdr_conn *conn = (struct iip_tcp_hdr_conn *) _handle;
+	struct iip_tcp_conn *conn = (struct iip_tcp_conn *) _handle;
 	__iip_assert(cnt <= conn->rx_buf_cnt.used);
 	conn->rx_buf_cnt.used -= cnt;
 	{ /* unused */
@@ -743,7 +743,7 @@ static void iip_tcp_rxbuf_consumed(void *_mem, void *_handle, uint16_t cnt, void
 	}
 }
 
-static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_hdr_conn *conn,
+static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_conn *conn,
 				uint8_t local_mac[], uint32_t local_ip4_be, uint16_t local_port_be,
 				uint8_t peer_mac[], uint32_t peer_ip4_be, uint16_t peer_port_be,
 				uint8_t state, void *opaque)
@@ -783,7 +783,7 @@ static uint16_t iip_tcp_connect(void *_mem,
 				void *opaque)
 {
 	struct workspace *s = (struct workspace *) _mem;
-	struct iip_tcp_hdr_conn *conn = s->pool.conn[0];
+	struct iip_tcp_conn *conn = s->pool.conn[0];
 	__iip_assert(conn);
 	__iip_dequeue_obj(s->pool.conn, conn, 0);
 	__iip_tcp_conn_init(s, conn, local_mac, local_ip4_be, local_port_be, peer_mac, peer_ip4_be, peer_port_be, __IIP_TCP_STATE_SYN_SENT, opaque);
@@ -875,7 +875,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 		if (200 <= now_ms - s->timer.prev_fast){ /* fast timer every 200 ms */
 			/* send delayed ack */
 			{
-				struct iip_tcp_hdr_conn *conn, *_conn_n;
+				struct iip_tcp_conn *conn, *_conn_n;
 				__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
 					if (conn->state == __IIP_TCP_STATE_ESTABLISHED && !conn->head[3][0]) {
 						if ((__iip_ntohl(conn->ack_seq_be) != conn->ack_seq_sent)) /* we got payload, but ack is not pushed by the app */
@@ -896,7 +896,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 		}
 		if (1000 <= now_ms - s->timer.prev_very_slow) { /* slow timer every 1000 ms */
 			{ /* close connections */
-				struct iip_tcp_hdr_conn *conn, *_conn_n;
+				struct iip_tcp_conn *conn, *_conn_n;
 				__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
 					switch (conn->state) {
 					case __IIP_TCP_STATE_TIME_WAIT:
@@ -1230,9 +1230,9 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								}
 							}
 							{ /* find tcp conneciton and push the packet to its queue */
-								struct iip_tcp_hdr_conn *conn = (NULL);
+								struct iip_tcp_conn *conn = (NULL);
 								{ /* connection lookup */
-									struct iip_tcp_hdr_conn *c, *_n;
+									struct iip_tcp_conn *c, *_n;
 									__iip_q_for_each_safe(s->tcp.conns_ht[(PB_IP4(p->buf)->src_be + PB_TCP(p->buf)->src_be + PB_TCP(p->buf)->dst_be) % IIP_CONF_TCP_CONN_HT_SIZE], c, _n, 0) {
 										if (c->local_port_be == PB_TCP(p->buf)->dst_be
 												&& c->peer_port_be == PB_TCP(p->buf)->src_be
@@ -1476,7 +1476,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											PB_TCP_PAYLOAD_LEN(p->buf));
 									/* we send rst as a reply */
 									{
-										struct iip_tcp_hdr_conn _conn;
+										struct iip_tcp_conn _conn;
 										__iip_tcp_conn_init(s, &_conn,
 												iip_ops_l2_hdr_dst_ptr(p->pkt, opaque), PB_IP4(p->buf)->dst_be, PB_TCP(p->buf)->dst_be,
 												iip_ops_l2_hdr_src_ptr(p->pkt, opaque), PB_IP4(p->buf)->src_be, PB_TCP(p->buf)->src_be,
@@ -1539,7 +1539,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 			}
 
 			{ /* iterate all tcp connections */
-				struct iip_tcp_hdr_conn *conn, *_conn_n;
+				struct iip_tcp_conn *conn, *_conn_n;
 				__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
 					do {
 						struct pb *p, *_n;
@@ -1936,7 +1936,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								iip_ops_pkt_increment_head(cp, conn->acked_seq /* dup ack */ - __iip_ntohl(PB_TCP(conn->head[2][0]->buf)->seq_be), opaque);
 							}
 							{ /* CLONE */
-								struct iip_tcp_hdr_conn _conn;
+								struct iip_tcp_conn _conn;
 								__iip_memcpy(&_conn, conn, sizeof(_conn));
 								_conn.seq_be = __iip_htonl(__iip_ntohl(PB_TCP(conn->head[2][0]->buf)->seq_be) + conn->acked_seq /* dup ack */ - __iip_ntohl(PB_TCP(conn->head[2][0]->buf)->seq_be));
 								__iip_tcp_push(s, &_conn, cp,
@@ -2264,7 +2264,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										}
 									}
 									{ /* CLONE */
-										struct iip_tcp_hdr_conn _conn;
+										struct iip_tcp_conn _conn;
 										__iip_memcpy(&_conn, conn, sizeof(_conn));
 										_conn.seq_be = __iip_htonl(__iip_ntohl(PB_TCP(p->buf)->seq_be) + p->clone.range[i].increment_head);
 										__iip_tcp_push(s, &_conn, cp,
@@ -2313,7 +2313,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										}
 									}
 									{ /* CLONE */
-										struct iip_tcp_hdr_conn _conn;
+										struct iip_tcp_conn _conn;
 										__iip_memcpy(&_conn, conn, sizeof(_conn));
 										_conn.seq_be = PB_TCP(conn->head[2][0]->buf)->seq_be;
 										__iip_tcp_push(s, &_conn, cp,
@@ -2425,7 +2425,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 			}
 		}
 		{ /* close tcp connections */
-			struct iip_tcp_hdr_conn *conn, *_conn_n;
+			struct iip_tcp_conn *conn, *_conn_n;
 			__iip_q_for_each_safe(s->tcp.closed_conns, conn, _conn_n, 0) {
 				iip_ops_tcp_closed(conn, conn->opaque, opaque);
 				{
@@ -2440,7 +2440,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 					}
 				}
 				__iip_dequeue_obj(s->tcp.closed_conns, conn, 0);
-				__iip_memset(conn, 0, sizeof(struct iip_tcp_hdr_conn));
+				__iip_memset(conn, 0, sizeof(struct iip_tcp_conn));
 				__iip_enqueue_obj(s->pool.conn, conn, 0);
 			}
 		}
@@ -2463,7 +2463,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 				s->monitor.tcp.th_stop);
 			__iip_memset(&s->monitor, 0, sizeof(s->monitor));
 			{
-				struct iip_tcp_hdr_conn *conn, *_conn_n;
+				struct iip_tcp_conn *conn, *_conn_n;
 				__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
 					IIP_OPS_DEBUG_PRINTF("tcp %p fc-win %u (win %u ws %u) cc-win %u (win %u) acked %u (unacked %u)\n",
 							conn,
