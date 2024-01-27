@@ -1534,7 +1534,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 			{ /* iterate all tcp connections */
 				struct iip_tcp_hdr_conn *conn, *_conn_n;
 				__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
-					uint32_t stop_rx_traverse = 0;
 					do {
 						struct pb *p, *_n;
 						__iip_q_for_each_safe(conn->head[0], p, _n, 0) {
@@ -1860,7 +1859,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									break;
 							}
 						}
-					} while (conn->head[0][0] && !stop_rx_traverse);
+					} while (conn->head[0][0]);
 					/* dup ack check */
 					if (conn->dup_ack_received > 2) { /* 3 dup acks are received, we do retransmission for fast recovery, or sack */
 						__iip_assert(!(!conn->head[2][0] && conn->head[2][1]));
