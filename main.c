@@ -1269,13 +1269,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									}
 								}
 								if (conn) {
-									/* Sequence number check */
-									{ /* TODO: protection against wrapped sequence (PAWS) numbers : RFC 1323 */
-									}
 									{
 										struct pb *_p = p;
 										while (1) {
-											if (conn->seq_next_expected != __iip_ntohl(PB_TCP(_p->buf)->seq_be)) {
+											if ((conn->seq_next_expected != __iip_ntohl(PB_TCP(_p->buf)->seq_be)) ||
+													(/* PAWS */ (conn->seq_next_expected == __iip_ntohl(PB_TCP(_p->buf)->seq_be) && (p->tcp.opt.has_ts && !PB_TCP_HDR_HAS_SYN(p->buf) && !PB_TCP_HDR_HAS_RST(p->buf)) && (2147483648U <= (p->tcp.opt.ts[0] < conn->ts ? conn->ts - p->tcp.opt.ts[0] : p->tcp.opt.ts[0] - conn->ts))))) {
 												if ((conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used) * conn->opt[1].mss < __iip_ntohl(PB_TCP(_p->buf)->seq_be) - conn->seq_next_expected) {
 													/*IIP_OPS_DEBUG_PRINTF("tcp-in D src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u (window %u diff %u)\n",
 															(PB_IP4(_p->buf)->src_be >>  0) & 0x0ff,
