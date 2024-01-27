@@ -438,7 +438,6 @@ struct workspace {
 		struct iip_tcp_hdr_conn *conn[2];
 	} pool;
 	struct {
-		uint32_t prev_very_fast;
 		uint32_t prev_fast;
 		uint32_t prev_slow;
 		uint32_t prev_very_slow;
@@ -873,9 +872,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 	uint32_t _next_us = 1000000UL; /* 1 sec */
 	{ /* periodic timer */
 		uint32_t now_ms = __iip_now_in_ms(opaque);
-		if (1 <= now_ms - s->timer.prev_very_fast){ /* 1 ms */
-			s->timer.prev_very_fast = now_ms;
-		}
 		if (200 <= now_ms - s->timer.prev_fast){ /* fast timer every 200 ms */
 			/* send delayed ack */
 			{
@@ -920,9 +916,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 			s->timer.prev_very_slow = now_ms;
 		}
 		{
-			_next_us = (s->timer.prev_very_fast + 1000U - now_ms < _next_us * 1000U ? (s->timer.prev_very_fast + 1000U - now_ms) * 1000U : _next_us);
-			_next_us = (s->timer.prev_fast + 1000U - now_ms < _next_us * 1000U ? (s->timer.prev_fast + 1000U - now_ms) * 1000U : _next_us);
-			_next_us = (s->timer.prev_slow + 1000U - now_ms < _next_us * 1000U ? (s->timer.prev_slow + 1000U - now_ms) * 1000U : _next_us);
+			_next_us = (s->timer.prev_fast + 200U - now_ms < _next_us * 1000U ? (s->timer.prev_fast + 200U - now_ms) * 1000U : _next_us);
+			_next_us = (s->timer.prev_slow + 500U - now_ms < _next_us * 1000U ? (s->timer.prev_slow + 500U - now_ms) * 1000U : _next_us);
 			_next_us = (s->timer.prev_very_slow + 1000U - now_ms < _next_us * 1000U ? (s->timer.prev_very_slow + 1000U - now_ms) * 1000U : _next_us);
 		}
 	}
@@ -2341,7 +2336,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									conn->retrans_cnt++;
 									s->monitor.tcp.tx_pkt_re++;
 									{ /* loss detected */
-										IIP_OPS_DEBUG_PRINTF("loss detected (timeout retransmit cnt %u) : %p seq %u ack %u\n", conn->retrans_cnt, (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
+										IIP_OPS_DEBUG_PRINTF("loss detected (timeout retransmit cnt %u rto %u) : %p seq %u ack %u\n",
+												conn->retrans_cnt, conn->head[2][0]->tcp.rto_ms, (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
 										conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
 										conn->cc.win = 1;
 									}
