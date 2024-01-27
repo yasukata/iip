@@ -914,7 +914,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 			_next_us = (s->timer.prev_very_slow + 1000U - now_ms < _next_us * 1000U ? (s->timer.prev_very_slow + 1000U - now_ms) * 1000U : _next_us);
 		}
 	}
-	{ /* phase 1: steer packet to an ip4_rx queue or discard after executing callback  */
+	{ /* steer packet to an ip4_rx queue or discard after executing callback  */
 		struct pb *ip4_rx[2] = { 0 };
 		{
 			uint16_t i;
@@ -1059,7 +1059,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 			}
 			ret = i;
 		}
-		{ /* phase 2: steer ip4 packets to a queue of tcp connection or discard after executing callback for icmp and udp */
+		{ /* steer ip4 packets to a queue of tcp connection or discard after executing callback for icmp and udp */
 			struct pb *tcp_sack_rx[2] = { 0 };
 			{
 				struct pb *p, *_n;
@@ -1531,16 +1531,15 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 				}
 			}
 
-			{ /* phase 3: iterate all tcp connections */
+			{ /* iterate all tcp connections */
 				struct iip_tcp_hdr_conn *conn, *_conn_n;
 				__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
 					uint32_t stop_rx_traverse = 0;
 					do {
 						struct pb *p, *_n;
 						__iip_q_for_each_safe(conn->head[0], p, _n, 0) {
-							/* phase 3.1: process received in-order packets */
 							__iip_dequeue_obj(conn->head[0], p, 0);
-							{
+							{ /* validate ack number */
 								uint8_t out_of_order = 0;
 								if (!PB_TCP_HDR_HAS_SYN(p->buf) && !PB_TCP_HDR_HAS_FIN(p->buf) && !PB_TCP_HDR_HAS_RST(p->buf)) {
 									/*
@@ -1861,12 +1860,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									break;
 							}
 						}
-					} while (conn->head[0][0] && !stop_rx_traverse); /* phase 3.1: process received in-order packets */
-
-					/* phase 3.2:
-					 * now, in-order packets are processed and all acked packets are released
-					 * here, we start handling dup-ack and sack requests if we have
-					 */
+					} while (conn->head[0][0] && !stop_rx_traverse);
 					/* dup ack check */
 					if (conn->dup_ack_received > 2) { /* 3 dup acks are received, we do retransmission for fast recovery, or sack */
 						__iip_assert(!(!conn->head[2][0] && conn->head[2][1]));
@@ -1937,7 +1931,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						}
 					}
 					/* sack check */
-					if (tcp_sack_rx[0]) { /* sack requested */
+					if (tcp_sack_rx[0]) {
 						__iip_assert(tcp_sack_rx[1]);
 						if (conn->head[2][0]) {
 							{
@@ -2320,8 +2314,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						if ((__iip_ntohl(conn->ack_seq_be) != conn->ack_seq_sent)) /* we got payload, but ack is not pushed by the app */
 							__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, NULL, opaque);
 					}
-
-					/* phase 3.3: transmit queued packets */
+					/* transmit queued packets */
 					{
 						struct pb **queue = (conn->head[3][0] ? conn->head[3] : conn->head[1]);
 						{ /* normal tx queue */
