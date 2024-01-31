@@ -2315,6 +2315,17 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							conn->cc.win = 1;
 						}
 					}
+					{ /* cancel retransmission if ack is received  */
+						struct pb *p, *_n;
+						__iip_q_for_each_safe(conn->head[3], p, _n, 0) {
+							if ((__iip_ntohl(conn->seq_be) - conn->acked_seq) <= (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(p->buf)->seq_be) + ((PB_TCP_HDR_HAS_SYN(p->buf) || PB_TCP_HDR_HAS_FIN(p->buf)) ? 1 : PB_TCP_PAYLOAD_LEN(p->buf))))) {
+								if (PB_TCP_PAYLOAD_LEN(p->buf)) {
+									__iip_dequeue_obj(conn->head[3], p, 0);
+									__iip_free_pb(s, p, opaque);
+								}
+							}
+						}
+					}
 					/* timeout check */
 					if (!conn->head[3][0]) { /* not in recovery mode */
 						if (conn->head[2][0]) {
