@@ -18,21 +18,47 @@
 
 /* configuration */
 
+#ifndef IIP_CONF_ENDIAN
 #define IIP_CONF_ENDIAN (1) /* little 1, big 2 */
+#endif
 
 /* TODO: properly configure them */
+#ifndef IIP_CONF_IP4_TTL
 #define IIP_CONF_IP4_TTL		(64)
+#endif
+#ifndef IIP_CONF_TCP_OPT_WS
 #define IIP_CONF_TCP_OPT_WS		(7U) /* RFC 7323 : between 0 ~ 14 */ /* TODO: how to determine this ? */
+#endif
+#ifndef IIP_CONF_TCP_OPT_MSS
 #define IIP_CONF_TCP_OPT_MSS		(1460U)
+#endif
+#ifndef IIP_CONF_TCP_OPT_SACK_OK
 #define IIP_CONF_TCP_OPT_SACK_OK	(1U)
+#endif
+#ifndef IIP_CONF_TCP_RX_BUF_CNT
 #define IIP_CONF_TCP_RX_BUF_CNT		(512U) /* should be smaller than 735439 (1GB with 1460 mss) : limit by RFC 7323 */
+#endif
+#ifndef IIP_CONF_TCP_WIN_INIT
 #define IIP_CONF_TCP_WIN_INIT		(1)
+#endif
+#ifndef IIP_CONF_TCP_MSL_SEC
 #define IIP_CONF_TCP_MSL_SEC		(1) /* maximum segment lifetime, in second : RFC 793 recommends 2 min, but we can choose as we wish */
+#endif
+#ifndef IIP_CONF_TCP_RETRANS_CNT
 #define IIP_CONF_TCP_RETRANS_CNT	(4) /* maximum retransmission count */
+#endif
+#ifndef IIP_CONF_TCP_SSTHRESH_INIT
 #define IIP_CONF_TCP_SSTHRESH_INIT	(256)
+#endif
+#ifndef IIP_CONF_TCP_CONN_HT_SIZE
 #define IIP_CONF_TCP_CONN_HT_SIZE	(829) /* generally bigger is faster at the cost of memory consumption */
+#endif
+#ifndef IIP_CONF_TCP_TIMESTAMP_ENABLE
 #define IIP_CONF_TCP_TIMESTAMP_ENABLE	(1)
+#endif
+#ifndef IIP_CONF_L2ADDR_LEN_MAX
 #define IIP_CONF_L2ADDR_LEN_MAX		(6)
+#endif
 
 /* functions implemented by app and io subsystems */
 
