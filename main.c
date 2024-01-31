@@ -369,6 +369,7 @@ struct pb {
 			uint8_t has_ts;
 			uint32_t ts[2];
 		} opt;
+		uint8_t sack_send_all;
 	} tcp;
 
 	struct {
@@ -2031,6 +2032,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													 *          sle       sre
 													 *
 													 */
+													_p->tcp.sack_send_all = 1;
 												} else if ((__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be) > __iip_ntohl(conn->seq_be) - sle)
 														&& (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) < __iip_ntohl(conn->seq_be) - sre)) {
 													/*
@@ -2264,7 +2266,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							struct pb *p, *_n;
 							__iip_q_for_each_safe(conn->head[2], p, _n, 0) {
 								uint16_t i;
-								for (i = 0; i < p->clone.to_be_updated; i++) {
+								for (i = 0; i < p->clone.to_be_updated || p->tcp.sack_send_all; i++) {
 									void *cp;
 									if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
 										if (iip_ops_pkt_scatter_gather_chain_get_next(p->pkt, opaque)) {
@@ -2280,6 +2282,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										if (p->orig_pkt) {
 											cp = iip_ops_pkt_clone(p->orig_pkt, opaque);
 											__iip_assert(cp);
+											if (p->clone.range[i].increment_head) iip_ops_pkt_increment_head(cp, p->clone.range[i].increment_head, opaque);
+											if (p->clone.range[i].decrement_tail) iip_ops_pkt_decrement_tail(cp, p->clone.range[i].decrement_tail, opaque);
 										} else {
 											cp = NULL;
 											__iip_assert(PB_TCP_HDR_HAS_SYN(p->buf) || PB_TCP_HDR_HAS_FIN(p->buf));
@@ -2300,6 +2304,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											IIP_OPS_DEBUG_PRINTF("sack reply: %u\n", __iip_ntohl(PB_TCP(out_p->buf)->seq_be));
 										}
 									}
+									p->tcp.sack_send_all = 0;
 								}
 								__iip_memset(&p->clone, 0, sizeof(p->clone));
 							}
