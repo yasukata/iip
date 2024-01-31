@@ -449,7 +449,7 @@ struct iip_tcp_conn {
 
 	void *opaque;
 
-	struct pb *head[5][2]; /* 0: rx, 1: tx, 2: tx sent, 3: tx urgent, 4: rx out-of-order */
+	struct pb *head[6][2]; /* 0: rx, 1: tx, 2: tx sent, 3: tx retrans, 4: rx out-of-order, 5: tx urgent */
 
 	struct iip_tcp_conn *prev[2];
 	struct iip_tcp_conn *next[2];
@@ -904,7 +904,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 			{
 				struct iip_tcp_conn *conn, *_conn_n;
 				__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
-					if (conn->state == __IIP_TCP_STATE_ESTABLISHED && !conn->head[3][0]) {
+					if (conn->state == __IIP_TCP_STATE_ESTABLISHED && !conn->head[3][0] && !conn->head[5][0]) {
 						if ((__iip_ntohl(conn->ack_seq_be) != conn->ack_seq_sent)) /* we got payload, but ack is not pushed by the app */
 							__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, NULL, opaque);
 					}
@@ -1448,7 +1448,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														{ /* workaround to bypass the ordered queue */
 															struct pb *dup_ack_p = conn->head[1][1];
 															__iip_dequeue_obj(conn->head[1], dup_ack_p, 0);
-															__iip_enqueue_obj(conn->head[3], dup_ack_p, 0);
+															__iip_enqueue_obj(conn->head[5], dup_ack_p, 0);
 														}
 													}
 													_p->tcp.dup_ack = 1;
@@ -2327,7 +2327,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						}
 					}
 					/* timeout check */
-					if (!conn->head[3][0]) { /* not in recovery mode */
+					if (!conn->head[3][0] && !conn->head[5][0]) { /* not in recovery mode */
 						if (conn->head[2][0]) {
 							uint32_t now = __iip_now_in_ms(opaque);
 							if (conn->head[2][0]->tcp.rto_ms < now - conn->head[2][0]->ts) { /* timeout and do retransmission */
@@ -2390,34 +2390,48 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							}
 						}
 					}
-					if (!conn->head[3][0]) {
+					if (!conn->head[3][0] && !conn->head[5][0]) {
 						if ((__iip_ntohl(conn->ack_seq_be) != conn->ack_seq_sent)) /* we got payload, but ack is not pushed by the app */
 							__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, NULL, opaque);
 					}
-					/* transmit queued packets */
-					{
+					{ /* transmit urgent packets */
+						struct pb **queue = conn->head[5];
+						struct pb *p, *_n;
+						__iip_q_for_each_safe(queue, p, _n, 0) {
+							__iip_dequeue_obj(queue, p, 0);
+							{
+								__iip_assert(p->pkt);
+								{
+									void *clone_pkt = iip_ops_pkt_clone(p->pkt, opaque);
+									__iip_assert(clone_pkt);
+									iip_ops_l2_push(clone_pkt, opaque);
+									s->monitor.tcp.tx_pkt++;
+								}
+							}
+							__iip_free_pb(s, p, opaque);
+						}
+					}
+					{ /* if retransmission queue is empty, packets from normal queue are sent */
 						struct pb **queue = (conn->head[3][0] ? conn->head[3] : conn->head[1]);
-						{ /* normal tx queue */
+						{ /* either retransmission or normal queue */
 							struct pb *p, *_n;
 							__iip_q_for_each_safe(queue, p, _n, 0) {
 								/* check if flow/congestion control stops tx */
-								if (queue != conn->head[3]) {
-									if (PB_TCP_PAYLOAD_LEN(p->buf)) {
-										/* congestion control */
-										if ((uint32_t) conn->cc.win * 0xffff <= (uint32_t)((__iip_ntohl(PB_TCP(p->buf)->seq_be) - conn->acked_seq) + PB_TCP_PAYLOAD_LEN(p->buf))) {
-											s->monitor.tcp.cc_stop++;
-											break;
-										}
-										/* flow control */
-										/*IIP_OPS_DEBUG_PRINTF("flow control %u %u (%u %u %u)\n",
-												((uint32_t) conn->peer_win << conn->opt[0].ws),
-												(__iip_ntohl(PB_TCP(p->buf)->seq_be) + (uint32_t) PB_TCP_PAYLOAD_LEN(p->buf)) - conn->acked_seq,
-												__iip_ntohl(PB_TCP(p->buf)->seq_be), (uint32_t) PB_TCP_PAYLOAD_LEN(p->buf), conn->acked_seq);*/
-										if (((uint32_t) conn->peer_win << conn->opt[0].ws) < (__iip_ntohl(PB_TCP(p->buf)->seq_be) + (uint32_t) PB_TCP_PAYLOAD_LEN(p->buf)) + PB_TCP_HDR_HAS_FIN(p->buf) - conn->acked_seq /* len to be filled on the rx side */) {
-											/* no space to be sent on the rx side, postpone tx */
-											s->monitor.tcp.fc_stop++;
-											break;
-										}
+								if (PB_TCP_PAYLOAD_LEN(p->buf)) {
+									/* congestion control */
+									if ((uint32_t) conn->cc.win * 0xffff <= (uint32_t)((__iip_ntohl(PB_TCP(p->buf)->seq_be) - conn->acked_seq) + PB_TCP_PAYLOAD_LEN(p->buf))) {
+										s->monitor.tcp.cc_stop++;
+										break;
+									}
+									/* flow control */
+									/*IIP_OPS_DEBUG_PRINTF("flow control %u %u (%u %u %u)\n",
+											((uint32_t) conn->peer_win << conn->opt[0].ws),
+											(__iip_ntohl(PB_TCP(p->buf)->seq_be) + (uint32_t) PB_TCP_PAYLOAD_LEN(p->buf)) - conn->acked_seq,
+											__iip_ntohl(PB_TCP(p->buf)->seq_be), (uint32_t) PB_TCP_PAYLOAD_LEN(p->buf), conn->acked_seq);*/
+									if (((uint32_t) conn->peer_win << conn->opt[0].ws) < (__iip_ntohl(PB_TCP(p->buf)->seq_be) + (uint32_t) PB_TCP_PAYLOAD_LEN(p->buf)) + PB_TCP_HDR_HAS_FIN(p->buf) - conn->acked_seq /* len to be filled on the rx side */) {
+										/* no space to be sent on the rx side, postpone tx */
+										s->monitor.tcp.fc_stop++;
+										break;
 									}
 								}
 								__iip_dequeue_obj(queue, p, 0);
@@ -2468,7 +2482,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 				iip_ops_tcp_closed(conn, conn->opaque, opaque);
 				{
 					uint8_t i;
-					for (i = 0; i < 4; i++) {
+					for (i = 0; i < 5; i++) {
 						struct pb *p, *_n;
 						__iip_q_for_each_safe(conn->head[i], p, _n, 0) {
 							__iip_assert(p->pkt);
