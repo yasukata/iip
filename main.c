@@ -1298,8 +1298,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								if (conn) {
 									struct pb *_p = p;
 									while (1) {
-										if ((conn->seq_next_expected != __iip_ntohl(PB_TCP(_p->buf)->seq_be)) ||
-												(/* PAWS */ (conn->seq_next_expected == __iip_ntohl(PB_TCP(_p->buf)->seq_be) && (p->tcp.opt.has_ts && !PB_TCP_HDR_HAS_SYN(p->buf) && !PB_TCP_HDR_HAS_RST(p->buf)) && (2147483648U <= (p->tcp.opt.ts[0] < conn->ts ? conn->ts - p->tcp.opt.ts[0] : p->tcp.opt.ts[0] - conn->ts))))) {
+										if (conn->seq_next_expected != __iip_ntohl(PB_TCP(_p->buf)->seq_be)) {
 											if ((conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used) * conn->opt[1].mss < __iip_ntohl(PB_TCP(_p->buf)->seq_be) - conn->seq_next_expected) {
 												/*IIP_OPS_DEBUG_PRINTF("tcp-in D src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u (window %u diff %u)\n",
 														(PB_IP4(_p->buf)->src_be >>  0) & 0x0ff,
@@ -1463,16 +1462,21 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												break;
 											}
 										} else {
-											__iip_enqueue_obj(conn->head[0], _p, 0);
-											pkt_used = 1;
-											s->monitor.tcp.rx_pkt++;
-											conn->seq_next_expected += PB_TCP_HDR_HAS_SYN(_p->buf) + PB_TCP_HDR_HAS_FIN(_p->buf) + PB_TCP_PAYLOAD_LEN(_p->buf);
-											if (conn->dup_ack_throttle) {
-												IIP_OPS_DEBUG_PRINTF("throttle off by in-order packet (now in ms %u)\n", __iip_now_in_ms(opaque));
-												conn->dup_ack_throttle = 0;
-											}
-											if (_p->tcp.dup_ack) {
-												IIP_OPS_DEBUG_PRINTF("%u to %u is now in-order\n", __iip_ntohl(PB_TCP(_p->buf)->seq_be), __iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf));
+											if (/* PAWS */ (p->tcp.opt.has_ts && !PB_TCP_HDR_HAS_SYN(p->buf) && !PB_TCP_HDR_HAS_RST(p->buf)) && (2147483648U <= (p->tcp.opt.ts[0] < conn->ts ? conn->ts - p->tcp.opt.ts[0] : p->tcp.opt.ts[0] - conn->ts))) {
+												if (p != _p)
+													__iip_free_pb(s, _p, opaque);
+											} else {
+												__iip_enqueue_obj(conn->head[0], _p, 0);
+												pkt_used = 1;
+												s->monitor.tcp.rx_pkt++;
+												conn->seq_next_expected += PB_TCP_HDR_HAS_SYN(_p->buf) + PB_TCP_HDR_HAS_FIN(_p->buf) + PB_TCP_PAYLOAD_LEN(_p->buf);
+												if (conn->dup_ack_throttle) {
+													IIP_OPS_DEBUG_PRINTF("throttle off by in-order packet (now in ms %u)\n", __iip_now_in_ms(opaque));
+													conn->dup_ack_throttle = 0;
+												}
+												if (_p->tcp.dup_ack) {
+													IIP_OPS_DEBUG_PRINTF("%u to %u is now in-order\n", __iip_ntohl(PB_TCP(_p->buf)->seq_be), __iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf));
+												}
 											}
 											if (conn->head[4][0]) {
 												_p = conn->head[4][0];
