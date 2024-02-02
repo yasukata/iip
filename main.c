@@ -2242,12 +2242,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										__iip_memset(&p->clone, 0, sizeof(p->clone));
 									}
 								}
-								{ /* loss detected */
-									IIP_OPS_DEBUG_PRINTF("loss detected (sack) : %p seq %u ack %u\n", (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
-									conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
-									conn->cc.win = 1;
-									conn->flags |= __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
-								}
 							} else { /* send one packet requested by peer */
 								void *cp;
 								if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
