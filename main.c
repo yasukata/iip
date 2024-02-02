@@ -421,9 +421,6 @@ struct iip_tcp_conn {
 #define __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED	(1U << 5)
 #define __IIP_TCP_CONN_FLAGS_IMMEDIATE_RETRANS	(1U << 6)
 
-	uint8_t dup_ack_throttle; /* non-standard optimization */
-	uint32_t dup_ack_throttle_ts_ms;
-
 	uint32_t fin_ack_seq_be;
 
 	uint8_t ws;
@@ -1403,13 +1400,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													if (p == _p)
 														pkt_used = 1;
 													/* IIP_OPS_DEBUG_PRINTF("out-of-order: %u %u\n", __iip_ntohl(PB_TCP(_p->buf)->seq_be), conn->seq_next_expected); */
-													if (conn->dup_ack_throttle) {
-														if (100U < __iip_now_in_ms(opaque) - conn->dup_ack_throttle_ts_ms) {
-															conn->dup_ack_throttle = 0;
-															IIP_OPS_DEBUG_PRINTF("throttle off by timer (now in ms %u)\n", __iip_now_in_ms(opaque));
-														}
-													}
-													if (!conn->dup_ack_throttle && !(_p->flags & __IIP_PB_FLAGS_DUP_ACK_SENT_TO_THIS)) {
+													if (!(_p->flags & __IIP_PB_FLAGS_DUP_ACK_SENT_TO_THIS)) {
 														uint8_t sackbuf[(15 * 4) - sizeof(struct iip_tcp_hdr) - 19] = { 5, 2, };
 														if (conn->sack_ok) {
 															uint32_t _ex = conn->seq_next_expected;
@@ -1452,12 +1443,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														}
 														_p->flags |= __IIP_PB_FLAGS_DUP_ACK_SENT_TO_THIS;
 														conn->dup_ack_sent++;
-														if (conn->dup_ack_sent == 3) {
+														if (conn->dup_ack_sent == 3)
 															conn->dup_ack_sent = 0;
-															conn->dup_ack_throttle = 1;
-															conn->dup_ack_throttle_ts_ms = __iip_now_in_ms(opaque);
-															IIP_OPS_DEBUG_PRINTF("throttle on (now in ms %u)\n", __iip_now_in_ms(opaque));
-														}
 													}
 													break;
 												}
@@ -1470,10 +1457,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													pkt_used = 1;
 													s->monitor.tcp.rx_pkt++;
 													conn->seq_next_expected += PB_TCP_HDR_HAS_SYN(_p->buf) + PB_TCP_HDR_HAS_FIN(_p->buf) + PB_TCP_PAYLOAD_LEN(_p->buf);
-													if (conn->dup_ack_throttle) {
-														IIP_OPS_DEBUG_PRINTF("throttle off by in-order packet (now in ms %u)\n", __iip_now_in_ms(opaque));
-														conn->dup_ack_throttle = 0;
-													}
 													if (_p->flags & __IIP_PB_FLAGS_DUP_ACK_SENT_TO_THIS) {
 														IIP_OPS_DEBUG_PRINTF("%u to %u is now in-order\n", __iip_ntohl(PB_TCP(_p->buf)->seq_be), __iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf));
 													}
