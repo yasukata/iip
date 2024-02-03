@@ -1403,25 +1403,28 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													if (!(_p->flags & __IIP_PB_FLAGS_DUP_ACK_SENT_TO_THIS)) {
 														uint8_t sackbuf[(15 * 4) - sizeof(struct iip_tcp_hdr) - 19] = { 5, 2, };
 														if (conn->sack_ok) {
-															uint32_t _ex = conn->seq_next_expected;
-															{
-																struct pb *__p = conn->head[4][0];
-																while (sackbuf[1] < (sizeof(sackbuf) - 2 - 8) && __p) {
-																	if (_ex != __iip_ntohl(PB_TCP(__p->buf)->seq_be)) {
-																		*((uint32_t *) &sackbuf[sackbuf[1] +                0]) = __iip_htonl(_ex);
-																		*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)]) = PB_TCP(__p->buf)->seq_be;
-																		IIP_OPS_DEBUG_PRINTF("SACK %2u: sle %u sre %u (len %u)\n", sackbuf[1],
-																				__iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1] +                0])),
-																				__iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)])),
-																				__iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)])) - __iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1] + 0])));
-																		__iip_assert(__iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1] + 0])) - conn->seq_next_expected < __iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)])) - conn->seq_next_expected);
-																		sackbuf[1] += 8;
-																	}
-																	_ex = __iip_ntohl(PB_TCP(__p->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(__p->buf) + PB_TCP_HDR_HAS_FIN(__p->buf) + PB_TCP_PAYLOAD_LEN(__p->buf);
-																	__p = __p->next[0];
+															struct pb *__p = conn->head[4][1];
+															while (sackbuf[1] < (sizeof(sackbuf) - 2 - 8) && __p) {
+																*((uint32_t *) &sackbuf[sackbuf[1] +                0]) = PB_TCP(__p->buf)->seq_be;
+																if (sackbuf[1] == 2 || *((uint32_t *) &sackbuf[sackbuf[1]]) != PB_TCP(__p->buf)->seq_be + PB_TCP_HDR_HAS_SYN(__p->buf) + PB_TCP_HDR_HAS_FIN(__p->buf) + PB_TCP_PAYLOAD_LEN(__p->buf)) {
+																	*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)]) = PB_TCP(__p->buf)->seq_be + PB_TCP_HDR_HAS_SYN(__p->buf) + PB_TCP_HDR_HAS_FIN(__p->buf) + PB_TCP_PAYLOAD_LEN(__p->buf);
+
+																	__iip_assert(__iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1] + 0])) - conn->seq_next_expected < __iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)])) - conn->seq_next_expected);
+																	sackbuf[1] += 8;
 																}
+																__p = __p->prev[0];
 															}
 															__iip_assert(sackbuf[1] != 2);
+															{ /* debug */
+																uint8_t __i;
+																for (__i = 2; __i < sackbuf[1]; __i += 8) {
+																	IIP_OPS_DEBUG_PRINTF("SACK %2u-%2u/%2u: sle %u sre %u (len %u)\n",
+																			__i, __i + 8, sackbuf[1],
+																			__iip_ntohl(*((uint32_t *) &sackbuf[__i +                0])),
+																			__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])),
+																			__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])) - __iip_ntohl(*((uint32_t *) &sackbuf[__i + 0])));
+																}
+															}
 														}
 														IIP_OPS_DEBUG_PRINTF("%p (port %u) Send Dup ACK %u %u (skipped %u) (window %u) (%u %u) ack_seq_sent %u\n",
 																(void *) conn,
@@ -1913,6 +1916,16 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						if (conn->head[2][0]) {
 							if (tcp_sack_rx[0]) { /* send packets requested through sack */
 								__iip_assert(tcp_sack_rx[1]);
+								IIP_OPS_DEBUG_PRINTF("coping with sack: entire unacked range %u %u\n",
+										__iip_ntohl(PB_TCP(conn->head[2][0]->buf)->seq_be),
+										__iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + ((PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) || PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf)) ? 1 : PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf)));
+								{ /* we reconstruct retransmission queue from scratch, so release existing ones first */
+									struct pb *p, *_n;
+									__iip_q_for_each_safe(conn->head[3], p, _n, 0) {
+										__iip_dequeue_obj(conn->head[3], p, 0);
+										__iip_free_pb(s, p, opaque);
+									}
+								}
 								{
 									/*
 									 * associate sack entries with each packet
@@ -1925,225 +1938,250 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											struct pb *_p, *__n;
 											__iip_q_for_each_safe(conn->head[2], _p, __n, 0) {
 												uint16_t c = 2;
-												while (c < PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]) {
-													uint32_t sle = __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 0])));
-													uint32_t sre = __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4])));
-													uint16_t to_be_updated = _p->clone.to_be_updated;
-													if ((__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be)) <= (__iip_ntohl(conn->seq_be) - sre)) {
-														/*
-														 * pattern 1: do nothing
-														 *                         unacked
-														 *           |-- pkt --|      |
-														 *   |   |
-														 *  sle sre
-														 */
-													} else if ((__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf))) >= (__iip_ntohl(conn->seq_be) - sle)) {
-														/*
-														 * pattern 2: do nothing
-														 *                         unacked
-														 *           |-- pkt --|      |
-														 *                      |   |
-														 *                     sle sre
-														 */
-													} else if ((__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be) <= __iip_ntohl(conn->seq_be) - sle)
-															&& (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) >= __iip_ntohl(conn->seq_be) - sre)) {
-														/*
-														 * pattern 3: all has to be retransmitted
-														 *                         unacked
-														 *           |-- pkt --|      |
-														 *        |              |
-														 *       sle            sre
-														 * or
-														 *           |-- pkt --|      |
-														 *           |         |
-														 *          sle       sre
-														 *
-														 */
-														_p->flags |= __IIP_PB_FLAGS_SACK_REPLY_SEND_ALL;
-													} else if ((__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be) > __iip_ntohl(conn->seq_be) - sle)
-															&& (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) < __iip_ntohl(conn->seq_be) - sre)) {
-														/*
-														 * pattern 4: forward head and back tail
-														 *                         unacked
-														 *           |-- pkt --|      |
-														 *              |   |
-														 *             sle sre
-														 */
-														_p->clone.range[_p->clone.to_be_updated].increment_head = sle - __iip_ntohl(PB_TCP(_p->buf)->seq_be);
-														_p->clone.range[_p->clone.to_be_updated].decrement_tail = (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) - sre;
-														IIP_OPS_DEBUG_PRINTF("SACK: resize 4: sle %u sre %u seq %u seq-to %u head %u tail %u\n",
-																sle, sre,
-																__iip_ntohl(PB_TCP(_p->buf)->seq_be),
-																__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
-																_p->clone.range[_p->clone.to_be_updated].increment_head,
-																_p->clone.range[_p->clone.to_be_updated].decrement_tail);
-														__iip_assert(_p->clone.range[_p->clone.to_be_updated].increment_head + _p->clone.range[_p->clone.to_be_updated].decrement_tail);
-														_p->clone.to_be_updated++;
-													} else if ((__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be) <= __iip_ntohl(conn->seq_be) - sle)
-															&& (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) < __iip_ntohl(conn->seq_be) - sre)
-															&& (__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be) > __iip_ntohl(conn->seq_be) - sre) /* to be sure for debug */) {
-														/*
-														 * pattern 5: back tail
-														 *                         unacked
-														 *           |-- pkt --|      |
-														 *         |   |
-														 *        sle sre
-														 * or
-														 *           |-- pkt --|      |
-														 *           |   |
-														 *          sle sre
-														 *
-														 */
-														_p->clone.range[_p->clone.to_be_updated].increment_head = 0;
-														_p->clone.range[_p->clone.to_be_updated].decrement_tail = (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) - sre;
-														IIP_OPS_DEBUG_PRINTF("SACK: resize 5: sle %u sre %u seq %u seq-to %u head %u tail %u\n",
-																sle, sre,
-																__iip_ntohl(PB_TCP(_p->buf)->seq_be),
-																__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
-																_p->clone.range[_p->clone.to_be_updated].increment_head,
-																_p->clone.range[_p->clone.to_be_updated].decrement_tail);
-														__iip_assert(_p->clone.range[_p->clone.to_be_updated].increment_head + _p->clone.range[_p->clone.to_be_updated].decrement_tail);
-														_p->clone.to_be_updated++;
-													} else if ((__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be) > __iip_ntohl(conn->seq_be) - sle)
-															&& (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) >= __iip_ntohl(conn->seq_be) - sre)
-															&& (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) < __iip_ntohl(conn->seq_be) - sle) /* to be sure for debug */) {
-														/*
-														 * pattern 6: forward head
-														 *                         unacked
-														 *           |-- pkt --|      |
-														 *                   |   |
-														 *                  sle sre
-														 * or
-														 *           |-- pkt --|      |
-														 *                 |   |
-														 *                sle sre
-														 */
-														_p->clone.range[_p->clone.to_be_updated].increment_head = sle - __iip_ntohl(PB_TCP(_p->buf)->seq_be);
-														_p->clone.range[_p->clone.to_be_updated].decrement_tail = 0;
-														IIP_OPS_DEBUG_PRINTF("SACK: resize 6: sle %u sre %u seq %u seq-to %u head %u tail %u\n",
-																sle, sre,
-																__iip_ntohl(PB_TCP(_p->buf)->seq_be),
-																__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
-																_p->clone.range[_p->clone.to_be_updated].increment_head,
-																_p->clone.range[_p->clone.to_be_updated].decrement_tail);
-														__iip_assert(_p->clone.range[_p->clone.to_be_updated].increment_head + _p->clone.range[_p->clone.to_be_updated].decrement_tail);
-														_p->clone.to_be_updated++;
-													} else {
-														/* we should not come here */
-														IIP_OPS_DEBUG_PRINTF("sle %u sre %u seq %u seq-to %u\n",
-																sle, sre,
-																__iip_ntohl(PB_TCP(_p->buf)->seq_be),
-																__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf));
-														__iip_assert(0);
-													}
+												uint32_t __ex = __iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be);
+												while (c <= PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]) {
+													if (c == PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off] || __ex != __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4])))) {
+														uint32_t mle = (c == PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off] ? __iip_ntohl(PB_TCP(conn->head[2][0]->buf)->seq_be) :__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4])))); /* missing left edge */
+														uint32_t mre = __ex; /* missing right edge */
+														uint16_t to_be_updated = _p->clone.to_be_updated;
+														if (conn->head[2][0] == _p) { /* debug */
+															IIP_OPS_DEBUG_PRINTF("sack peer missing  %u to %u (len %u)\n", mle, mre, mre - mle);
+														}
+														if ((__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be)) <= (__iip_ntohl(conn->seq_be) - mre)) {
+															/*
+															 * pattern 1: do nothing
+															 *                         unacked
+															 *           |-- pkt --|      |
+															 *   |   |
+															 *  mle mre
+															 */
+															/*IIP_OPS_DEBUG_PRINTF("SACK: pattern 1: mle %u mre %u seq %u seq-to %u head %u tail %u\n",
+																	mle, mre,
+																	__iip_ntohl(PB_TCP(_p->buf)->seq_be),
+																	__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
+																	_p->clone.range[_p->clone.to_be_updated].increment_head,
+																	_p->clone.range[_p->clone.to_be_updated].decrement_tail);*/
+														} else if ((__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf))) >= (__iip_ntohl(conn->seq_be) - mle)) {
+															/*
+															 * pattern 2: do nothing
+															 *                         unacked
+															 *           |-- pkt --|      |
+															 *                      |   |
+															 *                     mle mre
+															 */
+															/*IIP_OPS_DEBUG_PRINTF("SACK: pattern 2: mle %u mre %u seq %u seq-to %u head %u tail %u\n",
+																	mle, mre,
+																	__iip_ntohl(PB_TCP(_p->buf)->seq_be),
+																	__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
+																	_p->clone.range[_p->clone.to_be_updated].increment_head,
+																	_p->clone.range[_p->clone.to_be_updated].decrement_tail);*/
+														} else if ((__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be) <= __iip_ntohl(conn->seq_be) - mle)
+																&& (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) >= __iip_ntohl(conn->seq_be) - mre)) {
+															/*
+															 * pattern 3: all has to be retransmitted
+															 *                         unacked
+															 *           |-- pkt --|      |
+															 *        |              |
+															 *       mle            mre
+															 * or
+															 *           |-- pkt --|      |
+															 *           |         |
+															 *          mle       mre
+															 *
+															 */
+															_p->flags |= __IIP_PB_FLAGS_SACK_REPLY_SEND_ALL;
+															/*IIP_OPS_DEBUG_PRINTF("SACK: pattern 3: mle %u mre %u seq %u seq-to %u head %u tail %u\n",
+																	mle, mre,
+																	__iip_ntohl(PB_TCP(_p->buf)->seq_be),
+																	__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
+																	_p->clone.range[_p->clone.to_be_updated].increment_head,
+																	_p->clone.range[_p->clone.to_be_updated].decrement_tail);*/
+														} else if ((__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be) > __iip_ntohl(conn->seq_be) - mle)
+																&& (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) < __iip_ntohl(conn->seq_be) - mre)) {
+															/*
+															 * pattern 4: forward head and back tail
+															 *                         unacked
+															 *           |-- pkt --|      |
+															 *              |   |
+															 *             mle mre
+															 */
+															_p->clone.range[_p->clone.to_be_updated].increment_head = mle - __iip_ntohl(PB_TCP(_p->buf)->seq_be);
+															_p->clone.range[_p->clone.to_be_updated].decrement_tail = (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) - mre;
+															IIP_OPS_DEBUG_PRINTF("SACK: resize 4: mle %u mre %u seq %u seq-to %u head %u tail %u\n",
+																	mle, mre,
+																	__iip_ntohl(PB_TCP(_p->buf)->seq_be),
+																	__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
+																	_p->clone.range[_p->clone.to_be_updated].increment_head,
+																	_p->clone.range[_p->clone.to_be_updated].decrement_tail);
+															__iip_assert(_p->clone.range[_p->clone.to_be_updated].increment_head + _p->clone.range[_p->clone.to_be_updated].decrement_tail);
+															_p->clone.to_be_updated++;
+														} else if ((__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be) <= __iip_ntohl(conn->seq_be) - mle)
+																&& (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) < __iip_ntohl(conn->seq_be) - mre)
+																&& (__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be) > __iip_ntohl(conn->seq_be) - mre) /* to be sure for debug */) {
+															/*
+															 * pattern 5: back tail
+															 *                         unacked
+															 *           |-- pkt --|      |
+															 *         |   |
+															 *        mle mre
+															 * or
+															 *           |-- pkt --|      |
+															 *           |   |
+															 *          mle mre
+															 *
+															 */
+															_p->clone.range[_p->clone.to_be_updated].increment_head = 0;
+															_p->clone.range[_p->clone.to_be_updated].decrement_tail = (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) - mre;
+															IIP_OPS_DEBUG_PRINTF("SACK: resize 5: mle %u mre %u seq %u seq-to %u head %u tail %u\n",
+																	mle, mre,
+																	__iip_ntohl(PB_TCP(_p->buf)->seq_be),
+																	__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
+																	_p->clone.range[_p->clone.to_be_updated].increment_head,
+																	_p->clone.range[_p->clone.to_be_updated].decrement_tail);
+															__iip_assert(_p->clone.range[_p->clone.to_be_updated].increment_head + _p->clone.range[_p->clone.to_be_updated].decrement_tail);
+															_p->clone.to_be_updated++;
+														} else if ((__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be) > __iip_ntohl(conn->seq_be) - mle)
+																&& (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) >= __iip_ntohl(conn->seq_be) - mre)
+																&& (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) < __iip_ntohl(conn->seq_be) - mle) /* to be sure for debug */) {
+															/*
+															 * pattern 6: forward head
+															 *                         unacked
+															 *           |-- pkt --|      |
+															 *                   |   |
+															 *                  mle mre
+															 * or
+															 *           |-- pkt --|      |
+															 *                 |   |
+															 *                mle mre
+															 */
+															_p->clone.range[_p->clone.to_be_updated].increment_head = mle - __iip_ntohl(PB_TCP(_p->buf)->seq_be);
+															_p->clone.range[_p->clone.to_be_updated].decrement_tail = 0;
+															IIP_OPS_DEBUG_PRINTF("SACK: resize 6: mle %u mre %u seq %u seq-to %u head %u tail %u\n",
+																	mle, mre,
+																	__iip_ntohl(PB_TCP(_p->buf)->seq_be),
+																	__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
+																	_p->clone.range[_p->clone.to_be_updated].increment_head,
+																	_p->clone.range[_p->clone.to_be_updated].decrement_tail);
+															__iip_assert(_p->clone.range[_p->clone.to_be_updated].increment_head + _p->clone.range[_p->clone.to_be_updated].decrement_tail);
+															_p->clone.to_be_updated++;
+														} else {
+															/* we should not come here */
+															IIP_OPS_DEBUG_PRINTF("mle %u mre %u seq %u seq-to %u\n",
+																	mle, mre,
+																	__iip_ntohl(PB_TCP(_p->buf)->seq_be),
+																	__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf));
+															__iip_assert(0);
+														}
 
-													if (to_be_updated != _p->clone.to_be_updated) { /* added new entry */
-														/*
-														 * check overlap entries:
-														 * we do this for each new entry so that we can ensure that
-														 * there is no overlap in the entries
-														 */
-														uint16_t i;
-														for (i = 0; i < _p->clone.to_be_updated - 1; i++) {
-															void *_p_pkt;
-															if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque))
-																_p_pkt = iip_ops_pkt_scatter_gather_chain_get_next(_p->pkt, opaque);
-															else
-																_p_pkt = _p->orig_pkt;
-															__iip_assert(_p_pkt);
-															if (_p->clone.range[_p->clone.to_be_updated - 1].increment_head > iip_ops_pkt_get_len(_p_pkt, opaque) /* TODO: no multi segment */ - _p->clone.range[i].decrement_tail) {
-																/*
-																 * pattern 1
-																 * new:      |  |
-																 * i  : |  |
-																 */
-																IIP_OPS_DEBUG_PRINTF("1: sack[%u/%u]: head %u tail %u : %u %u\n", i, _p->clone.to_be_updated, _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
-															} else if (iip_ops_pkt_get_len(_p_pkt, opaque) /* TODO: no multi segment */ - _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail < _p->clone.range[i].increment_head) {
-																IIP_OPS_DEBUG_PRINTF("2: sack[%u/%u]: (%u) head %u tail %u : %u %u\n", i, _p->clone.to_be_updated, iip_ops_pkt_get_len(_p_pkt, opaque), _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
-																/*
-																 * pattern 2
-																 * new:      |  |
-																 * i  :           |  |
-																 */
-															} else if (_p->clone.range[_p->clone.to_be_updated - 1].increment_head >= _p->clone.range[i].increment_head
-																	&& _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail >= _p->clone.range[i].decrement_tail) {
-																IIP_OPS_DEBUG_PRINTF("3: sack[%u/%u]: head %u tail %u : %u %u\n", i, _p->clone.to_be_updated, _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
-																/*
-																 * pattern 3
-																 * new:      |  |
-																 * i  :    |      |
-																 *  or
-																 * new:      |  |
-																 * i  :      |  |
-																 */
-																__iip_assert(_p->clone.range[i].increment_head + _p->clone.range[i].decrement_tail);
-																_p->clone.to_be_updated--;
-															} else if (_p->clone.range[_p->clone.to_be_updated - 1].increment_head <= _p->clone.range[i].increment_head
-																	&& _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail <= _p->clone.range[i].decrement_tail) {
-																IIP_OPS_DEBUG_PRINTF("4: sack[%u/%u]: head %u tail %u : %u %u\n", i, _p->clone.to_be_updated, _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
-																/*
-																 * pattern 4: full overlap, remove
-																 * new:    |      |
-																 * i  :      |  |
-																 * or
-																 * new:    |      |
-																 * i  :    |  |
-																 * or
-																 * new:    |      |
-																 * i  :        |  |
-																 *
-																 */
-																__iip_memmove(&_p->clone.range[i], &_p->clone.range[i + 1], sizeof(_p->clone.range[i]) * (_p->clone.to_be_updated - i));
-																_p->clone.to_be_updated--;
-																i = (uint16_t) -1; /* check the coverage of other parts */
-															} else if (_p->clone.range[_p->clone.to_be_updated - 1].increment_head > _p->clone.range[i].increment_head
-																	&& _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail < _p->clone.range[i].decrement_tail
-																	&& _p->clone.range[_p->clone.to_be_updated - 1].increment_head <= iip_ops_pkt_get_len(_p_pkt, opaque) /* TODO: no multi segment */ - _p->clone.range[i].decrement_tail /* to be sure for debug */) {
-																IIP_OPS_DEBUG_PRINTF("5: sack[%u/%u]: head %u tail %u : %u %u\n", i, _p->clone.to_be_updated, _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
-																/*
-																 * pattern 5: merge
-																 * new:      |  |
-																 * i  :    |  |
-																 *  or
-																 * new:      |  |
-																 * i  :   |  |
-																 */
-																_p->clone.range[_p->clone.to_be_updated - 1].increment_head = _p->clone.range[i].increment_head;
-																if (!_p->clone.range[_p->clone.to_be_updated - 1].increment_head && !_p->clone.range[_p->clone.to_be_updated - 1].decrement_tail) {
-																	/* all data, remove clone info */
-																	__iip_memset(&_p->clone, 0, sizeof(_p->clone));
-																} else {
+														if (to_be_updated != _p->clone.to_be_updated) { /* added new entry */
+															/*
+															 * check overlap entries:
+															 * we do this for each new entry so that we can ensure that
+															 * there is no overlap in the entries
+															 */
+															uint16_t i;
+															for (i = 0; i < _p->clone.to_be_updated - 1; i++) {
+																void *_p_pkt;
+																if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque))
+																	_p_pkt = iip_ops_pkt_scatter_gather_chain_get_next(_p->pkt, opaque);
+																else
+																	_p_pkt = _p->orig_pkt;
+																__iip_assert(_p_pkt);
+																if (_p->clone.range[_p->clone.to_be_updated - 1].increment_head > iip_ops_pkt_get_len(_p_pkt, opaque) /* TODO: no multi segment */ - _p->clone.range[i].decrement_tail) {
+																	/*
+																	 * pattern 1
+																	 * new:      |  |
+																	 * i  : |  |
+																	 */
+																	IIP_OPS_DEBUG_PRINTF("1: sack[%u/%u]: head %u tail %u : %u %u\n", i, _p->clone.to_be_updated, _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
+																} else if (iip_ops_pkt_get_len(_p_pkt, opaque) /* TODO: no multi segment */ - _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail < _p->clone.range[i].increment_head) {
+																	IIP_OPS_DEBUG_PRINTF("2: sack[%u/%u]: (%u) head %u tail %u : %u %u\n", i, _p->clone.to_be_updated, iip_ops_pkt_get_len(_p_pkt, opaque), _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
+																	/*
+																	 * pattern 2
+																	 * new:      |  |
+																	 * i  :           |  |
+																	 */
+																} else if (_p->clone.range[_p->clone.to_be_updated - 1].increment_head >= _p->clone.range[i].increment_head
+																		&& _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail >= _p->clone.range[i].decrement_tail) {
+																	IIP_OPS_DEBUG_PRINTF("3: sack[%u/%u]: head %u tail %u : %u %u\n", i, _p->clone.to_be_updated, _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
+																	/*
+																	 * pattern 3
+																	 * new:      |  |
+																	 * i  :    |      |
+																	 *  or
+																	 * new:      |  |
+																	 * i  :      |  |
+																	 */
+																	__iip_assert(_p->clone.range[i].increment_head + _p->clone.range[i].decrement_tail);
+																	_p->clone.to_be_updated--;
+																} else if (_p->clone.range[_p->clone.to_be_updated - 1].increment_head <= _p->clone.range[i].increment_head
+																		&& _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail <= _p->clone.range[i].decrement_tail) {
+																	IIP_OPS_DEBUG_PRINTF("4: sack[%u/%u]: head %u tail %u : %u %u\n", i, _p->clone.to_be_updated, _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
+																	/*
+																	 * pattern 4: full overlap, remove
+																	 * new:    |      |
+																	 * i  :      |  |
+																	 * or
+																	 * new:    |      |
+																	 * i  :    |  |
+																	 * or
+																	 * new:    |      |
+																	 * i  :        |  |
+																	 *
+																	 */
 																	__iip_memmove(&_p->clone.range[i], &_p->clone.range[i + 1], sizeof(_p->clone.range[i]) * (_p->clone.to_be_updated - i));
 																	_p->clone.to_be_updated--;
-																	i = (uint16_t) -1; /* check if we have bridged two separate parts */
-																}
-															} else if (_p->clone.range[_p->clone.to_be_updated - 1].increment_head < _p->clone.range[i].increment_head
-																	&& _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail > _p->clone.range[i].decrement_tail
-																	&& iip_ops_pkt_get_len(_p_pkt, opaque) /* TODO: no multi segment */ -  _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail >= _p->clone.range[i].increment_head /* to be sure for debug */) {
-																IIP_OPS_DEBUG_PRINTF("6: sack[%u/%u]: head %u tail %u : %u %u\n", i, _p->clone.to_be_updated, _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
-																/*
-																 * pattern 6
-																 * new:      |  |
-																 * i  :        |  |
-																 *  or
-																 * new:      |  |
-																 * i  :         |  |
-																 */
-																_p->clone.range[_p->clone.to_be_updated - 1].decrement_tail = _p->clone.range[i].decrement_tail;
-																if (!_p->clone.range[_p->clone.to_be_updated - 1].increment_head && !_p->clone.range[_p->clone.to_be_updated - 1].decrement_tail) {
-																	/* all data, remove clone info */
-																	__iip_memset(&_p->clone, 0, sizeof(_p->clone));
+																	i = (uint16_t) -1; /* check the coverage of other parts */
+																} else if (_p->clone.range[_p->clone.to_be_updated - 1].increment_head > _p->clone.range[i].increment_head
+																		&& _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail < _p->clone.range[i].decrement_tail
+																		&& _p->clone.range[_p->clone.to_be_updated - 1].increment_head <= iip_ops_pkt_get_len(_p_pkt, opaque) /* TODO: no multi segment */ - _p->clone.range[i].decrement_tail /* to be sure for debug */) {
+																	IIP_OPS_DEBUG_PRINTF("5: sack[%u/%u]: head %u tail %u : %u %u\n", i, _p->clone.to_be_updated, _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
+																	/*
+																	 * pattern 5: merge
+																	 * new:      |  |
+																	 * i  :    |  |
+																	 *  or
+																	 * new:      |  |
+																	 * i  :   |  |
+																	 */
+																	_p->clone.range[_p->clone.to_be_updated - 1].increment_head = _p->clone.range[i].increment_head;
+																	if (!_p->clone.range[_p->clone.to_be_updated - 1].increment_head && !_p->clone.range[_p->clone.to_be_updated - 1].decrement_tail) {
+																		/* all data, remove clone info */
+																		__iip_memset(&_p->clone, 0, sizeof(_p->clone));
+																	} else {
+																		__iip_memmove(&_p->clone.range[i], &_p->clone.range[i + 1], sizeof(_p->clone.range[i]) * (_p->clone.to_be_updated - i));
+																		_p->clone.to_be_updated--;
+																		i = (uint16_t) -1; /* check if we have bridged two separate parts */
+																	}
+																} else if (_p->clone.range[_p->clone.to_be_updated - 1].increment_head < _p->clone.range[i].increment_head
+																		&& _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail > _p->clone.range[i].decrement_tail
+																		&& iip_ops_pkt_get_len(_p_pkt, opaque) /* TODO: no multi segment */ -  _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail >= _p->clone.range[i].increment_head /* to be sure for debug */) {
+																	IIP_OPS_DEBUG_PRINTF("6: sack[%u/%u]: head %u tail %u : %u %u\n", i, _p->clone.to_be_updated, _p->clone.range[_p->clone.to_be_updated - 1].increment_head, _p->clone.range[_p->clone.to_be_updated - 1].decrement_tail, _p->clone.range[i].increment_head, _p->clone.range[i].decrement_tail);
+																	/*
+																	 * pattern 6
+																	 * new:      |  |
+																	 * i  :        |  |
+																	 *  or
+																	 * new:      |  |
+																	 * i  :         |  |
+																	 */
+																	_p->clone.range[_p->clone.to_be_updated - 1].decrement_tail = _p->clone.range[i].decrement_tail;
+																	if (!_p->clone.range[_p->clone.to_be_updated - 1].increment_head && !_p->clone.range[_p->clone.to_be_updated - 1].decrement_tail) {
+																		/* all data, remove clone info */
+																		__iip_memset(&_p->clone, 0, sizeof(_p->clone));
+																	} else {
+																		__iip_memmove(&_p->clone.range[i], &_p->clone.range[i + 1], sizeof(_p->clone.range[i]) * (_p->clone.to_be_updated - i));
+																		_p->clone.to_be_updated--;
+																		i = (uint16_t) -1; /* check if we have bridged two separate parts */
+																	}
 																} else {
-																	__iip_memmove(&_p->clone.range[i], &_p->clone.range[i + 1], sizeof(_p->clone.range[i]) * (_p->clone.to_be_updated - i));
-																	_p->clone.to_be_updated--;
-																	i = (uint16_t) -1; /* check if we have bridged two separate parts */
+																	/* we should not come here */
+																	__iip_assert(0);
 																}
-															} else {
-																/* we should not come here */
-																__iip_assert(0);
 															}
 														}
 													}
+													__ex = __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 0])));
 													c += 8;
 												}
 											}
@@ -2231,7 +2269,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													struct pb *out_p = _conn.head[1][1];
 													__iip_dequeue_obj(_conn.head[1], out_p, 0);
 													__iip_enqueue_obj(conn->head[3], out_p, 0); /* workaround to bypass the ordered queue */
-													IIP_OPS_DEBUG_PRINTF("sack reply: %u\n", __iip_ntohl(PB_TCP(out_p->buf)->seq_be));
 													conn->flags &= ~__IIP_TCP_CONN_FLAGS_IMMEDIATE_RETRANS; /* no need extra retransmission */
 												}
 											}
@@ -2240,6 +2277,18 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										}
 										p->flags &= ~(__IIP_PB_FLAGS_SACK_REPLY_SEND_ALL);
 										__iip_memset(&p->clone, 0, sizeof(p->clone));
+									}
+								}
+								if (conn->head[3][0]) { /* debug */
+									uint32_t __ex = __iip_ntohl(PB_TCP(conn->head[3][0]->buf)->seq_be);
+									{
+										struct pb *p, *_n;
+										__iip_q_for_each_safe(conn->head[3], p, _n, 0) {
+											if (__ex != __iip_ntohl(PB_TCP(p->buf)->seq_be))
+												IIP_OPS_DEBUG_PRINTF("sack skip : %u %u (len %u)\n", __ex, __iip_ntohl(PB_TCP(p->buf)->seq_be), __iip_ntohl(PB_TCP(p->buf)->seq_be) - __ex);
+											/*IIP_OPS_DEBUG_PRINTF("sack reply: %u %u (len %u)\n", __iip_ntohl(PB_TCP(p->buf)->seq_be), __iip_ntohl(PB_TCP(p->buf)->seq_be) + ((PB_TCP_HDR_HAS_SYN(p->buf) || PB_TCP_HDR_HAS_FIN(p->buf)) ? 1 : PB_TCP_PAYLOAD_LEN(p->buf)), __iip_ntohl(PB_TCP(p->buf)->seq_be) + ((PB_TCP_HDR_HAS_SYN(p->buf) || PB_TCP_HDR_HAS_FIN(p->buf)) ? 1 : PB_TCP_PAYLOAD_LEN(p->buf)) - __iip_ntohl(PB_TCP(p->buf)->seq_be));*/
+											__ex = __iip_ntohl(PB_TCP(p->buf)->seq_be) + ((PB_TCP_HDR_HAS_SYN(p->buf) || PB_TCP_HDR_HAS_FIN(p->buf)) ? 1 : PB_TCP_PAYLOAD_LEN(p->buf));
+										}
 									}
 								}
 							} else { /* send one packet requested by peer */
