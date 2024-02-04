@@ -2025,29 +2025,34 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											uint8_t sackbuf[(15 * 4) - sizeof(struct iip_tcp_hdr) - 19] = { 5, 2, };
 											if (conn->sack_ok) {
 												struct pb *__p = conn->head[4][1];
-												uint16_t dbg_cnt = 0;
+												__iip_assert(__p);
 												while (sackbuf[1] < (sizeof(sackbuf) - 2 - 8) && __p) {
-													uint8_t new_ent = 0;
-													if (sackbuf[1] == 2 || *((uint32_t *) &sackbuf[sackbuf[1]]) != __iip_htonl(SEQ_RE_RAW(__p))) { /* add new entry */
+													if (sackbuf[1] == 2) {
 														*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)]) = __iip_htonl(SEQ_RE_RAW(__p));
-														new_ent = 1;
+													} else if (*((uint32_t *) &sackbuf[sackbuf[1]]) != __iip_htonl(SEQ_RE_RAW(__p))) { /* add new entry */
+														if (__iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1]])) - conn->seq_next_expected != __iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)])) - conn->seq_next_expected) {
+															/* we only add entry when the entry has the length */
+															sackbuf[1] += 8;
+															*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)]) = __iip_htonl(SEQ_RE_RAW(__p));
+														}
 													}
 													*((uint32_t *) &sackbuf[sackbuf[1]]) = __iip_htonl(SEQ_LE_RAW(__p));
-													__iip_assert(__iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1]])) - conn->seq_next_expected < __iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)])) - conn->seq_next_expected);
-													if (new_ent)
-														sackbuf[1] += 8;
+													__iip_assert(__iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1]])) - conn->seq_next_expected <= /* accept no payload length packet */ __iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)])) - conn->seq_next_expected);
 													__p = __p->prev[0];
-													dbg_cnt++;
 												}
-												__iip_assert(sackbuf[1] != 2);
+												if (__iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1]])) - conn->seq_next_expected != __iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)])) - conn->seq_next_expected) {
+													/* we only add entry when the entry has the length */
+													sackbuf[1] += 8;
+												}
 												{ /* debug */
 													uint8_t __i;
 													for (__i = 2; __i < sackbuf[1]; __i += 8) {
-														IIP_OPS_DEBUG_PRINTF("SACK %2u-%2u/%2u (pending queue len %u): sle %u sre %u (len %u)\n",
-																__i, __i + 8, sackbuf[1], dbg_cnt,
+														IIP_OPS_DEBUG_PRINTF("SACK %2u-%2u/%2u: sle %u sre %u (len %u) expected seq %u\n",
+																__i, __i + 8, sackbuf[1],
 																__iip_ntohl(*((uint32_t *) &sackbuf[__i +                0])),
 																__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])),
-																__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])) - __iip_ntohl(*((uint32_t *) &sackbuf[__i + 0])));
+																__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])) - __iip_ntohl(*((uint32_t *) &sackbuf[__i + 0])),
+																conn->seq_next_expected);
 													}
 												}
 											}
