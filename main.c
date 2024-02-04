@@ -1378,7 +1378,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														__iip_dequeue_obj(conn->head[4], _p, 0);
 														continue;
 													}
-												} else { /* range of seq is fine, does not exceed advertised window size */
+												} else if (conn->sack_ok) { /* range of seq is fine, does not exceed advertised window size */
 													if (p == _p)
 														do_dup_ack = 1;
 													/*IIP_OPS_DEBUG_PRINTF("tcp-in O src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
@@ -1987,6 +1987,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														}
 													}
 													/* IIP_OPS_DEBUG_PRINTF("out-of-order: %u %u\n", __iip_ntohl(PB_TCP(_p->buf)->seq_be), conn->seq_next_expected); */
+												} else {
+													__iip_assert(p == _p);
+													__iip_free_pb(s, _p, opaque);
+													_p = NULL; /* for easier assertion */
+													do_dup_ack = 1;
 												}
 												/*
 												 * _p is not pushed to head[0], therefore,
