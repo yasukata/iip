@@ -552,8 +552,8 @@ static struct pb *__iip_clone_pb(struct workspace *s, struct pb *orig, void *opa
 	p->flags = orig->flags;
 	p->ts = orig->ts;
 	p->a_cnt = orig->a_cnt;
-	memcpy(&p->tcp, &orig->tcp, sizeof(p->tcp));
-	memcpy(&p->clone, &orig->clone, sizeof(p->clone));
+	__iip_memcpy(&p->tcp, &orig->tcp, sizeof(p->tcp));
+	__iip_memcpy(&p->clone, &orig->clone, sizeof(p->clone));
 	/* we do not touch queue entity */
 	s->pool.p_cnt--;
 	return p;
