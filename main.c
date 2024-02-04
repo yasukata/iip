@@ -3049,6 +3049,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_CLOSED because of timeout after %u retransmission\n", (void *) conn, IIP_CONF_TCP_RETRANS_CNT);
 									continue;
 								}
+							} else {
+								uint32_t _next_us_tmp = (conn->head[2][0]->tcp.rto_ms - (now - conn->head[2][0]->ts)) * 1000U;
+								if (_next_us_tmp < _next_us)
+									_next_us = _next_us_tmp;
 							}
 						}
 					}
