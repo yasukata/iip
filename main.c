@@ -2306,16 +2306,21 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											uint32_t nticks = p->tcp.opt.ts[1] - conn->rtt.ts;
 											{
 												uint32_t delta = (nticks < conn->rtt.srtt ? conn->rtt.srtt - nticks : nticks - conn->rtt.srtt);
-												if (nticks < conn->rtt.srtt)
-													conn->rtt.srtt -= delta / 8;
-												else
-													conn->rtt.srtt += delta / 8;
-												{
-													uint32_t d2 = (delta < conn->rtt.rttvar ? conn->rtt.rttvar - delta : delta - conn->rtt.rttvar);
-													if (delta < conn->rtt.rttvar)
-														conn->rtt.rttvar -= d2 / 4;
+												if (conn->state == __IIP_TCP_STATE_SYN_SENT || conn->state == __IIP_TCP_STATE_SYN_RECVD) {
+													conn->rtt.srtt = delta;
+													conn->rtt.rttvar = delta / 2;
+												} else {
+													if (nticks < conn->rtt.srtt)
+														conn->rtt.srtt -= delta / 8;
 													else
-														conn->rtt.rttvar += d2 / 4;
+														conn->rtt.srtt += delta / 8;
+													{
+														uint32_t d2 = (delta < conn->rtt.rttvar ? conn->rtt.rttvar - delta : delta - conn->rtt.rttvar);
+														if (delta < conn->rtt.rttvar)
+															conn->rtt.rttvar -= d2 / 4;
+														else
+															conn->rtt.rttvar += d2 / 4;
+													}
 												}
 
 											}
