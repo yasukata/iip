@@ -1331,7 +1331,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 #define SEQ_LE(__pb) (SEQ_LE_RAW(__pb) - conn->seq_next_expected) /* left edge, relative */
 #define SEQ_RE(__pb) (SEQ_RE_RAW(__pb) - conn->seq_next_expected) /* right edge, relative */
 										struct pb *_p = p;
-										uint8_t do_dup_ack = 0;
+										uint8_t do_dup_ack = 0, do_immediate_ack = 0;
 										while (1) {
 											__iip_assert(_p);
 											__iip_assert(_p->buf);
@@ -1356,6 +1356,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															(conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used) * IIP_CONF_TCP_OPT_MSS,
 															__iip_ntohl(PB_TCP(_p->buf)->seq_be) - conn->seq_next_expected);
 													__iip_free_pb(s, _p, opaque);
+													if (p == _p) {
+														/* send ack */
+														do_immediate_ack = 1;
+													}
 													if (p != _p && conn->head[4][0]) {
 														/*
 														 * we continue the loop to cope with the following case
@@ -2019,9 +2023,9 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												break;
 											}
 										}
-										if (do_dup_ack) {
+										if (do_dup_ack || do_immediate_ack) {
 											uint8_t sackbuf[(15 * 4) - sizeof(struct iip_tcp_hdr) - 19] = { 5, 2, };
-											if (conn->sack_ok) {
+											if (do_dup_ack && conn->sack_ok) {
 												struct pb *__p = conn->head[4][1];
 												__iip_assert(__p);
 												while (sackbuf[1] < (sizeof(sackbuf) - 2 - 8) && __p) {
@@ -2062,9 +2066,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													__iip_enqueue_obj(conn->head[5], dup_ack_p, 0);
 												}
 											}
-											conn->dup_ack_sent++;
-											if (conn->dup_ack_sent == 3)
-												conn->dup_ack_sent = 0;
+											if (do_dup_ack) {
+												conn->dup_ack_sent++;
+												if (conn->dup_ack_sent == 3)
+													conn->dup_ack_sent = 0;
+											}
 										}
 #undef SEQ_LE
 #undef SEQ_RE
