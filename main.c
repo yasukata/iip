@@ -2971,6 +2971,16 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							}
 						}
 					}
+					{ /* cancel retransmission exceeding flow and congestion windows */
+						struct pb *p, *_n;
+						__iip_q_for_each_safe(conn->head[3], p, _n, 0) {
+							if ((uint32_t) conn->cc.win * PB_TCP_PAYLOAD_LEN(p->buf) < (uint32_t)((__iip_ntohl(PB_TCP(p->buf)->seq_be) - conn->acked_seq) + PB_TCP_PAYLOAD_LEN(p->buf)) ||
+									((uint32_t) conn->peer_win << conn->ws) < (__iip_ntohl(PB_TCP(p->buf)->seq_be) + (uint32_t) PB_TCP_PAYLOAD_LEN(p->buf)) + PB_TCP_HDR_HAS_FIN(p->buf) - conn->acked_seq /* len to be filled on the rx side */) {
+								__iip_dequeue_obj(conn->head[3], p, 0);
+								__iip_free_pb(s, p, opaque);
+							}
+						}
+					}
 					/* timeout check */
 					if (!conn->head[3][0] && !conn->head[5][0]) { /* not in recovery mode */
 						if (conn->head[2][0]) {
