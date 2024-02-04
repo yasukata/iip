@@ -1356,7 +1356,26 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															(conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used) * IIP_CONF_TCP_OPT_MSS,
 															__iip_ntohl(PB_TCP(_p->buf)->seq_be) - conn->seq_next_expected);
 													__iip_free_pb(s, _p, opaque);
-													_p = NULL; /* for easier assertion */
+													if (p != _p && conn->head[4][0]) {
+														/*
+														 * we continue the loop to cope with the following case
+														 *
+														 * head[4] has ( ) ( ) ( ) 4 5 6 7 8
+														 * seq_next_expected is 1 and currently missing 1 2 3
+														 *
+														 * afterward, we received 1 2 3 4 5 in order
+														 *
+														 * in this case, seq_next_expected will be updated to 6
+														 * and, 4 and 5 in head[4] has to be removed
+														 *
+														 * to do this remove in head[4], we continue the loop
+														 */
+														__iip_assert(conn->head[4][1]);
+														_p = conn->head[4][0];
+														__iip_assert(_p->buf);
+														__iip_dequeue_obj(conn->head[4], _p, 0);
+														continue;
+													}
 												} else { /* range of seq is fine, does not exceed advertised window size */
 													if (p == _p)
 														do_dup_ack = 1;
