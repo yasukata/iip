@@ -2054,16 +2054,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													}
 												}
 											}
-											IIP_OPS_DEBUG_PRINTF("%p (port %u) Send Dup ACK %u %u (skipped %u) (window %u) (%u %u) ack_seq_sent %u\n",
-													(void *) conn,
-													__iip_ntohs(PB_TCP(_p->buf)->src_be),
-													conn->seq_next_expected,
-													__iip_ntohl(PB_TCP(_p->buf)->seq_be),
-													__iip_ntohl(PB_TCP(_p->buf)->seq_be) - conn->seq_next_expected,
-													(conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used) * IIP_CONF_TCP_OPT_MSS,
-													conn->seq_next_expected,
-													__iip_ntohl(PB_TCP(_p->buf)->seq_be),
-													conn->ack_seq_sent);
 											{ /* send dup ack */
 												__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, (sackbuf[1] == 2 ? NULL : sackbuf), opaque);
 												{ /* workaround to bypass the ordered queue */
