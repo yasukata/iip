@@ -423,6 +423,7 @@ struct iip_tcp_conn {
 #define __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED	(1U << 5)
 
 	uint32_t sent_seq_when_loss_detected;
+	uint32_t dupack_ts_ms;
 
 	uint32_t fin_ack_seq_be;
 
@@ -2024,7 +2025,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												break;
 											}
 										}
-										if (do_dup_ack || do_immediate_ack) {
+										if ((do_dup_ack || do_immediate_ack) && (__iip_now_in_ms(opaque) - conn->dupack_ts_ms > 1U /* dup ack throttling : 1 ms */)) {
 											uint8_t sackbuf[(15 * 4) - sizeof(struct iip_tcp_hdr) - 19] = { 5, 2, };
 											if (do_dup_ack && conn->sack_ok) {
 												struct pb *__p = conn->head[4][1];
@@ -2072,6 +2073,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												if (conn->dup_ack_sent == 3)
 													conn->dup_ack_sent = 0;
 											}
+											conn->dupack_ts_ms = __iip_now_in_ms(opaque);
 										}
 #undef SEQ_LE
 #undef SEQ_RE
