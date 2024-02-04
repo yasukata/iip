@@ -92,7 +92,7 @@ static void     iip_ops_icmp_reply(void *_mem, void *m, void *opaque) { (void) _
 static uint8_t  iip_ops_tcp_accept(void *mem, void *m, void *opaque) { (void) mem; (void) m; (void) opaque; return 0; }
 static void *   iip_ops_tcp_accepted(void *mem, void *handle, void *m, void *opaque) { (void) mem; (void) handle; (void) m; (void) opaque; return (void *) 0; }
 static void *   iip_ops_tcp_connected(void *mem, void *handle, void *m, void *opaque) { (void) mem; (void) handle; (void) m; (void) opaque; return (void *) 0; }
-static void     iip_ops_tcp_payload(void *mem, void *handle, void *m, void *tcp_opaque, void *opaque) { (void) mem; (void) handle; (void) m; (void) tcp_opaque; (void) opaque; }
+static void     iip_ops_tcp_payload(void *mem, void *handle, void *m, void *tcp_opaque, uint16_t head_off, uint16_t tail_off, void *opaque) { (void) mem; (void) handle; (void) m; (void) tcp_opaque; (void) head_off; (void) tail_off; (void) opaque; }
 static void     iip_ops_tcp_acked(void *mem, void *handle, void *m, void *tcp_opaque, void *opaque) { (void) mem; (void) handle; (void) m; (void) tcp_opaque; (void) opaque; }
 static void     iip_ops_tcp_closed(void *handle, void *tcp_opaque, void *opaque) { (void) handle; (void) tcp_opaque; (void) opaque; }
 static void     iip_ops_udp_payload(void *mem, void *m, void *opaque) { (void) mem; (void) m; (void) opaque; }
