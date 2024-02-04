@@ -1998,8 +1998,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													_p = NULL; /* for easier assertion */
 												} else { /* seq is fine, push _p to sorted receive queue head[0] */
 													__iip_enqueue_obj(conn->head[0], _p, 0);
-													if (p == _p)
-														pkt_used = 1;
 													s->monitor.tcp.rx_pkt++;
 													conn->seq_next_expected += PB_TCP_HDR_HAS_SYN(_p->buf) + PB_TCP_HDR_HAS_FIN(_p->buf) + PB_TCP_PAYLOAD_LEN(_p->buf) - _p->tcp.dec_tail;
 													if (conn->head[4][0]) {
