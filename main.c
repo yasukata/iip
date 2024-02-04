@@ -421,7 +421,6 @@ struct iip_tcp_conn {
 
 	uint8_t flags;
 #define __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED	(1U << 5)
-#define __IIP_TCP_CONN_FLAGS_IMMEDIATE_RETRANS	(1U << 6)
 
 	uint32_t fin_ack_seq_be;
 
@@ -2293,7 +2292,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								if (!out_of_order) {
 									if (conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED) {
 										conn->flags &= ~__IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
-										conn->flags |= __IIP_TCP_CONN_FLAGS_IMMEDIATE_RETRANS; /* to invoke retransmission after all acked packets are released */
 										IIP_OPS_DEBUG_PRINTF("%p Peer succeed to recover: ACKed by peer %u\n", (void *) conn, conn->acked_seq);
 									}
 									conn->dup_ack_received = 0;
@@ -2871,7 +2869,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													struct pb *out_p = _conn.head[1][1];
 													__iip_dequeue_obj(_conn.head[1], out_p, 0);
 													__iip_enqueue_obj(conn->head[3], out_p, 0); /* workaround to bypass the ordered queue */
-													conn->flags &= ~__IIP_TCP_CONN_FLAGS_IMMEDIATE_RETRANS; /* no need extra retransmission */
 												}
 											}
 											if (p->flags & __IIP_PB_FLAGS_SACK_REPLY_SEND_ALL)
@@ -2983,7 +2980,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 					if (!conn->head[3][0] && !conn->head[5][0]) { /* not in recovery mode */
 						if (conn->head[2][0]) {
 							uint32_t now = __iip_now_in_ms(opaque);
-							if (conn->flags & __IIP_TCP_CONN_FLAGS_IMMEDIATE_RETRANS || conn->head[2][0]->tcp.rto_ms < now - conn->head[2][0]->ts) { /* timeout and do retransmission */
+							if (conn->head[2][0]->tcp.rto_ms < now - conn->head[2][0]->ts) { /* timeout and do retransmission */
 								if (conn->retrans_cnt < IIP_CONF_TCP_RETRANS_CNT) {
 									void *cp;
 									if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
@@ -3026,13 +3023,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										conn->head[2][0]->tcp.rto_ms = 60000U;
 									conn->retrans_cnt++;
 									s->monitor.tcp.tx_pkt_re++;
-									if (!(conn->flags & __IIP_TCP_CONN_FLAGS_IMMEDIATE_RETRANS)) { /* loss detected */
-										IIP_OPS_DEBUG_PRINTF("loss detected (timeout retransmit cnt %u rto %u) : %p seq %u ack %u\n",
-												conn->retrans_cnt, conn->head[2][0]->tcp.rto_ms, (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
-										conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
-										conn->cc.win = 1;
-										conn->flags |= __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
-									}
+									IIP_OPS_DEBUG_PRINTF("loss detected (timeout retransmit cnt %u rto %u) : %p seq %u ack %u\n",
+											conn->retrans_cnt, conn->head[2][0]->tcp.rto_ms, (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
+									conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
+									conn->cc.win = 1;
+									conn->flags |= __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
 								} else {
 									conn->state = __IIP_TCP_STATE_CLOSED;
 									__iip_dequeue_obj(s->tcp.conns_ht[(conn->peer_ip4_be + conn->local_port_be + conn->peer_port_be) % IIP_CONF_TCP_CONN_HT_SIZE], conn, 1);
@@ -3042,7 +3037,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									continue;
 								}
 							}
-							conn->flags &= ~__IIP_TCP_CONN_FLAGS_IMMEDIATE_RETRANS;
 						}
 					}
 					if (!conn->head[3][0] && !conn->head[5][0]) {
