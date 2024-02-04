@@ -422,6 +422,8 @@ struct iip_tcp_conn {
 	uint8_t flags;
 #define __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED	(1U << 5)
 
+	uint32_t sent_seq_when_loss_detected;
+
 	uint32_t fin_ack_seq_be;
 
 	uint8_t ws;
@@ -2291,8 +2293,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								}
 								if (!out_of_order) {
 									if (conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED) {
-										conn->flags &= ~__IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
-										IIP_OPS_DEBUG_PRINTF("%p Peer succeed to recover: ACKed by peer %u\n", (void *) conn, conn->acked_seq);
+										if (__iip_ntohl(PB_TCP(p->buf)->ack_seq_be) - conn->sent_seq_when_loss_detected < 2147483648U) {
+											conn->flags &= ~__IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
+											IIP_OPS_DEBUG_PRINTF("%p Peer succeed to recover: ACKed by peer %u\n", (void *) conn, conn->acked_seq);
+										}
 									}
 									conn->dup_ack_received = 0;
 									if (conn->dup_ack_sent) {
@@ -2302,7 +2306,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									conn->peer_win = __iip_ntohs(PB_TCP(p->buf)->win_be);
 									if (p->flags & __IIP_PB_FLAGS_OPT_HAS_TS) {
 										conn->ts = p->tcp.opt.ts[0];
-										if (!conn->retrans_cnt && PB_TCP_HDR_HAS_ACK(p->buf)) {
+										if (!(conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED) && PB_TCP_HDR_HAS_ACK(p->buf)) {
 											uint32_t nticks = p->tcp.opt.ts[1] - conn->rtt.ts;
 											{
 												uint32_t delta = (nticks < conn->rtt.srtt ? conn->rtt.srtt - nticks : nticks - conn->rtt.srtt);
@@ -2956,6 +2960,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								IIP_OPS_DEBUG_PRINTF("loss detected (3 dup ack) : %p seq %u ack %u\n", (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
 								conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
 								conn->cc.win = conn->cc.ssthresh; /* fast retransmission */
+								__iip_assert(conn->head[2][0] && conn->head[2][1]);
+								conn->sent_seq_when_loss_detected = __iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) + PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf) + PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf);
 								conn->flags |= __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
 							}
 						} else {
@@ -3032,6 +3038,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											conn->retrans_cnt, conn->head[2][0]->tcp.rto_ms, (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
 									conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
 									conn->cc.win = 1;
+									__iip_assert(conn->head[2][0] && conn->head[2][1]);
+									conn->sent_seq_when_loss_detected = __iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) + PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf) + PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf);
 									conn->flags |= __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
 								} else {
 									conn->state = __IIP_TCP_STATE_CLOSED;
