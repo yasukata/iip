@@ -444,7 +444,6 @@ struct iip_tcp_conn {
 	} cc; /* congestion control */
 
 	struct {
-		uint32_t ts; /* latest acked timestamp */
 		uint32_t srtt; /* smoothed RTT estimator */
 		uint32_t rttvar; /* smoothed mean RTT estimator */
 	} rtt;
@@ -743,9 +742,6 @@ again:
 	conn->seq_be = __iip_htonl(__iip_ntohl(conn->seq_be) + payload_len + syn + fin);
 	if (ack)
 		conn->ack_seq_sent = __iip_ntohl(PB_TCP(out_p->buf)->ack_seq_be);
-
-	if (syn)
-		conn->rtt.ts = s->tcp.pkt_ts;
 
 	if (iip_ops_nic_feature_offload_tcp_tx_tso(opaque))
 		iip_ops_nic_offload_tcp_tx_tso_mark(out_p->pkt, opaque);
@@ -2309,28 +2305,24 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									if (p->flags & __IIP_PB_FLAGS_OPT_HAS_TS) {
 										conn->ts = p->tcp.opt.ts[0];
 										if (!(conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED) && PB_TCP_HDR_HAS_ACK(p->buf)) {
-											uint32_t nticks = p->tcp.opt.ts[1] - conn->rtt.ts;
-											{
+											uint32_t nticks = s->tcp.pkt_ts - p->tcp.opt.ts[1];
+											if (conn->state == __IIP_TCP_STATE_SYN_SENT || conn->state == __IIP_TCP_STATE_SYN_RECVD) {
+												conn->rtt.srtt = nticks;
+												conn->rtt.rttvar = nticks / 2;
+											} else {
 												uint32_t delta = (nticks < conn->rtt.srtt ? conn->rtt.srtt - nticks : nticks - conn->rtt.srtt);
-												if (conn->state == __IIP_TCP_STATE_SYN_SENT || conn->state == __IIP_TCP_STATE_SYN_RECVD) {
-													conn->rtt.srtt = delta;
-													conn->rtt.rttvar = delta / 2;
-												} else {
-													if (nticks < conn->rtt.srtt)
-														conn->rtt.srtt -= delta / 8;
+												if (nticks < conn->rtt.srtt)
+													conn->rtt.srtt -= delta / 8;
+												else
+													conn->rtt.srtt += delta / 8;
+												{
+													uint32_t d2 = (delta < conn->rtt.rttvar ? conn->rtt.rttvar - delta : delta - conn->rtt.rttvar);
+													if (delta < conn->rtt.rttvar)
+														conn->rtt.rttvar -= d2 / 4;
 													else
-														conn->rtt.srtt += delta / 8;
-													{
-														uint32_t d2 = (delta < conn->rtt.rttvar ? conn->rtt.rttvar - delta : delta - conn->rtt.rttvar);
-														if (delta < conn->rtt.rttvar)
-															conn->rtt.rttvar -= d2 / 4;
-														else
-															conn->rtt.rttvar += d2 / 4;
-													}
+														conn->rtt.rttvar += d2 / 4;
 												}
-
 											}
-											conn->rtt.ts = p->tcp.opt.ts[1];
 										}
 									}
 									if (PB_TCP_HDR_HAS_ACK(p->buf))
