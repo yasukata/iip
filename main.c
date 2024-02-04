@@ -90,7 +90,7 @@ static uint8_t iip_ops_tcp_accept(void *, void *, void *);
 static void *iip_ops_tcp_accepted(void *, void *, void *, void *);
 static void *iip_ops_tcp_connected(void *, void *, void *, void *);
 static void iip_ops_tcp_closed(void *, void *, void *);
-static void iip_ops_tcp_payload(void *, void *, void *, void *, void *);
+static void iip_ops_tcp_payload(void *, void *, void *, void *, uint16_t, uint16_t, void *);
 static void iip_ops_tcp_acked(void *, void *, void *, void *, void *);
 static void iip_ops_udp_payload(void *, void *, void *);
 static uint8_t iip_ops_nic_feature_offload_tx_scatter_gather(void *);
@@ -363,6 +363,8 @@ struct pb {
 
 	struct {
 		uint32_t rto_ms;
+		uint16_t inc_head;
+		uint16_t dec_tail;
 		struct {
 			uint16_t sack_opt_off;
 			uint32_t ts[2];
@@ -1826,7 +1828,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_ESTABLISHED - TCP_STATE_CLOSE_WAIT\n", (void *) conn);
 												} else if (PB_TCP_HDR_HAS_ACK(p->buf) && PB_TCP_PAYLOAD_LEN(p->buf)) {
 													conn->rx_buf_cnt.used++;
-													iip_ops_tcp_payload(s, conn, p->pkt, conn->opaque, opaque);
+													iip_ops_tcp_payload(s, conn, p->pkt, conn->opaque, p->tcp.inc_head, p->tcp.dec_tail, opaque);
 												}
 												/* fall through */
 											case __IIP_TCP_STATE_CLOSE_WAIT:
