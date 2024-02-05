@@ -1639,7 +1639,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																			 */
 																			struct pb *__p2 = __iip_clone_pb(s, __p, opaque);
 																			__iip_assert(__p2);
-																			__p2->tcp.inc_head += (SEQ_RE_RAW(_p));
+																			__p2->tcp.inc_head += (SEQ_RE_RAW(_p)) - SEQ_LE_RAW(__p);
 																			__p->tcp.dec_tail += (SEQ_RE_RAW(__p)) - SEQ_LE_RAW(_p);
 																			__p2->prev[0] = __p;
 																			__p2->next[0] = __p->next[0];
