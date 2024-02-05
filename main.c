@@ -2554,23 +2554,23 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														/* invalid entry  */
 														do_skip = 1;
 													} else if (c == 2) {
-														if (__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + 2 + 4]))) <= __iip_ntohl(PB_TCP(p->buf)->ack_seq_be)) {
+														if (__iip_ntohl(PB_TCP(p->buf)->ack_seq_be) - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + 2 + 4]))) < 2147483648U) {
 															/*
 															 * compare with the ack field
 															 * d-sack pattern 1
 															 */
 															do_skip = 1;
-														} else if (10 <= PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]
+														} else if ((10 <= PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off])
 																/*
-																 *  2: ...---|
-																 * 10:      |---...
+																 *  2: ...--|
+																 * 10:  ...---|
 																 */
-																&& ((__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + 2 + 4]))) - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + 10 + 4]))) < 2147483648U)
+																&& ((__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + 10 + 4]))) - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + 2 + 4])))) < 2147483648U)
 																/*
 																 *  2:  |--...
 																 * 10: |---...
 																 */
-																	|| (__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + 2 + 0]))) - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + 10 + 0])))) < 2147483648U)) {
+																&& ((__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + 2 + 0]))) - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + 10 + 0])))) < 2147483648U)) {
 															/*
 															 * compare with the second field
 															 * d-sack pattern 2
