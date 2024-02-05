@@ -2213,11 +2213,13 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														 */
 														/* this is dup ack */
 														s->monitor.tcp.rx_pkt_dupack++;
-														conn->dup_ack_received++;
-														IIP_OPS_DEBUG_PRINTF("%p Received Dup ACK (cnt %u) %u (has sack %u) (win %u sent %u)\n",
-																(void *) conn, conn->dup_ack_received, conn->acked_seq, p->tcp.opt.sack_opt_off,
-																((uint32_t) conn->peer_win << conn->ws),
-																__iip_ntohl(conn->seq_be) + PB_TCP_PAYLOAD_LEN(p->buf) - conn->acked_seq /* len to be filled on the rx side */);
+														if (conn->dup_ack_received <= 3) {
+															conn->dup_ack_received++;
+															IIP_OPS_DEBUG_PRINTF("%p Received Dup ACK (cnt %u) %u (has sack %u) (win %u sent %u)\n",
+																	(void *) conn, conn->dup_ack_received, conn->acked_seq, p->tcp.opt.sack_opt_off,
+																	((uint32_t) conn->peer_win << conn->ws),
+																	__iip_ntohl(conn->seq_be) + PB_TCP_PAYLOAD_LEN(p->buf) - conn->acked_seq /* len to be filled on the rx side */);
+														}
 													} else { /* pattern A */
 														/*
 														 *        conn->acked_seq              conn->seq_be
@@ -2518,7 +2520,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						}
 					} while (conn->head[0][0]);
 					/* dup ack check */
-					if (conn->dup_ack_received > 2) { /* 3 dup acks are received, we do retransmission for fast recovery, or sack */
+					if (conn->dup_ack_received == 3) { /* 3 dup acks are received, we do retransmission for fast recovery, or sack */
 						__iip_assert(!(!conn->head[2][0] && conn->head[2][1]));
 						__iip_assert(!(conn->head[2][0] && !conn->head[2][1]));
 						if (conn->head[2][0]) {
@@ -2996,7 +2998,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								}
 								IIP_OPS_DEBUG_PRINTF("dup ack reply: %u\n", __iip_ntohl(PB_TCP(conn->head[3][1]->buf)->seq_be));
 							}
-							conn->dup_ack_received = 0;
 							{ /* loss detected */
 								IIP_OPS_DEBUG_PRINTF("loss detected (3 dup ack) : %p seq %u ack %u\n", (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
 								conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
@@ -3007,6 +3008,13 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							}
 						} else {
 							/* we have received an ack telling the receiver successfully got the data  */
+						}
+					}
+					{ /* release unchecked received sack packets */
+						struct pb *p, *_n;
+						__iip_q_for_each_safe(tcp_sack_rx, p, _n, 0) {
+							__iip_dequeue_obj(tcp_sack_rx, p, 0);
+							__iip_free_pb(s, p, opaque);
 						}
 					}
 					{ /* cancel retransmission if ack is received  */
