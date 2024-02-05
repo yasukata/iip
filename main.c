@@ -2525,7 +2525,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							if (tcp_sack_rx[0]) { /* send packets requested through sack */
 								__iip_assert(tcp_sack_rx[1]);
 								IIP_OPS_DEBUG_PRINTF("coping with sack: entire unacked range %u %u\n",
-										__iip_ntohl(PB_TCP(conn->head[2][0]->buf)->seq_be),
+										conn->acked_seq,
 										__iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + ((PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) || PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf)) ? 1 : PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf)));
 								{ /* we reconstruct retransmission queue from scratch, so release existing ones first */
 									struct pb *p, *_n;
@@ -2546,15 +2546,57 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											struct pb *_p, *__n;
 											__iip_q_for_each_safe(conn->head[2], _p, __n, 0) {
 												uint16_t c = 2;
-												uint32_t __ex = __iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be);
+												uint32_t __ex = __iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) + PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf) + PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf);
 												while (c <= PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]) {
-													if (c == PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off] || __ex != __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4])))) {
-														uint32_t mle = (c == PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off] ? __iip_ntohl(PB_TCP(conn->head[2][0]->buf)->seq_be) :__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4])))); /* missing left edge */
+													uint8_t do_skip = 0;
+													if ((__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4]))) - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 0]))) >= 2147483648U)
+															|| (__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4]))) == __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 0]))))) {
+														/* invalid entry  */
+														do_skip = 1;
+													} else if (c == 2) {
+														if (__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + 2 + 4]))) <= __iip_ntohl(PB_TCP(p->buf)->ack_seq_be)) {
+															/*
+															 * compare with the ack field
+															 * d-sack pattern 1
+															 */
+															do_skip = 1;
+														} else if (10 <= PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]
+																/*
+																 *  2: ...---|
+																 * 10:      |---...
+																 */
+																&& ((__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + 2 + 4]))) - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + 10 + 4]))) < 2147483648U)
+																/*
+																 *  2:  |--...
+																 * 10: |---...
+																 */
+																	|| (__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + 2 + 0]))) - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + 10 + 0])))) < 2147483648U)) {
+															/*
+															 * compare with the second field
+															 * d-sack pattern 2
+															 */
+															do_skip = 1;
+														}
+													} else if (conn->acked_seq - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4]))) < 2147483648U) {
+														/*
+														 * sack entry for acked packets,
+														 * data is properly received by peer,
+														 * so, just ignore
+														 */
+														do_skip = 1;
+													}
+													if (do_skip) {
+														if (c != PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]) {
+															c += 8;
+															continue;
+														}
+													}
+													if ((c == PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]
+															|| __ex != __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4]))))) {
+														uint32_t mle = (c == PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off] ? conn->acked_seq :__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4])))); /* missing left edge */
 														uint32_t mre = __ex; /* missing right edge */
 														uint16_t to_be_updated = _p->clone.to_be_updated;
-														if (conn->head[2][0] == _p) { /* debug */
-															IIP_OPS_DEBUG_PRINTF("sack peer missing  %u to %u (len %u)\n", mle, mre, mre - mle);
-														}
+														__iip_assert(mre - mle < 2147483648U);
 														if ((__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be)) <= (__iip_ntohl(conn->seq_be) - mre)) {
 															/*
 															 * pattern 1: do nothing
