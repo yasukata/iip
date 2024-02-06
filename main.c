@@ -355,6 +355,7 @@ struct pb {
 	uint8_t flags;
 #define __IIP_PB_FLAGS_NEED_ACK_CB_PKT_FREE	(1U << 2)
 #define __IIP_PB_FLAGS_OPT_HAS_TS		(1U << 3)
+#define __IIP_PB_FLAGS_SACKED			(1U << 4)
 #define __IIP_PB_FLAGS_SACK_REPLY_SEND_ALL	(1U << 5)
 	void *orig_pkt; /* for no scatter gather mode */
 
@@ -2501,7 +2502,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								 */
 								if ((__iip_ntohl(conn->seq_be) - conn->acked_seq) <= (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(p->buf)->seq_be) + ((PB_TCP_HDR_HAS_SYN(p->buf) || PB_TCP_HDR_HAS_FIN(p->buf)) ? 1 : PB_TCP_PAYLOAD_LEN(p->buf))))) { /* A or B */
 									if (PB_TCP_PAYLOAD_LEN(p->buf)) {
-										{ /* increase window size for congestion control */
+										if (!(p->flags & __IIP_PB_FLAGS_SACKED)) { /* increase window size for congestion control */
 											if (conn->cc.ssthresh < conn->cc.win) {
 												conn->cc.win = (conn->cc.win < 65535U ? conn->cc.win + 1 : conn->cc.win);
 												/*IIP_OPS_DEBUG_PRINTF("slow increase win %u ssthresh %u\n", conn->cc.win, conn->cc.ssthresh);*/
@@ -2520,10 +2521,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							}
 						}
 					} while (conn->head[0][0]);
-					/* dup ack check */
-					if (conn->dup_ack_received == 3) { /* 3 dup acks are received, we do retransmission for fast recovery, or sack */
-						__iip_assert(!(!conn->head[2][0] && conn->head[2][1]));
-						__iip_assert(!(conn->head[2][0] && !conn->head[2][1]));
+					if (conn->sack_ok) {
 						if (conn->head[2][0]) {
 							if (conn->tcp_sack_rx[0]) { /* send packets requested through sack */
 								__iip_assert(conn->tcp_sack_rx[1]);
@@ -2592,6 +2590,71 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														if (c != PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]) {
 															c += 8;
 															continue;
+														}
+													} else {
+														/* set flag and increase congestion window if _p is sacked */
+														if (!(_p->flags & __IIP_PB_FLAGS_SACKED)) {
+															uint32_t sle = __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 0])));
+															uint32_t sre = __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4])));
+#define SEQ_LE_RAW(__pb) (__iip_ntohl(PB_TCP((__pb)->buf)->seq_be) + (__pb)->tcp.inc_head)
+#define SEQ_RE_RAW(__pb) (__iip_ntohl(PB_TCP((__pb)->buf)->seq_be) + PB_TCP_HDR_HAS_SYN((__pb)->buf) + PB_TCP_HDR_HAS_FIN((__pb)->buf) + PB_TCP_PAYLOAD_LEN((__pb)->buf) - (__pb)->tcp.dec_tail)
+															/*IIP_OPS_DEBUG_PRINTF("cmp %u %u with sle %u sre %u\n",
+															  SEQ_LE_RAW(_p), SEQ_RE_RAW(_p), sle, sre);*/
+															if (SEQ_LE_RAW(_p) - sre < 2147483648U) {
+																/*
+																 * _p        |-----------|
+																 * sack |---|
+																 */
+															} else if (sle - SEQ_RE_RAW(_p) < 2147483648U) {
+																/*
+																 * _p        |-----------|
+																 * sack                    |---|
+																 */
+															} else if (sle - SEQ_LE_RAW(_p) < 2147483648U) {
+																if (sre - SEQ_RE_RAW(_p) < 2147483648U) {
+																	/*
+																	 * _p        |----=======|
+																	 * sack          |---------|
+																	 */
+																	_p->tcp.dec_tail += SEQ_RE_RAW(_p) - sle;
+																} else {
+																	/*
+																	 * _p        |---===-----|
+																	 * sack         |---|
+																	 *
+																	 * TODO: this case needs to split a packet,
+																	 * a bit complicated, so, do not implement for the moment
+																	 */
+																}
+															} else {
+																if (SEQ_RE_RAW(_p) - sre < 2147483648U) {
+																	/*
+																	 * _p        |=====------|
+																	 * sack  |---------|
+																	 */
+																	_p->tcp.inc_head += sre - SEQ_LE_RAW(_p);
+																} else {
+																	/*
+																	 * _p        |===========|
+																	 * sack  |-----------------|
+																	 */
+																	_p->tcp.inc_head += SEQ_RE_RAW(_p) - SEQ_LE_RAW(_p);
+																}
+															}
+															__iip_assert(SEQ_RE_RAW(_p) - SEQ_LE_RAW(_p) < 2147483648U);
+															if (SEQ_LE_RAW(_p) == SEQ_RE_RAW(_p)) {
+																IIP_OPS_DEBUG_PRINTF("%u %u is sacked\n",
+																		__iip_ntohl(PB_TCP(_p->buf)->seq_be),
+																		__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(_p->buf) + PB_TCP_HDR_HAS_FIN(_p->buf) + PB_TCP_PAYLOAD_LEN(_p->buf));
+																if (conn->cc.ssthresh < conn->cc.win) {
+																	conn->cc.win = (conn->cc.win < 65535U ? conn->cc.win + 1 : conn->cc.win);
+																} else {
+																	conn->cc.win = (conn->cc.win < 65535U / 2 ? conn->cc.win * 2 : 65535U);
+																}
+																_p->flags |= __IIP_PB_FLAGS_SACKED;
+															}
+#undef _ROFF
+#undef _LOFF
 														}
 													}
 													if ((c == PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]
@@ -2943,7 +3006,13 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										}
 									}
 								}
-							} else { /* send one packet requested by peer */
+							}
+						}
+					} else if (conn->dup_ack_received == 3) { /* 3 dup acks are received, we do retransmission for fast recovery, or sack */
+						__iip_assert(!(!conn->head[2][0] && conn->head[2][1]));
+						__iip_assert(!(conn->head[2][0] && !conn->head[2][1]));
+						if (conn->head[2][0]) {
+							{ /* send one packet requested by peer */
 								void *cp;
 								if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
 									if (iip_ops_pkt_scatter_gather_chain_get_next(conn->head[2][0]->pkt, opaque)) {
