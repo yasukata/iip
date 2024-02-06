@@ -3153,13 +3153,15 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										conn->head[2][0]->tcp.rto_ms = 60000U;
 									conn->retrans_cnt++;
 									s->monitor.tcp.tx_pkt_re++;
-									IIP_OPS_DEBUG_PRINTF("loss detected (timeout retransmit cnt %u rto %u) : %p seq %u ack %u\n",
-											conn->retrans_cnt, conn->head[2][0]->tcp.rto_ms, (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
-									conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
-									conn->cc.win = 1;
-									__iip_assert(conn->head[2][0] && conn->head[2][1]);
-									conn->sent_seq_when_loss_detected = __iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) + PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf) + PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf);
-									conn->flags |= __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
+									if (!(conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
+										IIP_OPS_DEBUG_PRINTF("loss detected (timeout retransmit cnt %u rto %u) : %p seq %u ack %u\n",
+												conn->retrans_cnt, conn->head[2][0]->tcp.rto_ms, (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
+										conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
+										conn->cc.win = 1;
+										__iip_assert(conn->head[2][0] && conn->head[2][1]);
+										conn->sent_seq_when_loss_detected = __iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) + PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf) + PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf);
+										conn->flags |= __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
+									}
 								} else {
 									conn->state = __IIP_TCP_STATE_CLOSED;
 									__iip_dequeue_obj(s->tcp.conns_ht[(conn->peer_ip4_be + conn->local_port_be + conn->peer_port_be) % IIP_CONF_TCP_CONN_HT_SIZE], conn, 1);
