@@ -2546,12 +2546,15 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										{
 											struct pb *_p, *__n;
 											__iip_q_for_each_safe(conn->head[2], _p, __n, 0) {
+												uint8_t rx_sackbuf[(15 * 4) - sizeof(struct iip_tcp_hdr) - 19];
 												uint16_t c = 2;
 												uint32_t __ex = __iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) + PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf) + PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf);
-												while (c <= PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]) {
+												__iip_assert(PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off] <= sizeof(rx_sackbuf));
+												memcpy(rx_sackbuf, &(PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1]), PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]);
+												while (c <= rx_sackbuf[1]) {
 													uint8_t do_skip = 0;
-													if ((__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4]))) - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 0]))) >= 2147483648U)
-															|| (__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4]))) == __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 0]))))) {
+													if ((__iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4]))) - __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 0]))) >= 2147483648U)
+															|| (__iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4]))) == __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 0]))))) {
 														/* invalid entry  */
 														do_skip = 1;
 													} else if (c == 2) {
@@ -2561,7 +2564,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															 * d-sack pattern 1
 															 */
 															do_skip = 1;
-														} else if ((10 <= PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off])
+														} else if ((10 <= rx_sackbuf[1])
 																/*
 																 *  2: ...--|
 																 * 10:  ...---|
@@ -2578,7 +2581,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															 */
 															do_skip = 1;
 														}
-													} else if (conn->acked_seq - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4]))) < 2147483648U) {
+													} else if (conn->acked_seq - __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4]))) < 2147483648U) {
 														/*
 														 * sack entry for acked packets,
 														 * data is properly received by peer,
@@ -2587,15 +2590,45 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														do_skip = 1;
 													}
 													if (do_skip) {
-														if (c != PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]) {
+														if (c != rx_sackbuf[1]) {
 															c += 8;
 															continue;
 														}
 													} else {
+														if (c <= 10) { /* sort from big to small */
+															uint16_t cnt;
+															do { /* bubble sort : TODO: faster sort */
+																cnt = 0;
+																{
+																	uint16_t i;
+																	for (i = c; i < rx_sackbuf[1] - 8; i += 8) {
+																		if (__iip_ntohl(*((uint32_t *)(&rx_sackbuf[i + 4 + 8]))) - __iip_ntohl(*((uint32_t *)(&rx_sackbuf[i + 0]))) < 2147483648U) {
+																			uint32_t h, t;
+																			h = *((uint32_t *)(&rx_sackbuf[i + 0]));
+																			t = *((uint32_t *)(&rx_sackbuf[i + 4]));
+																			*((uint32_t *)(&rx_sackbuf[i + 0])) = *((uint32_t *)(&rx_sackbuf[i + 0 + 8]));
+																			*((uint32_t *)(&rx_sackbuf[i + 4])) = *((uint32_t *)(&rx_sackbuf[i + 4 + 8]));
+																			*((uint32_t *)(&rx_sackbuf[i + 0 + 8])) = h;
+																			*((uint32_t *)(&rx_sackbuf[i + 4 + 8])) = t;
+																			cnt++;
+																		}
+																	}
+																}
+															} while (cnt);
+															{ /* debug */
+																uint16_t i;
+																for (i = 2; i < rx_sackbuf[1]; i += 8) {
+																	/*IIP_OPS_DEBUG_PRINTF("%2u/%2u: sle %u sre %u\n",
+																			i, rx_sackbuf[1],
+																			__iip_ntohl(*((uint32_t *)(&rx_sackbuf[i + 0]))),
+																			__iip_ntohl(*((uint32_t *)(&rx_sackbuf[i + 4]))));*/
+																}
+															}
+														}
 														/* set flag and increase congestion window if _p is sacked */
 														if (!(_p->flags & __IIP_PB_FLAGS_SACKED)) {
-															uint32_t sle = __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 0])));
-															uint32_t sre = __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4])));
+															uint32_t sle = __iip_ntohl(*((uint32_t *)(&rx_sackbuf[1 + c + 0])));
+															uint32_t sre = __iip_ntohl(*((uint32_t *)(&rx_sackbuf[1 + c + 4])));
 #define SEQ_LE_RAW(__pb) (__iip_ntohl(PB_TCP((__pb)->buf)->seq_be) + (__pb)->tcp.inc_head)
 #define SEQ_RE_RAW(__pb) (__iip_ntohl(PB_TCP((__pb)->buf)->seq_be) + PB_TCP_HDR_HAS_SYN((__pb)->buf) + PB_TCP_HDR_HAS_FIN((__pb)->buf) + PB_TCP_PAYLOAD_LEN((__pb)->buf) - (__pb)->tcp.dec_tail)
 															/*IIP_OPS_DEBUG_PRINTF("cmp %u %u with sle %u sre %u\n",
@@ -2657,9 +2690,9 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 #undef _LOFF
 														}
 													}
-													if ((c == PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]
-															|| __ex != __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4]))))) {
-														uint32_t mle = (c == PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off] ? conn->acked_seq :__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4])))); /* missing left edge */
+													if ((c == rx_sackbuf[1]
+															|| __ex != __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4]))))) {
+														uint32_t mle = (c == rx_sackbuf[1] ? conn->acked_seq :__iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4])))); /* missing left edge */
 														uint32_t mre = __ex; /* missing right edge */
 														uint16_t to_be_updated = _p->clone.to_be_updated;
 														__iip_assert(mre - mle < 2147483648U);
@@ -2672,11 +2705,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															 *  mle mre
 															 */
 															/*IIP_OPS_DEBUG_PRINTF("SACK: pattern 1: mle %u mre %u seq %u seq-to %u head %u tail %u\n",
-																	mle, mre,
-																	__iip_ntohl(PB_TCP(_p->buf)->seq_be),
-																	__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
-																	_p->clone.range[_p->clone.to_be_updated].increment_head,
-																	_p->clone.range[_p->clone.to_be_updated].decrement_tail);*/
+															  mle, mre,
+															  __iip_ntohl(PB_TCP(_p->buf)->seq_be),
+															  __iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
+															  _p->clone.range[_p->clone.to_be_updated].increment_head,
+															  _p->clone.range[_p->clone.to_be_updated].decrement_tail);*/
 														} else if ((__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf))) >= (__iip_ntohl(conn->seq_be) - mle)) {
 															/*
 															 * pattern 2: do nothing
@@ -2686,11 +2719,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															 *                     mle mre
 															 */
 															/*IIP_OPS_DEBUG_PRINTF("SACK: pattern 2: mle %u mre %u seq %u seq-to %u head %u tail %u\n",
-																	mle, mre,
-																	__iip_ntohl(PB_TCP(_p->buf)->seq_be),
-																	__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
-																	_p->clone.range[_p->clone.to_be_updated].increment_head,
-																	_p->clone.range[_p->clone.to_be_updated].decrement_tail);*/
+															  mle, mre,
+															  __iip_ntohl(PB_TCP(_p->buf)->seq_be),
+															  __iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
+															  _p->clone.range[_p->clone.to_be_updated].increment_head,
+															  _p->clone.range[_p->clone.to_be_updated].decrement_tail);*/
 														} else if ((__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be) <= __iip_ntohl(conn->seq_be) - mle)
 																&& (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) >= __iip_ntohl(conn->seq_be) - mre)) {
 															/*
@@ -2707,11 +2740,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															 */
 															_p->flags |= __IIP_PB_FLAGS_SACK_REPLY_SEND_ALL;
 															/*IIP_OPS_DEBUG_PRINTF("SACK: pattern 3: mle %u mre %u seq %u seq-to %u head %u tail %u\n",
-																	mle, mre,
-																	__iip_ntohl(PB_TCP(_p->buf)->seq_be),
-																	__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
-																	_p->clone.range[_p->clone.to_be_updated].increment_head,
-																	_p->clone.range[_p->clone.to_be_updated].decrement_tail);*/
+															  mle, mre,
+															  __iip_ntohl(PB_TCP(_p->buf)->seq_be),
+															  __iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf),
+															  _p->clone.range[_p->clone.to_be_updated].increment_head,
+															  _p->clone.range[_p->clone.to_be_updated].decrement_tail);*/
 														} else if ((__iip_ntohl(conn->seq_be) - __iip_ntohl(PB_TCP(_p->buf)->seq_be) > __iip_ntohl(conn->seq_be) - mle)
 																&& (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_PAYLOAD_LEN(_p->buf)) < __iip_ntohl(conn->seq_be) - mre)) {
 															/*
@@ -2897,7 +2930,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															}
 														}
 													}
-													__ex = __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 0])));
+													__ex = __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 0])));
 													c += 8;
 												}
 											}
