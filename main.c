@@ -450,6 +450,8 @@ struct iip_tcp_conn {
 
 	void *opaque;
 
+	struct pb *tcp_sack_rx[2];
+
 	struct pb *head[6][2]; /* 0: rx, 1: tx, 2: tx sent, 3: tx retrans, 4: rx out-of-order, 5: tx urgent */
 
 	struct iip_tcp_conn *prev[2];
@@ -1115,7 +1117,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 			ret = i;
 		}
 		{ /* steer ip4 packets to a queue of tcp connection or discard after executing callback for icmp and udp */
-			struct pb *tcp_sack_rx[2] = { 0 };
 			{
 				struct pb *p, *_n;
 				__iip_q_for_each_safe(ip4_rx, p, _n, 0) {
@@ -2481,7 +2482,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								}
 							}
 							if (p->tcp.opt.sack_opt_off)
-								__iip_enqueue_obj(tcp_sack_rx, p, 0);
+								__iip_enqueue_obj(conn->tcp_sack_rx, p, 0);
 							else
 								__iip_free_pb(s, p, opaque);
 							if ((4294967295U / 2) < (__iip_ntohl(conn->seq_be) - conn->acked_seq))
@@ -2524,8 +2525,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						__iip_assert(!(!conn->head[2][0] && conn->head[2][1]));
 						__iip_assert(!(conn->head[2][0] && !conn->head[2][1]));
 						if (conn->head[2][0]) {
-							if (tcp_sack_rx[0]) { /* send packets requested through sack */
-								__iip_assert(tcp_sack_rx[1]);
+							if (conn->tcp_sack_rx[0]) { /* send packets requested through sack */
+								__iip_assert(conn->tcp_sack_rx[1]);
 								IIP_OPS_DEBUG_PRINTF("coping with sack: entire unacked range %u %u\n",
 										conn->acked_seq,
 										__iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + ((PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) || PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf)) ? 1 : PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf)));
@@ -2542,8 +2543,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									 * NOTE: here, tcp_sack_rx is not ordered
 									 */
 									struct pb *p, *_n;
-									__iip_q_for_each_safe(tcp_sack_rx, p, _n, 0) {
-										__iip_dequeue_obj(tcp_sack_rx, p, 0);
+									__iip_q_for_each_safe(conn->tcp_sack_rx, p, _n, 0) {
+										__iip_dequeue_obj(conn->tcp_sack_rx, p, 0);
 										{
 											struct pb *_p, *__n;
 											__iip_q_for_each_safe(conn->head[2], _p, __n, 0) {
@@ -3012,8 +3013,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 					}
 					{ /* release unchecked received sack packets */
 						struct pb *p, *_n;
-						__iip_q_for_each_safe(tcp_sack_rx, p, _n, 0) {
-							__iip_dequeue_obj(tcp_sack_rx, p, 0);
+						__iip_q_for_each_safe(conn->tcp_sack_rx, p, _n, 0) {
+							__iip_dequeue_obj(conn->tcp_sack_rx, p, 0);
 							__iip_free_pb(s, p, opaque);
 						}
 					}
