@@ -2546,7 +2546,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										{
 											struct pb *_p, *__n;
 											__iip_q_for_each_safe(conn->head[2], _p, __n, 0) {
-												uint8_t rx_sackbuf[(15 * 4) - sizeof(struct iip_tcp_hdr) - 19];
+												uint8_t rx_sackbuf[(15 * 4 /* max tcp header size */) - sizeof(struct iip_tcp_hdr) /* common header size */];
 												uint16_t c = 2;
 												uint32_t __ex = __iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) + PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf) + PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf);
 												__iip_assert(PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off] <= sizeof(rx_sackbuf));
