@@ -3094,17 +3094,17 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								}
 								IIP_OPS_DEBUG_PRINTF("dup ack reply: %u\n", __iip_ntohl(PB_TCP(conn->head[3][1]->buf)->seq_be));
 							}
-							{ /* loss detected */
-								IIP_OPS_DEBUG_PRINTF("loss detected (3 dup ack) : %p seq %u ack %u\n", (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
-								conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
-								conn->cc.win = conn->cc.ssthresh; /* fast retransmission */
-								__iip_assert(conn->head[2][0] && conn->head[2][1]);
-								conn->sent_seq_when_loss_detected = __iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) + PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf) + PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf);
-								conn->flags |= __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
-							}
 						} else {
 							/* we have received an ack telling the receiver successfully got the data  */
 						}
+					}
+					if (conn->dup_ack_received == 3) { /* loss detected */
+						IIP_OPS_DEBUG_PRINTF("loss detected (3 dup ack) : %p seq %u ack %u\n", (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
+						conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
+						conn->cc.win = conn->cc.ssthresh; /* fast retransmission */
+						__iip_assert(conn->head[2][0] && conn->head[2][1]);
+						conn->sent_seq_when_loss_detected = __iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) + PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf) + PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf);
+						conn->flags |= __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
 					}
 					{ /* release unchecked received sack packets */
 						struct pb *p, *_n;
