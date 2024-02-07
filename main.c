@@ -2690,8 +2690,9 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 #undef _LOFF
 														}
 													}
-													if ((c == rx_sackbuf[1]
-															|| __ex != __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4]))))) {
+													if (((c == rx_sackbuf[1]
+															|| __ex != __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4])))))
+															&& (__ex - conn->acked_seq < 2147483648U)) {
 														uint32_t mle = (c == rx_sackbuf[1] ? conn->acked_seq :__iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4])))); /* missing left edge */
 														uint32_t mre = __ex; /* missing right edge */
 														uint16_t to_be_updated = _p->clone.to_be_updated;
