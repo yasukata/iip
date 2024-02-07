@@ -921,8 +921,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 	struct workspace *s = (struct workspace *) _mem;
 	uint16_t ret = 0;
 	uint32_t _next_us = 1000000UL; /* 1 sec */
+	uint32_t now_ms = __iip_now_in_ms(opaque);
 	{ /* periodic timer */
-		uint32_t now_ms = __iip_now_in_ms(opaque);
 		if (200 <= now_ms - s->timer.prev_fast){ /* fast timer every 200 ms */
 			/* send delayed ack */
 			{
@@ -2028,7 +2028,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												break;
 											}
 										}
-										if ((do_dup_ack || do_immediate_ack) && (__iip_now_in_ms(opaque) - conn->dupack_ts_ms > 1U /* dup ack throttling : 1 ms */)) {
+										if ((do_dup_ack || do_immediate_ack) && (now_ms - conn->dupack_ts_ms > 1U /* dup ack throttling : 1 ms */)) {
 											uint8_t sackbuf[(15 * 4) - sizeof(struct iip_tcp_hdr) - 19] = { 5, 2, };
 											if (do_dup_ack && conn->sack_ok) {
 												struct pb *__p = conn->head[4][1];
@@ -2076,7 +2076,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												if (conn->dup_ack_sent == 3)
 													conn->dup_ack_sent = 0;
 											}
-											conn->dupack_ts_ms = __iip_now_in_ms(opaque);
+											conn->dupack_ts_ms = now_ms;
 										}
 #undef SEQ_LE
 #undef SEQ_RE
@@ -2371,7 +2371,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														if (PB_TCP_HDR_HAS_FIN(p->buf)) {
 															ack = 1;
 															conn->state = __IIP_TCP_STATE_TIME_WAIT;
-															conn->time_wait_ts_ms = __iip_now_in_ms(opaque);
+															conn->time_wait_ts_ms = now_ms;
 															IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT1 - TCP_STATE_TIME_WAIT\n", (void *) conn);
 														} else {
 															conn->state = __IIP_TCP_STATE_FIN_WAIT2;
@@ -2386,7 +2386,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														ack = 1;
 														rst = 1;
 														conn->state = __IIP_TCP_STATE_TIME_WAIT;
-														conn->time_wait_ts_ms = __iip_now_in_ms(opaque);
+														conn->time_wait_ts_ms = now_ms;
 														IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT1 - TCP_STATE_TIME_WAIT\n", (void *) conn);
 													}
 												} else {
@@ -2401,14 +2401,14 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												if (PB_TCP_HDR_HAS_FIN(p->buf)) {
 													ack = 1;
 													conn->state = __IIP_TCP_STATE_TIME_WAIT;
-													conn->time_wait_ts_ms = __iip_now_in_ms(opaque);
+													conn->time_wait_ts_ms = now_ms;
 													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT2 - TCP_STATE_TIME_WAIT\n", (void *) conn);
 												}
 												break;
 											case __IIP_TCP_STATE_CLOSING:
 												if (PB_TCP_HDR_HAS_ACK(p->buf)) {
 													conn->state = __IIP_TCP_STATE_TIME_WAIT;
-													conn->time_wait_ts_ms = __iip_now_in_ms(opaque);
+													conn->time_wait_ts_ms = now_ms;
 													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_CLOSING - TCP_STATE_TIME_WAIT\n", (void *) conn);
 												}
 												break;
@@ -3143,8 +3143,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 					/* timeout check */
 					if (!conn->head[3][0] && !conn->head[5][0]) { /* not in recovery mode */
 						if (conn->head[2][0]) {
-							uint32_t now = __iip_now_in_ms(opaque);
-							if (conn->head[2][0]->tcp.rto_ms < now - conn->head[2][0]->ts) { /* timeout and do retransmission */
+							if (conn->head[2][0]->tcp.rto_ms < now_ms - conn->head[2][0]->ts) { /* timeout and do retransmission */
 								if (conn->retrans_cnt < IIP_CONF_TCP_RETRANS_CNT) {
 									void *cp;
 									if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
@@ -3181,7 +3180,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											__iip_enqueue_obj(conn->head[3], out_p, 0); /* workaround to bypass the ordered queue */
 										}
 									}
-									conn->head[2][0]->ts = now;
+									conn->head[2][0]->ts = now_ms;
 									conn->head[2][0]->tcp.rto_ms *= 2;
 									if (60000U /* 60 sec */ < conn->head[2][0]->tcp.rto_ms)
 										conn->head[2][0]->tcp.rto_ms = 60000U;
@@ -3208,11 +3207,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						}
 					}
 					if (conn->head[2][0]) {
-						uint32_t now = __iip_now_in_ms(opaque);
-						if (conn->head[2][0]->tcp.rto_ms < now - conn->head[2][0]->ts)
+						if (conn->head[2][0]->tcp.rto_ms < now_ms - conn->head[2][0]->ts)
 							_next_us = 0;
 						else {
-							uint32_t _next_us_tmp = (conn->head[2][0]->tcp.rto_ms - (now - conn->head[2][0]->ts)) * 1000U;
+							uint32_t _next_us_tmp = (conn->head[2][0]->tcp.rto_ms - (now_ms - conn->head[2][0]->ts)) * 1000U;
 							if (_next_us_tmp < _next_us)
 								_next_us = _next_us_tmp;
 						}
@@ -3277,7 +3275,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									p->tcp.rto_ms = 200U;
 								if (60000U /* 60 sec */ < p->tcp.rto_ms)
 									p->tcp.rto_ms = 60000U;
-								p->ts = __iip_now_in_ms(opaque);
+								p->ts = now_ms;
 								/*IIP_OPS_DEBUG_PRINTF("tcp-out: src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
 								   (PB_IP4(p->buf)->src_be >>  0) & 0x0ff,
 								   (PB_IP4(p->buf)->src_be >>  8) & 0x0ff,
