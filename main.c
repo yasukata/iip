@@ -1382,20 +1382,22 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												} else if (conn->sack_ok) { /* range of seq is fine, does not exceed advertised window size */
 													if (p == _p)
 														do_dup_ack = 1;
-													IIP_OPS_DEBUG_PRINTF("tcp-in O src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
-															(PB_IP4(_p->buf)->src_be >>  0) & 0x0ff,
-															(PB_IP4(_p->buf)->src_be >>  8) & 0x0ff,
-															(PB_IP4(_p->buf)->src_be >> 16) & 0x0ff,
-															(PB_IP4(_p->buf)->src_be >> 24) & 0x0ff,
-															(PB_IP4(_p->buf)->dst_be >>  0) & 0x0ff,
-															(PB_IP4(_p->buf)->dst_be >>  8) & 0x0ff,
-															(PB_IP4(_p->buf)->dst_be >> 16) & 0x0ff,
-															(PB_IP4(_p->buf)->dst_be >> 24) & 0x0ff,
-															__iip_ntohs(PB_TCP(_p->buf)->src_be),
-															__iip_ntohs(PB_TCP(_p->buf)->dst_be),
-															PB_TCP_HDR_HAS_SYN(_p->buf), PB_TCP_HDR_HAS_ACK(_p->buf), PB_TCP_HDR_HAS_FIN(_p->buf), PB_TCP_HDR_HAS_RST(_p->buf),
-															__iip_ntohl(PB_TCP(_p->buf)->seq_be), __iip_ntohl(PB_TCP(_p->buf)->ack_seq_be),
-															PB_TCP_PAYLOAD_LEN(_p->buf));
+													if (p == _p) {
+														IIP_OPS_DEBUG_PRINTF("tcp-in O src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
+																(PB_IP4(_p->buf)->src_be >>  0) & 0x0ff,
+																(PB_IP4(_p->buf)->src_be >>  8) & 0x0ff,
+																(PB_IP4(_p->buf)->src_be >> 16) & 0x0ff,
+																(PB_IP4(_p->buf)->src_be >> 24) & 0x0ff,
+																(PB_IP4(_p->buf)->dst_be >>  0) & 0x0ff,
+																(PB_IP4(_p->buf)->dst_be >>  8) & 0x0ff,
+																(PB_IP4(_p->buf)->dst_be >> 16) & 0x0ff,
+																(PB_IP4(_p->buf)->dst_be >> 24) & 0x0ff,
+																__iip_ntohs(PB_TCP(_p->buf)->src_be),
+																__iip_ntohs(PB_TCP(_p->buf)->dst_be),
+																PB_TCP_HDR_HAS_SYN(_p->buf), PB_TCP_HDR_HAS_ACK(_p->buf), PB_TCP_HDR_HAS_FIN(_p->buf), PB_TCP_HDR_HAS_RST(_p->buf),
+																__iip_ntohl(PB_TCP(_p->buf)->seq_be), __iip_ntohl(PB_TCP(_p->buf)->ack_seq_be),
+																PB_TCP_PAYLOAD_LEN(_p->buf));
+													}
 													/* push packet to out-of-order queue, sorted by sequence number */
 													if (!conn->head[4][0]) { /* head[4] is empty, just add _p to it */
 														__iip_assert(!conn->head[4][1]);
@@ -2009,11 +2011,43 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													__iip_free_pb(s, _p, opaque);
 													_p = NULL; /* for easier assertion */
 												} else { /* seq is fine, push _p to sorted receive queue head[0] */
+													if (p != _p) {
+														IIP_OPS_DEBUG_PRINTF("tcp-in R src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
+																(PB_IP4(_p->buf)->src_be >>  0) & 0x0ff,
+																(PB_IP4(_p->buf)->src_be >>  8) & 0x0ff,
+																(PB_IP4(_p->buf)->src_be >> 16) & 0x0ff,
+																(PB_IP4(_p->buf)->src_be >> 24) & 0x0ff,
+																(PB_IP4(_p->buf)->dst_be >>  0) & 0x0ff,
+																(PB_IP4(_p->buf)->dst_be >>  8) & 0x0ff,
+																(PB_IP4(_p->buf)->dst_be >> 16) & 0x0ff,
+																(PB_IP4(_p->buf)->dst_be >> 24) & 0x0ff,
+																__iip_ntohs(PB_TCP(_p->buf)->src_be),
+																__iip_ntohs(PB_TCP(_p->buf)->dst_be),
+																PB_TCP_HDR_HAS_SYN(_p->buf), PB_TCP_HDR_HAS_ACK(_p->buf), PB_TCP_HDR_HAS_FIN(_p->buf), PB_TCP_HDR_HAS_RST(_p->buf),
+																__iip_ntohl(PB_TCP(_p->buf)->seq_be), __iip_ntohl(PB_TCP(_p->buf)->ack_seq_be),
+																PB_TCP_PAYLOAD_LEN(_p->buf));
+													}
 													__iip_enqueue_obj(conn->head[0], _p, 0);
 													s->monitor.tcp.rx_pkt++;
 													conn->seq_next_expected += PB_TCP_HDR_HAS_SYN(_p->buf) + PB_TCP_HDR_HAS_FIN(_p->buf) + PB_TCP_PAYLOAD_LEN(_p->buf) - _p->tcp.dec_tail;
 													if (conn->head[4][0]) {
 														__iip_assert(conn->head[4][1]);
+														if (p == _p) {
+															IIP_OPS_DEBUG_PRINTF("tcp-in F src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
+																	(PB_IP4(_p->buf)->src_be >>  0) & 0x0ff,
+																	(PB_IP4(_p->buf)->src_be >>  8) & 0x0ff,
+																	(PB_IP4(_p->buf)->src_be >> 16) & 0x0ff,
+																	(PB_IP4(_p->buf)->src_be >> 24) & 0x0ff,
+																	(PB_IP4(_p->buf)->dst_be >>  0) & 0x0ff,
+																	(PB_IP4(_p->buf)->dst_be >>  8) & 0x0ff,
+																	(PB_IP4(_p->buf)->dst_be >> 16) & 0x0ff,
+																	(PB_IP4(_p->buf)->dst_be >> 24) & 0x0ff,
+																	__iip_ntohs(PB_TCP(_p->buf)->src_be),
+																	__iip_ntohs(PB_TCP(_p->buf)->dst_be),
+																	PB_TCP_HDR_HAS_SYN(_p->buf), PB_TCP_HDR_HAS_ACK(_p->buf), PB_TCP_HDR_HAS_FIN(_p->buf), PB_TCP_HDR_HAS_RST(_p->buf),
+																	__iip_ntohl(PB_TCP(_p->buf)->seq_be), __iip_ntohl(PB_TCP(_p->buf)->ack_seq_be),
+																	PB_TCP_PAYLOAD_LEN(_p->buf));
+														}
 														/*
 														 * here, _p is pushed to head[0], and
 														 * there would be the possibility that
