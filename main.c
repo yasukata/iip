@@ -2032,24 +2032,17 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											if (do_dup_ack && conn->sack_ok) {
 												struct pb *__p = conn->head[4][1];
 												__iip_assert(__p);
-												while (sackbuf[1] < (sizeof(sackbuf) - 2 - 8) && __p) {
-													if (sackbuf[1] == 2) {
-														*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)]) = __iip_htonl(SEQ_RE_RAW(__p));
-													} else if (*((uint32_t *) &sackbuf[sackbuf[1]]) != __iip_htonl(SEQ_RE_RAW(__p))) { /* add new entry */
-														if (__iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1]])) - conn->seq_next_expected != __iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)])) - conn->seq_next_expected) {
-															/* we only add entry when the entry has the length */
+												do {
+													if (__p == conn->head[4][1] || __iip_htonl(SEQ_RE_RAW(__p)) != *((uint32_t *) &sackbuf[sackbuf[1] + 0])) {
+														if (__p != conn->head[4][1])
 															sackbuf[1] += 8;
-															*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)]) = __iip_htonl(SEQ_RE_RAW(__p));
-														}
-													}
-													*((uint32_t *) &sackbuf[sackbuf[1]]) = __iip_htonl(SEQ_LE_RAW(__p));
-													__iip_assert(__iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1]])) - conn->seq_next_expected <= /* accept no payload length packet */ __iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)])) - conn->seq_next_expected);
+														*((uint32_t *) &sackbuf[sackbuf[1] +                0]) = __iip_htonl(SEQ_LE_RAW(__p));
+														*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)]) = __iip_htonl(SEQ_RE_RAW(__p));
+													} else
+														*((uint32_t *) &sackbuf[sackbuf[1] + 0]) = __iip_htonl(SEQ_LE_RAW(__p));
 													__p = __p->prev[0];
-												}
-												if (__iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1]])) - conn->seq_next_expected != __iip_ntohl(*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)])) - conn->seq_next_expected) {
-													/* we only add entry when the entry has the length */
-													sackbuf[1] += 8;
-												}
+												} while (((uint32_t) sackbuf[1] + 8 < sizeof(sackbuf)) && __p);
+												sackbuf[1] += 8;
 												{ /* debug */
 													uint8_t __i;
 													for (__i = 2; __i < sackbuf[1]; __i += 8) {
