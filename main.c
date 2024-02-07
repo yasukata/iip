@@ -2067,7 +2067,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										}
 										if (((do_dup_ack || do_immediate_ack) && (now_ms - conn->dupack_ts_ms > 1U /* dup ack throttling : 1 ms */)) || do_sack) {
 											uint8_t sackbuf[(15 * 4) - sizeof(struct iip_tcp_hdr) - 19] = { 5, 2, };
-											if ((do_dup_ack || do_sack) && conn->sack_ok) {
+											if (conn->sack_ok && conn->head[4][1]) {
 												struct pb *__p = conn->head[4][1];
 												__iip_assert(__p);
 												do {
