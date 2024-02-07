@@ -2619,8 +2619,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														}
 														/* set flag and increase congestion window if _p is sacked */
 														if (!(_p->flags & __IIP_PB_FLAGS_SACKED)) {
-															uint32_t sle = __iip_ntohl(*((uint32_t *)(&rx_sackbuf[1 + c + 0])));
-															uint32_t sre = __iip_ntohl(*((uint32_t *)(&rx_sackbuf[1 + c + 4])));
+															uint32_t sle = __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 0])));
+															uint32_t sre = __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4])));
 #define SEQ_LE_RAW(__pb) (__iip_ntohl(PB_TCP((__pb)->buf)->seq_be) + (__pb)->tcp.inc_head)
 #define SEQ_RE_RAW(__pb) (__iip_ntohl(PB_TCP((__pb)->buf)->seq_be) + PB_TCP_HDR_HAS_SYN((__pb)->buf) + PB_TCP_HDR_HAS_FIN((__pb)->buf) + PB_TCP_PAYLOAD_LEN((__pb)->buf) - (__pb)->tcp.dec_tail)
 															/*IIP_OPS_DEBUG_PRINTF("cmp %u %u with sle %u sre %u\n",
