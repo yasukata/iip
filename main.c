@@ -251,13 +251,6 @@ static uint16_t __iip_netcsum16(uint8_t *__b[], uint16_t __l[], uint16_t __c, ui
 #define __iip_q_for_each_safe(__queue, _i, _n, __x) \
 	for ((_i) = (__queue)[0], _n = ((_i) ? _i->next[__x] : (NULL)); (_i); (_i) = _n, _n = ((_i) ? (_i)->next[__x] : (NULL)))
 
-static uint32_t __iip_now_in_ms(void *opaque)
-{
-	uint32_t t[3];
-	iip_ops_util_now_ns(t, opaque);
-	return (t[1] * 1000UL + t[2] / 1000000UL);
-}
-
 /* protocol headers */
 
 struct iip_ip4_hdr {
@@ -921,7 +914,12 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 	struct workspace *s = (struct workspace *) _mem;
 	uint16_t ret = 0;
 	uint32_t _next_us = 1000000UL; /* 1 sec */
-	uint32_t now_ms = __iip_now_in_ms(opaque);
+	uint32_t now_ms;
+	{
+		uint32_t t[3];
+		iip_ops_util_now_ns(t, opaque);
+		now_ms = (t[1] * 1000UL + t[2] / 1000000UL);
+	}
 	{ /* periodic timer */
 		if (200 <= now_ms - s->timer.prev_fast){ /* fast timer every 200 ms */
 			/* send delayed ack */
