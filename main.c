@@ -1298,11 +1298,12 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													if (p->tcp.opt.sack_opt_off) { /* debug */
 														uint16_t c = 2;
 														while (c < PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]) {
-															IIP_OPS_DEBUG_PRINTF("rx sack: %2u/%2u: sle %u sre %u (len %u)\n",
+															IIP_OPS_DEBUG_PRINTF("rx sack: %2u/%2u: sle %u sre %u (len %u ack %u)\n",
 																	c, PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off],
 																	__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 0]))),
 																	__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4]))),
-																	__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4]))) - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 0]))));
+																	__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 4]))) - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1 + c + 0]))),
+																	__iip_ntohl(PB_TCP(p->buf)->ack_seq_be));
 															c += 8;
 														}
 													}
@@ -1381,7 +1382,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												} else if (conn->sack_ok) { /* range of seq is fine, does not exceed advertised window size */
 													if (p == _p)
 														do_dup_ack = 1;
-													/*IIP_OPS_DEBUG_PRINTF("tcp-in O src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
+													IIP_OPS_DEBUG_PRINTF("tcp-in O src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
 															(PB_IP4(_p->buf)->src_be >>  0) & 0x0ff,
 															(PB_IP4(_p->buf)->src_be >>  8) & 0x0ff,
 															(PB_IP4(_p->buf)->src_be >> 16) & 0x0ff,
@@ -1394,7 +1395,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															__iip_ntohs(PB_TCP(_p->buf)->dst_be),
 															PB_TCP_HDR_HAS_SYN(_p->buf), PB_TCP_HDR_HAS_ACK(_p->buf), PB_TCP_HDR_HAS_FIN(_p->buf), PB_TCP_HDR_HAS_RST(_p->buf),
 															__iip_ntohl(PB_TCP(_p->buf)->seq_be), __iip_ntohl(PB_TCP(_p->buf)->ack_seq_be),
-															PB_TCP_PAYLOAD_LEN(_p->buf))*/
+															PB_TCP_PAYLOAD_LEN(_p->buf));
 													/* push packet to out-of-order queue, sorted by sequence number */
 													if (!conn->head[4][0]) { /* head[4] is empty, just add _p to it */
 														__iip_assert(!conn->head[4][1]);
@@ -1423,12 +1424,12 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																	 *             |--- _p ----|
 																	 * do nothing
 																	 */
-																	/*IIP_OPS_DEBUG_PRINTF("%4u pending tcp rx queue insert: no overlap: __p %u %u _p %u %u\n",
+																	IIP_OPS_DEBUG_PRINTF("%4u pending tcp rx queue insert: no overlap: __p %u %u _p %u %u\n",
 																			__LINE__,
 																			SEQ_LE_RAW(__p),
 																			SEQ_RE_RAW(__p),
 																			SEQ_LE_RAW(_p),
-																			SEQ_RE_RAW(_p));*/
+																			SEQ_RE_RAW(_p));
 																} else if ((SEQ_LE(_p) == SEQ_LE(__p)) && (SEQ_RE(_p) == SEQ_RE(__p))) {
 																	/*
 																	 * _p has the exact same range as __p
@@ -1655,7 +1656,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																					SEQ_LE_RAW(_p),
 																					SEQ_RE_RAW(_p),
 																					SEQ_LE_RAW(__p2),
-																					__iip_ntohl(PB_TCP(__p2->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(__p2->buf) + PB_TCP_HDR_HAS_FIN(__p2->buf) + PB_TCP_PAYLOAD_LEN(__p2->buf) - __p2->tcp.dec_tail);
+																					SEQ_RE_RAW(__p2));
 																			__iip_assert(SEQ_RE(__p) == SEQ_LE(_p));
 																			__iip_assert(SEQ_RE(_p) == SEQ_LE(__p2));
 																		} else {
@@ -2052,7 +2053,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												{ /* debug */
 													uint8_t __i;
 													for (__i = 2; __i < sackbuf[1]; __i += 8) {
-														IIP_OPS_DEBUG_PRINTF("SACK %2u-%2u/%2u: sle %u sre %u (len %u) expected seq %u\n",
+														IIP_OPS_DEBUG_PRINTF("tx sack %2u-%2u/%2u: sle %u sre %u (len %u) expected seq %u\n",
 																__i, __i + 8, sackbuf[1],
 																__iip_ntohl(*((uint32_t *) &sackbuf[__i +                0])),
 																__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])),
