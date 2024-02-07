@@ -3070,6 +3070,13 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										}
 									}
 								}
+								if (conn->dup_ack_received != 3) { /* TODO: this is inefficient, and to be removed by reorganization of this loop */
+									struct pb *p, *_n;
+									__iip_q_for_each_safe(conn->head[3], p, _n, 0) {
+										__iip_dequeue_obj(conn->head[3], p, 0);
+										__iip_free_pb(s, p, opaque);
+									}
+								}
 							}
 						}
 					} else if (conn->dup_ack_received == 3) { /* 3 dup acks are received, we do retransmission for fast recovery, or sack */
