@@ -2252,6 +2252,14 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																	((uint32_t) conn->peer_win << conn->ws),
 																	__iip_ntohl(conn->seq_be) + PB_TCP_PAYLOAD_LEN(p->buf) - conn->acked_seq /* len to be filled on the rx side */);
 														}
+														if (!(conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
+															IIP_OPS_DEBUG_PRINTF("loss detected (dup ack) : %p seq %u ack %u\n", (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
+															conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
+															conn->cc.win = conn->cc.ssthresh;
+															__iip_assert(conn->head[2][0] && conn->head[2][1]);
+															conn->sent_seq_when_loss_detected = __iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) + PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf) + PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf);
+															conn->flags |= __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
+														}
 													} else { /* pattern A */
 														/*
 														 *        conn->acked_seq              conn->seq_be
@@ -2512,9 +2520,17 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									}
 								}
 							}
-							if (p->tcp.opt.sack_opt_off)
+							if (p->tcp.opt.sack_opt_off) {
 								__iip_enqueue_obj(conn->tcp_sack_rx, p, 0);
-							else
+								if (!(conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
+									IIP_OPS_DEBUG_PRINTF("loss detected (sack) : %p seq %u ack %u\n", (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
+									conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
+									conn->cc.win = conn->cc.ssthresh;
+									__iip_assert(conn->head[2][0] && conn->head[2][1]);
+									conn->sent_seq_when_loss_detected = __iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) + PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf) + PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf);
+									conn->flags |= __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
+								}
+							} else
 								__iip_free_pb(s, p, opaque);
 							if ((4294967295U / 2) < (__iip_ntohl(conn->seq_be) - conn->acked_seq))
 								break; /* release acked packets before overflowing, we will come back if head[0] still has a packet */
@@ -2533,7 +2549,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								if ((__iip_ntohl(conn->seq_be) - conn->acked_seq) <= (__iip_ntohl(conn->seq_be) - (__iip_ntohl(PB_TCP(p->buf)->seq_be) + ((PB_TCP_HDR_HAS_SYN(p->buf) || PB_TCP_HDR_HAS_FIN(p->buf)) ? 1 : PB_TCP_PAYLOAD_LEN(p->buf))))) { /* A or B */
 									if (PB_TCP_PAYLOAD_LEN(p->buf)) {
 										if (!(p->flags & __IIP_PB_FLAGS_SACKED)) { /* increase window size for congestion control */
-											if (conn->cc.ssthresh < conn->cc.win) {
+											if (conn->cc.ssthresh <= conn->cc.win) {
 												conn->cc.win = (conn->cc.win < 65535U ? conn->cc.win + 1 : conn->cc.win);
 												/*IIP_OPS_DEBUG_PRINTF("slow increase win %u ssthresh %u\n", conn->cc.win, conn->cc.ssthresh);*/
 											} else {
@@ -2709,7 +2725,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																IIP_OPS_DEBUG_PRINTF("%u %u is sacked\n",
 																		__iip_ntohl(PB_TCP(_p->buf)->seq_be),
 																		__iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(_p->buf) + PB_TCP_HDR_HAS_FIN(_p->buf) + PB_TCP_PAYLOAD_LEN(_p->buf));
-																if (conn->cc.ssthresh < conn->cc.win) {
+																if (conn->cc.ssthresh <= conn->cc.win) {
 																	conn->cc.win = (conn->cc.win < 65535U ? conn->cc.win + 1 : conn->cc.win);
 																} else {
 																	conn->cc.win = (conn->cc.win < 65535U / 2 ? conn->cc.win * 2 : 65535U);
@@ -3142,14 +3158,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						} else {
 							/* we have received an ack telling the receiver successfully got the data  */
 						}
-					}
-					if (conn->dup_ack_received == 3) { /* loss detected */
-						IIP_OPS_DEBUG_PRINTF("loss detected (3 dup ack) : %p seq %u ack %u\n", (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
-						conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
-						conn->cc.win = conn->cc.ssthresh; /* fast retransmission */
-						__iip_assert(conn->head[2][0] && conn->head[2][1]);
-						conn->sent_seq_when_loss_detected = __iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) + PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf) + PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf);
-						conn->flags |= __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
 					}
 					{ /* release unchecked received sack packets */
 						struct pb *p, *_n;
