@@ -2245,13 +2245,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														 */
 														/* this is dup ack */
 														s->monitor.tcp.rx_pkt_dupack++;
-														if (conn->dup_ack_received <= 3) {
-															conn->dup_ack_received++;
-															IIP_OPS_DEBUG_PRINTF("%p Received Dup ACK (cnt %u) %u (has sack %u) (win %u sent %u)\n",
-																	(void *) conn, conn->dup_ack_received, conn->acked_seq, p->tcp.opt.sack_opt_off,
-																	((uint32_t) conn->peer_win << conn->ws),
-																	__iip_ntohl(conn->seq_be) + PB_TCP_PAYLOAD_LEN(p->buf) - conn->acked_seq /* len to be filled on the rx side */);
-														}
+														conn->dup_ack_received++;
+														IIP_OPS_DEBUG_PRINTF("%p Received Dup ACK (cnt %u) %u (has sack %u) (win %u sent %u)\n",
+																(void *) conn, conn->dup_ack_received, conn->acked_seq, p->tcp.opt.sack_opt_off,
+																((uint32_t) conn->peer_win << conn->ws),
+																__iip_ntohl(conn->seq_be) + PB_TCP_PAYLOAD_LEN(p->buf) - conn->acked_seq /* len to be filled on the rx side */);
 														if (!(conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
 															IIP_OPS_DEBUG_PRINTF("loss detected (dup ack) : %p seq %u ack %u\n", (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
 															conn->cc.ssthresh = (conn->cc.win / 2 < 1 ? 2 : conn->cc.win / 2);
@@ -3159,6 +3157,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							/* we have received an ack telling the receiver successfully got the data  */
 						}
 					}
+					if (conn->dup_ack_received == 3)
+						conn->dup_ack_received = 0;
 					{ /* release unchecked received sack packets */
 						struct pb *p, *_n;
 						__iip_q_for_each_safe(conn->tcp_sack_rx, p, _n, 0) {
