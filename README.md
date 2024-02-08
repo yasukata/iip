@@ -18,6 +18,9 @@ The authors will not bear any responsibility if the implementations, provided by
 ### example application
 - [bench-iip](https://github.com/yasukata/bench-iip): a benchmark tool.
 
+### simulation
+- [iip-ns](https://github.com/yasukata/iip-ns): a helper for running iip on the ns-3 simulator (Linux).
+
 ## getting started
 
 Please visit an example application page at [https://github.com/yasukata/bench-iip](https://github.com/yasukata/bench-iip) for testing iip. 
