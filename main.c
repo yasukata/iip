@@ -2339,6 +2339,17 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										if (__iip_ntohl(PB_TCP(p->buf)->ack_seq_be) - conn->sent_seq_when_loss_detected < 2147483648U) {
 											conn->flags &= ~__IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
 											IIP_OPS_DEBUG_PRINTF("%p Peer succeed to recover: ACKed by peer %u\n", (void *) conn, conn->acked_seq);
+											{ /* extend timeout */
+												struct pb *_p, *__n;
+												__iip_q_for_each_safe(conn->head[2], _p, __n, 0) {
+													_p->tcp.rto_ms = (conn->rtt.srtt + 4 * conn->rtt.rttvar) * 200 /* tick is incremented every 200 ms by fast timer */;
+													if (!_p->tcp.rto_ms)
+														_p->tcp.rto_ms = 200U;
+													if (60000U /* 60 sec */ < _p->tcp.rto_ms)
+														_p->tcp.rto_ms = 60000U;
+													_p->ts = now_ms;
+												}
+											}
 										}
 									}
 									conn->dup_ack_received = 0;
