@@ -1544,7 +1544,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																				p_discard = 1;
 																			}
 																		}
-																	} else if (SEQ_RE(_p) <= SEQ_RE(__p)) {
+																	} else if (SEQ_RE(__p) <= SEQ_RE(_p)) {
 																		/*
 																		 * pattern B
 																		 * |--- __p ---|
