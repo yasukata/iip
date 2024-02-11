@@ -412,7 +412,6 @@ struct iip_tcp_conn {
 	uint32_t ack_seq_sent;
 	uint32_t seq_next_expected;
 	uint8_t dup_ack_received;
-	uint8_t dup_ack_sent;
 	uint32_t time_wait_ts_ms;
 	uint32_t retrans_cnt;
 
@@ -2110,11 +2109,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													__iip_enqueue_obj(conn->head[5], dup_ack_p, 0);
 												}
 											}
-											if (do_ack) {
-												conn->dup_ack_sent++;
-												if (conn->dup_ack_sent == 3)
-													conn->dup_ack_sent = 0;
-											}
 										}
 #undef SEQ_LE
 #undef SEQ_RE
@@ -2361,10 +2355,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										}
 									}
 									conn->dup_ack_received = 0;
-									if (conn->dup_ack_sent) {
-										IIP_OPS_DEBUG_PRINTF("%p Missed packet is recovered by Dup ACK request: %u\n", (void *) conn, __iip_ntohl(conn->ack_seq_be));
-										conn->dup_ack_sent = 0;
-									}
 									conn->peer_win = __iip_ntohs(PB_TCP(p->buf)->win_be);
 									if (p->flags & __IIP_PB_FLAGS_OPT_HAS_TS) {
 										conn->ts = p->tcp.opt.ts[0];
