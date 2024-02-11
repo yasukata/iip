@@ -2145,7 +2145,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												iip_ops_l2_hdr_dst_ptr(p->pkt, opaque), PB_IP4(p->buf)->dst_be, PB_TCP(p->buf)->dst_be,
 												iip_ops_l2_hdr_src_ptr(p->pkt, opaque), PB_IP4(p->buf)->src_be, PB_TCP(p->buf)->src_be,
 												__IIP_TCP_STATE_SYN_RECVD, opaque);
-										_conn.ack_seq_be = __iip_ntohl(PB_TCP(p->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(p->buf) + PB_TCP_HDR_HAS_FIN(p->buf) + PB_TCP_PAYLOAD_LEN(p->buf);
+										_conn.ack_seq_be = __iip_ntohl(PB_TCP(p->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(p->buf) + PB_TCP_HDR_HAS_FIN(p->buf) + PB_TCP_PAYLOAD_LEN(p->buf) - p->tcp.dec_tail;
 										__iip_tcp_push(s, &_conn, NULL, 0, 0, 0, 1, NULL, opaque);
 										{
 											struct pb *out_p = _conn.head[1][1];
