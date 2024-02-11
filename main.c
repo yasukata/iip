@@ -1337,6 +1337,14 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											__iip_assert(_p->buf);
 											__iip_assert(!_p->prev[0]);
 											__iip_assert(!_p->next[0]);
+											if (p == _p && conn->seq_next_expected != SEQ_LE_RAW(_p)) { /* increment head if the packet is partially acked */
+												if (conn->seq_next_expected - SEQ_LE_RAW(_p) < 2147483648U
+														&& SEQ_RE_RAW(_p) - conn->seq_next_expected < 2147483648U
+														&& SEQ_RE_RAW(_p) != conn->seq_next_expected) {
+													_p->tcp.inc_head += conn->seq_next_expected - SEQ_LE_RAW(_p);
+													__iip_assert(conn->seq_next_expected == SEQ_LE_RAW(_p));
+												}
+											}
 											if (conn->seq_next_expected != SEQ_LE_RAW(_p)) { /* sequence number is different from expected one, but keep in head[4] */
 												conn->do_ack_cnt++;
 												if ((conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used) * conn->mss < SEQ_LE(_p)) { /* exceeding advertised window size, so, discard _p */
