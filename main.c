@@ -2058,7 +2058,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											}
 										}
 										if (do_ack) {
-											uint8_t sackbuf[(15 * 4) - sizeof(struct iip_tcp_hdr) - 19] = { 5, 2, };
 											if (conn->sack_ok && conn->head[4][1]) { /* clear urgent queue because the latest sack is informative */
 												struct pb *__p, *__n;
 												__iip_q_for_each_safe(conn->head[5], __p, __n, 0) {
@@ -2076,9 +2075,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												}
 											}
 											if (conn->sack_ok && conn->head[4][1]) {
+												uint8_t sackbuf[(15 * 4) - sizeof(struct iip_tcp_hdr) - 19] = { 5, 2, };
 												struct pb *__p = conn->head[4][1];
 												__iip_assert(__p);
-												do {
+												do { /* send multiple sack packets if entries do not fit in one packet */
 													if (__p == conn->head[4][1] || __iip_htonl(SEQ_RE_RAW(__p)) != *((uint32_t *) &sackbuf[sackbuf[1] + 0])) {
 														if (__p != conn->head[4][1])
 															sackbuf[1] += 8;
@@ -2087,22 +2087,32 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													} else
 														*((uint32_t *) &sackbuf[sackbuf[1] + 0]) = __iip_htonl(SEQ_LE_RAW(__p));
 													__p = __p->prev[0];
-												} while (((uint32_t) sackbuf[1] + 8 < sizeof(sackbuf)) && __p);
-												sackbuf[1] += 8;
-												{ /* debug */
-													uint8_t __i;
-													for (__i = 2; __i < sackbuf[1]; __i += 8) {
-														IIP_OPS_DEBUG_PRINTF("tx sack %2u-%2u/%2u: sle %u sre %u (len %u) expected seq %u\n",
-																__i, __i + 8, sackbuf[1],
-																__iip_ntohl(*((uint32_t *) &sackbuf[__i +                0])),
-																__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])),
-																__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])) - __iip_ntohl(*((uint32_t *) &sackbuf[__i + 0])),
-																conn->seq_next_expected);
+													if (!(((uint32_t) sackbuf[1] + 8 < sizeof(sackbuf)) && __p)) {
+														if (!__p)
+															sackbuf[1] += 8;
+														{ /* debug */
+															uint8_t __i;
+															for (__i = 2; __i < sackbuf[1]; __i += 8) {
+																IIP_OPS_DEBUG_PRINTF("tx sack %2u-%2u/%2u: sle %u sre %u (len %u) expected seq %u\n",
+																		__i, __i + 8, sackbuf[1],
+																		__iip_ntohl(*((uint32_t *) &sackbuf[__i +                0])),
+																		__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])),
+																		__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])) - __iip_ntohl(*((uint32_t *) &sackbuf[__i + 0])),
+																		conn->seq_next_expected);
+															}
+														}
+														__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, (sackbuf[1] == 2 ? NULL : sackbuf), opaque);
+														{ /* workaround to bypass the ordered queue */
+															struct pb *dup_ack_p = conn->head[1][1];
+															__iip_dequeue_obj(conn->head[1], dup_ack_p, 0);
+															__iip_enqueue_obj(conn->head[5], dup_ack_p, 0);
+														}
+														sackbuf[0] = 5;
+														sackbuf[1] = 2;
 													}
-												}
-											}
-											{ /* send dup ack */
-												__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, (sackbuf[1] == 2 ? NULL : sackbuf), opaque);
+												} while (__p);
+											} else { /* send dup ack */
+												__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, NULL, opaque);
 												{ /* workaround to bypass the ordered queue */
 													struct pb *dup_ack_p = conn->head[1][1];
 													__iip_dequeue_obj(conn->head[1], dup_ack_p, 0);
