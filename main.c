@@ -3248,40 +3248,57 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							uint8_t sackbuf[(15 * 4) - sizeof(struct iip_tcp_hdr) - 19] = { 5, 2, };
 							struct pb *__p = conn->head[4][1];
 							__iip_assert(__p);
-							do { /* send multiple sack packets if entries do not fit in one packet */
-								if (__p == conn->head[4][1] || __iip_htonl(SEQ_RE_RAW(__p)) != *((uint32_t *) &sackbuf[sackbuf[1] + 0])) {
-									if (__p != conn->head[4][1])
-										sackbuf[1] += 8;
-									*((uint32_t *) &sackbuf[sackbuf[1] +                0]) = __iip_htonl(SEQ_LE_RAW(__p));
-									*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)]) = __iip_htonl(SEQ_RE_RAW(__p));
-								} else
-									*((uint32_t *) &sackbuf[sackbuf[1] + 0]) = __iip_htonl(SEQ_LE_RAW(__p));
-								__p = __p->prev[0];
-								if (!(((uint32_t) sackbuf[1] + 8 < sizeof(sackbuf)) && __p)) {
-									if (!__p)
-										sackbuf[1] += 8;
-									{ /* debug */
-										uint8_t __i;
-										for (__i = 2; __i < sackbuf[1]; __i += 8) {
-											IIP_OPS_DEBUG_PRINTF("%u tx sack %2u-%2u/%2u: sle %u sre %u (len %u) expected seq %u\n",
-													now_ms,
-													__i, __i + 8, sackbuf[1],
-													__iip_ntohl(*((uint32_t *) &sackbuf[__i +                0])),
-													__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])),
-													__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])) - __iip_ntohl(*((uint32_t *) &sackbuf[__i + 0])),
-													conn->seq_next_expected);
+							*((uint32_t *) &sackbuf[sackbuf[1] +                0]) = __iip_htonl(SEQ_LE_RAW(__p));
+							*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)]) = __iip_htonl(SEQ_RE_RAW(__p));
+							__p = __p->prev[0];
+							while (__p) { /* send multiple sack packets if entries do not fit in one packet */
+								if (__iip_htonl(SEQ_RE_RAW(__p)) != *((uint32_t *) &sackbuf[sackbuf[1] + 0])) {
+									sackbuf[1] += 8;
+									if (sizeof(sackbuf) < (uint32_t) sackbuf[1] + 8) {
+										__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, sackbuf, opaque);
+										{ /* workaround to bypass the ordered queue */
+											struct pb *dup_ack_p = conn->head[1][1];
+											__iip_dequeue_obj(conn->head[1], dup_ack_p, 0);
+											__iip_enqueue_obj(queue, dup_ack_p, 0);
 										}
+										{ /* debug */
+											uint8_t __i;
+											for (__i = 2; __i < sackbuf[1]; __i += 8) {
+												IIP_OPS_DEBUG_PRINTF("%u tx sack %2u-%2u/%2u: sle %u sre %u (len %u) expected seq %u\n",
+														now_ms,
+														__i, __i + 8, sackbuf[1],
+														__iip_ntohl(*((uint32_t *) &sackbuf[__i +                0])),
+														__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])),
+														__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])) - __iip_ntohl(*((uint32_t *) &sackbuf[__i + 0])),
+														conn->seq_next_expected);
+											}
+										}
+										sackbuf[1] = 2;
 									}
-									__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, sackbuf, opaque);
-									{ /* workaround to bypass the ordered queue */
-										struct pb *dup_ack_p = conn->head[1][1];
-										__iip_dequeue_obj(conn->head[1], dup_ack_p, 0);
-										__iip_enqueue_obj(queue, dup_ack_p, 0);
-									}
-									sackbuf[0] = 5;
-									sackbuf[1] = 2;
+									*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)]) = __iip_htonl(SEQ_RE_RAW(__p));
 								}
-							} while (__p);
+								*((uint32_t *) &sackbuf[sackbuf[1] + 0]) = __iip_htonl(SEQ_LE_RAW(__p));
+								__p = __p->prev[0];
+							}
+							sackbuf[1] += 8;
+							__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, sackbuf, opaque);
+							{ /* workaround to bypass the ordered queue */
+								struct pb *dup_ack_p = conn->head[1][1];
+								__iip_dequeue_obj(conn->head[1], dup_ack_p, 0);
+								__iip_enqueue_obj(queue, dup_ack_p, 0);
+							}
+							{ /* debug */
+								uint8_t __i;
+								for (__i = 2; __i < sackbuf[1]; __i += 8) {
+									IIP_OPS_DEBUG_PRINTF("%u tx sack %2u-%2u/%2u: sle %u sre %u (len %u) expected seq %u\n",
+											now_ms,
+											__i, __i + 8, sackbuf[1],
+											__iip_ntohl(*((uint32_t *) &sackbuf[__i +                0])),
+											__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])),
+											__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])) - __iip_ntohl(*((uint32_t *) &sackbuf[__i + 0])),
+											conn->seq_next_expected);
+								}
+							}
 						} else { /* send dup ack */
 							uint16_t i;
 							for (i = 0; i < conn->do_ack_cnt && i < 3 /* this number is heuristic */; i++) {
