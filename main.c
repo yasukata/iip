@@ -448,7 +448,7 @@ struct iip_tcp_conn {
 
 	struct pb *tcp_sack_rx[2];
 
-	struct pb *head[6][2]; /* 0: rx, 1: tx, 2: tx sent, 3: tx retrans, 4: rx out-of-order, 5: tx urgent */
+	struct pb *head[5][2]; /* 0: rx, 1: tx, 2: tx sent, 3: tx retrans, 4: rx out-of-order */
 
 	struct iip_tcp_conn *prev[2];
 	struct iip_tcp_conn *next[2];
@@ -928,7 +928,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 			{
 				struct iip_tcp_conn *conn, *_conn_n;
 				__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
-					if (conn->state == __IIP_TCP_STATE_ESTABLISHED && !conn->head[3][0] && !conn->head[5][0]) {
+					if (conn->state == __IIP_TCP_STATE_ESTABLISHED && !conn->head[3][0]) {
 						if ((__iip_ntohl(conn->ack_seq_be) != conn->ack_seq_sent)) /* we got payload, but ack is not pushed by the app */
 							__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, NULL, opaque);
 					}
@@ -3156,7 +3156,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						}
 					}
 					/* timeout check */
-					if (!conn->head[3][0] && !conn->head[5][0]) { /* not in recovery mode */
+					if (!conn->head[3][0]) { /* not in recovery mode */
 						if (conn->head[2][0]) {
 							if (conn->head[2][0]->tcp.rto_ms < now_ms - conn->head[2][0]->ts) { /* timeout and do retransmission */
 								if (conn->retrans_cnt < IIP_CONF_TCP_RETRANS_CNT) {
@@ -3230,11 +3230,12 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								_next_us = _next_us_tmp;
 						}
 					}
-					if (!conn->head[3][0] && !conn->head[5][0]) {
+					if (!conn->head[3][0]) {
 						if ((__iip_ntohl(conn->ack_seq_be) != conn->ack_seq_sent)) /* we got payload, but ack is not pushed by the app */
 							__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, NULL, opaque);
 					}
 					if (conn->do_ack_cnt) { /* push ack telling rx misses */
+						struct pb *queue[2] = { 0 };
 						if (conn->sack_ok && conn->head[4][1]) {
 							uint8_t sackbuf[(15 * 4) - sizeof(struct iip_tcp_hdr) - 19] = { 5, 2, };
 							struct pb *__p = conn->head[4][1];
@@ -3267,7 +3268,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									{ /* workaround to bypass the ordered queue */
 										struct pb *dup_ack_p = conn->head[1][1];
 										__iip_dequeue_obj(conn->head[1], dup_ack_p, 0);
-										__iip_enqueue_obj(conn->head[5], dup_ack_p, 0);
+										__iip_enqueue_obj(queue, dup_ack_p, 0);
 									}
 									sackbuf[0] = 5;
 									sackbuf[1] = 2;
@@ -3280,28 +3281,27 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								{ /* workaround to bypass the ordered queue */
 									struct pb *dup_ack_p = conn->head[1][1];
 									__iip_dequeue_obj(conn->head[1], dup_ack_p, 0);
-									__iip_enqueue_obj(conn->head[5], dup_ack_p, 0);
+									__iip_enqueue_obj(queue, dup_ack_p, 0);
 								}
+							}
+						}
+						{ /* transmit urgent packets */
+							struct pb *p, *_n;
+							__iip_q_for_each_safe(queue, p, _n, 0) {
+								__iip_dequeue_obj(queue, p, 0);
+								{
+									__iip_assert(p->pkt);
+									{
+										void *clone_pkt = iip_ops_pkt_clone(p->pkt, opaque);
+										__iip_assert(clone_pkt);
+										iip_ops_l2_push(clone_pkt, opaque);
+										s->monitor.tcp.tx_pkt++;
+									}
+								}
+								__iip_free_pb(s, p, opaque);
 							}
 						}
 						conn->do_ack_cnt = 0;
-					}
-					{ /* transmit urgent packets */
-						struct pb **queue = conn->head[5];
-						struct pb *p, *_n;
-						__iip_q_for_each_safe(queue, p, _n, 0) {
-							__iip_dequeue_obj(queue, p, 0);
-							{
-								__iip_assert(p->pkt);
-								{
-									void *clone_pkt = iip_ops_pkt_clone(p->pkt, opaque);
-									__iip_assert(clone_pkt);
-									iip_ops_l2_push(clone_pkt, opaque);
-									s->monitor.tcp.tx_pkt++;
-								}
-							}
-							__iip_free_pb(s, p, opaque);
-						}
 					}
 					{ /* if retransmission queue is empty, packets from normal queue are sent */
 						struct pb **queue = (conn->head[3][0] ? conn->head[3] : conn->head[1]);
