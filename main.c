@@ -1330,7 +1330,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 #define SEQ_LE(__pb) (SEQ_LE_RAW(__pb) - conn->seq_next_expected) /* left edge, relative */
 #define SEQ_RE(__pb) (SEQ_RE_RAW(__pb) - conn->seq_next_expected) /* right edge, relative */
 										struct pb *_p = p;
-										uint8_t do_dup_ack = 0, do_immediate_ack = 0, do_sack = 0;
+										uint8_t do_ack = 0;
 										while (1) {
 											__iip_assert(_p);
 											__iip_assert(_p->buf);
@@ -1357,7 +1357,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													__iip_free_pb(s, _p, opaque);
 													if (p == _p) {
 														/* send ack */
-														do_immediate_ack = 1;
+														do_ack = 1;
 													}
 													if (p != _p && conn->head[4][0]) {
 														/*
@@ -1381,7 +1381,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													}
 												} else if (conn->sack_ok) { /* range of seq is fine, does not exceed advertised window size */
 													if (p == _p)
-														do_dup_ack = 1;
+														do_ack = 1;
 													if (p == _p) {
 														IIP_OPS_DEBUG_PRINTF("tcp-in O src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
 																(PB_IP4(_p->buf)->src_be >>  0) & 0x0ff,
@@ -1402,7 +1402,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													if (!conn->head[4][0]) { /* head[4] is empty, just add _p to it */
 														__iip_assert(!conn->head[4][1]);
 														__iip_enqueue_obj(conn->head[4], _p, 0);
-														do_sack = 1;
+														do_ack = 1;
 													} else { /* insert _p in a sorted manner, and keep newer data if overlap exists */
 														uint8_t p_discard = 0, p_replaced = 0;
 														{ /* insert _p to head[4] and check overlap with the previous packet */
@@ -1991,14 +1991,14 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															}
 														}
 														if (!p_discard)
-															do_sack = 1;
+															do_ack = 1;
 													}
 													/* IIP_OPS_DEBUG_PRINTF("out-of-order: %u %u\n", __iip_ntohl(PB_TCP(_p->buf)->seq_be), conn->seq_next_expected); */
 												} else {
 													__iip_assert(p == _p);
 													__iip_free_pb(s, _p, opaque);
 													_p = NULL; /* for easier assertion */
-													do_dup_ack = 1;
+													do_ack = 1;
 												}
 												/*
 												 * _p is not pushed to head[0], therefore,
@@ -2065,7 +2065,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												break;
 											}
 										}
-										if (((do_dup_ack || do_immediate_ack) && (now_ms - conn->dupack_ts_ms > 1U /* dup ack throttling : 1 ms */)) || do_sack) {
+										if (do_ack && (now_ms - conn->dupack_ts_ms > 1U /* dup ack throttling : 1 ms */)) {
 											uint8_t sackbuf[(15 * 4) - sizeof(struct iip_tcp_hdr) - 19] = { 5, 2, };
 											if (conn->sack_ok && conn->head[4][1]) {
 												struct pb *__p = conn->head[4][1];
@@ -2101,7 +2101,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													__iip_enqueue_obj(conn->head[5], dup_ack_p, 0);
 												}
 											}
-											if (do_dup_ack) {
+											if (do_ack) {
 												conn->dup_ack_sent++;
 												if (conn->dup_ack_sent == 3)
 													conn->dup_ack_sent = 0;
