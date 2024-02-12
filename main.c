@@ -2044,7 +2044,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													}
 													__iip_enqueue_obj(conn->head[0], _p, 0);
 													s->monitor.tcp.rx_pkt++;
-													conn->seq_next_expected = __iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(_p->buf) + PB_TCP_HDR_HAS_FIN(_p->buf) + PB_TCP_PAYLOAD_LEN(_p->buf) - _p->tcp.dec_tail;
+													conn->seq_next_expected += PB_TCP_HDR_HAS_SYN(_p->buf) + PB_TCP_HDR_HAS_FIN(_p->buf) + PB_TCP_PAYLOAD_LEN(_p->buf) - _p->tcp.dec_tail - _p->tcp.inc_head;
+													__iip_assert(conn->seq_next_expected == __iip_ntohl(PB_TCP(_p->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(_p->buf) + PB_TCP_HDR_HAS_FIN(_p->buf) + PB_TCP_PAYLOAD_LEN(_p->buf) - _p->tcp.dec_tail);
 													if (conn->head[4][0]) {
 														__iip_assert(conn->head[4][1]);
 														if (p == _p) {
