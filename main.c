@@ -1337,7 +1337,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											__iip_assert(_p->buf);
 											__iip_assert(!_p->prev[0]);
 											__iip_assert(!_p->next[0]);
-											if (p == _p && conn->seq_next_expected != SEQ_LE_RAW(_p)) { /* increment head if the packet is partially acked */
+											if (conn->seq_next_expected != SEQ_LE_RAW(_p)) { /* increment head if the packet is partially acked */
 												if (conn->seq_next_expected - SEQ_LE_RAW(_p) < 2147483648U
 														&& SEQ_RE_RAW(_p) - conn->seq_next_expected < 2147483648U
 														&& SEQ_RE_RAW(_p) != conn->seq_next_expected) {
@@ -1366,7 +1366,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															(conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used) * IIP_CONF_TCP_OPT_MSS,
 															__iip_ntohl(PB_TCP(_p->buf)->seq_be) - conn->seq_next_expected);
 													__iip_free_pb(s, _p, opaque);
-													if (p != _p && conn->head[4][0]) {
+													if (conn->head[4][0]) {
 														/*
 														 * we continue the loop to cope with the following case
 														 *
