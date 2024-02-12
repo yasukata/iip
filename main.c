@@ -2351,7 +2351,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									}
 									if (PB_TCP_HDR_HAS_ACK(p->buf))
 										conn->retrans_cnt = 0;
-									conn->ack_seq_be = __iip_htonl(__iip_ntohl(PB_TCP(p->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(p->buf) + PB_TCP_HDR_HAS_FIN(p->buf) + PB_TCP_PAYLOAD_LEN(p->buf));
+									conn->ack_seq_be = __iip_htonl(__iip_ntohl(PB_TCP(p->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(p->buf) + PB_TCP_HDR_HAS_FIN(p->buf) + PB_TCP_PAYLOAD_LEN(p->buf) - p->tcp.dec_tail);
 									conn->acked_seq = __iip_ntohl(PB_TCP(p->buf)->ack_seq_be);
 									/*IIP_OPS_DEBUG_PRINTF("tcp-in I src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
 									  (PB_IP4(p->buf)->src_be >>  0) & 0x0ff,
