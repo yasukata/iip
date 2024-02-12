@@ -3390,7 +3390,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							}
 						}
 					}
-
+					__iip_assert(conn->seq_next_expected == __iip_ntohl(conn->ack_seq_be));
 				}
 			}
 		}
