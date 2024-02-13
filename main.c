@@ -621,6 +621,7 @@ static void iip_arp_request(void *_mem,
 static uint16_t __iip_tcp_push(struct workspace *s,
 			       struct iip_tcp_conn *conn, void *_pkt,
 			       uint8_t syn, uint8_t ack, uint8_t fin, uint8_t rst,
+			       uint16_t tcp_flags,
 			       uint8_t *sackbuf, void *opaque)
 {
 	void *pkt;
@@ -670,7 +671,7 @@ again:
 		tcph->ack_seq_be = conn->ack_seq_be;
 		tcph->flags = 0;
 		PB_TCP_HDR_SET_LEN(out_p->buf, __iip_round_up(sizeof(struct iip_tcp_hdr) + (syn ? 4 + 3 + (IIP_CONF_TCP_OPT_SACK_OK ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 10 : 0), 4) / 4);
-		PB_TCP_HDR_SET_FLAGS(out_p->buf, (syn ? 0x02U : 0) | (ack ? 0x10U : 0) | (rst ? 0x04U : 0) | (fin ? 0x01U : 0));
+		PB_TCP_HDR_SET_FLAGS(out_p->buf, (syn ? 0x02U : 0) | (ack ? 0x10U : 0) | (rst ? 0x04U : 0) | (fin ? 0x01U : 0) | tcp_flags);
 		tcph->win_be = __iip_htons((uint16_t) (((conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used) * IIP_CONF_TCP_OPT_MSS) >> IIP_CONF_TCP_OPT_WS));
 		tcph->urg_p_be = 0;
 		tcph->csum_be = 0;
@@ -758,12 +759,12 @@ again:
 	return 0;
 }
 
-static uint16_t iip_tcp_send(void *_mem, void *_handle, void *pkt, void *opaque)
+static uint16_t iip_tcp_send(void *_mem, void *_handle, void *pkt, uint16_t tcp_flags, void *opaque)
 {
 	struct iip_tcp_conn *conn = (struct iip_tcp_conn *) _handle;
 	if (conn->state != __IIP_TCP_STATE_ESTABLISHED)
 		return 0;
-	return __iip_tcp_push((struct workspace *) _mem, conn, pkt, 0, 1, 0, 0, NULL, opaque);
+	return __iip_tcp_push((struct workspace *) _mem, conn, pkt, 0, 1, 0, 0, tcp_flags, NULL, opaque);
 }
 
 static uint16_t iip_tcp_close(void *_mem, void *_handle, void *opaque)
@@ -773,7 +774,7 @@ static uint16_t iip_tcp_close(void *_mem, void *_handle, void *opaque)
 		conn->state = __IIP_TCP_STATE_FIN_WAIT1;
 		IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT1\n", (void *) conn);
 		{
-			uint16_t ret = __iip_tcp_push((struct workspace *) _mem, conn, NULL, 0, 1, 1, 0, NULL, opaque);
+			uint16_t ret = __iip_tcp_push((struct workspace *) _mem, conn, NULL, 0, 1, 1, 0, 0, NULL, opaque);
 			conn->fin_ack_seq_be = conn->seq_be;
 			return ret;
 		}
@@ -833,7 +834,7 @@ static uint16_t iip_tcp_connect(void *_mem,
 	__iip_assert(conn);
 	__iip_dequeue_obj(s->pool.conn, conn, 0);
 	__iip_tcp_conn_init(s, conn, local_mac, local_ip4_be, local_port_be, peer_mac, peer_ip4_be, peer_port_be, __IIP_TCP_STATE_SYN_SENT, opaque);
-	return __iip_tcp_push(s, conn, NULL, 1, 0, 0, 0, NULL, opaque);
+	return __iip_tcp_push(s, conn, NULL, 1, 0, 0, 0, 0, NULL, opaque);
 }
 
 static uint16_t iip_udp_send(void *_mem,
@@ -930,7 +931,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 				__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
 					if (conn->state == __IIP_TCP_STATE_ESTABLISHED && !conn->head[3][0]) {
 						if ((__iip_ntohl(conn->ack_seq_be) != conn->ack_seq_sent)) /* we got payload, but ack is not pushed by the app */
-							__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, NULL, opaque);
+							__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, 0, NULL, opaque);
 					}
 				}
 			}
@@ -2107,7 +2108,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												iip_ops_l2_hdr_src_ptr(p->pkt, opaque), PB_IP4(p->buf)->src_be, PB_TCP(p->buf)->src_be,
 												__IIP_TCP_STATE_SYN_RECVD, opaque);
 										_conn.ack_seq_be = __iip_htonl(__iip_ntohl(PB_TCP(p->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(p->buf) + PB_TCP_HDR_HAS_FIN(p->buf) + PB_TCP_PAYLOAD_LEN(p->buf) - p->tcp.dec_tail);
-										__iip_tcp_push(s, &_conn, NULL, 0, 0, 0, 1, NULL, opaque);
+										__iip_tcp_push(s, &_conn, NULL, 0, 0, 0, 1, 0, NULL, opaque);
 										{
 											struct pb *out_p = _conn.head[1][1];
 											__iip_dequeue_obj(_conn.head[1], out_p, 0);
@@ -2482,7 +2483,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												break;
 										}
 										if (syn || ack || fin || rst) {
-											__iip_tcp_push(s, conn, NULL, syn, ack, fin, rst, NULL, opaque);
+											__iip_tcp_push(s, conn, NULL, syn, ack, fin, rst, 0, NULL, opaque);
 											if (fin)
 												conn->fin_ack_seq_be = conn->seq_be;
 										}
@@ -3036,7 +3037,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												__iip_memcpy(&_conn, conn, sizeof(_conn));
 												_conn.seq_be = __iip_htonl(__iip_ntohl(PB_TCP(p->buf)->seq_be) + (p->clone.to_be_updated ? p->clone.range[i].increment_head : 0));
 												__iip_tcp_push(s, &_conn, cp,
-														PB_TCP_HDR_HAS_SYN(p->buf), PB_TCP_HDR_HAS_ACK(p->buf), PB_TCP_HDR_HAS_FIN(p->buf), PB_TCP_HDR_HAS_RST(p->buf),
+														PB_TCP_HDR_HAS_SYN(p->buf), PB_TCP_HDR_HAS_ACK(p->buf), PB_TCP_HDR_HAS_FIN(p->buf), PB_TCP_HDR_HAS_RST(p->buf), PB_TCP_HDR_HAS_PSH(conn->head[2][0]->buf) ? 0x08U : 0,
 														NULL,
 														opaque);
 												{
@@ -3123,7 +3124,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									__iip_memcpy(&_conn, conn, sizeof(_conn));
 									_conn.seq_be = __iip_htonl(__iip_ntohl(PB_TCP(conn->head[2][0]->buf)->seq_be) + conn->acked_seq /* dup ack */ - __iip_ntohl(PB_TCP(conn->head[2][0]->buf)->seq_be));
 									__iip_tcp_push(s, &_conn, cp,
-											PB_TCP_HDR_HAS_SYN(conn->head[2][0]->buf), PB_TCP_HDR_HAS_ACK(conn->head[2][0]->buf), PB_TCP_HDR_HAS_FIN(conn->head[2][0]->buf), PB_TCP_HDR_HAS_RST(conn->head[2][0]->buf),
+											PB_TCP_HDR_HAS_SYN(conn->head[2][0]->buf), PB_TCP_HDR_HAS_ACK(conn->head[2][0]->buf), PB_TCP_HDR_HAS_FIN(conn->head[2][0]->buf), PB_TCP_HDR_HAS_RST(conn->head[2][0]->buf), PB_TCP_HDR_HAS_PSH(conn->head[2][0]->buf) ? 0x08U : 0,
 											NULL, opaque);
 									{
 										struct pb *out_p = _conn.head[1][1];
@@ -3197,6 +3198,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												PB_TCP_HDR_HAS_ACK(conn->head[2][0]->buf),
 												PB_TCP_HDR_HAS_FIN(conn->head[2][0]->buf),
 												PB_TCP_HDR_HAS_RST(conn->head[2][0]->buf),
+												PB_TCP_HDR_HAS_PSH(conn->head[2][0]->buf) ? 0x08U : 0,
 												NULL,
 												opaque);
 										{
@@ -3242,7 +3244,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 					}
 					if (!conn->head[3][0]) {
 						if ((__iip_ntohl(conn->ack_seq_be) != conn->ack_seq_sent)) /* we got payload, but ack is not pushed by the app */
-							__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, NULL, opaque);
+							__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, 0, NULL, opaque);
 					}
 					if (conn->do_ack_cnt) { /* push ack telling rx misses */
 						struct pb *queue[2] = { 0 };
@@ -3257,7 +3259,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								if (__iip_htonl(SEQ_RE_RAW(__p)) != *((uint32_t *) &sackbuf[sackbuf[1] + 0])) {
 									sackbuf[1] += 8;
 									if (sizeof(sackbuf) < (uint32_t) sackbuf[1] + 8) {
-										__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, sackbuf, opaque);
+										__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, 0, sackbuf, opaque);
 										{ /* workaround to bypass the ordered queue */
 											struct pb *dup_ack_p = conn->head[1][1];
 											__iip_dequeue_obj(conn->head[1], dup_ack_p, 0);
@@ -3283,7 +3285,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								__p = __p->prev[0];
 							}
 							sackbuf[1] += 8;
-							__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, sackbuf, opaque);
+							__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, 0, sackbuf, opaque);
 							{ /* workaround to bypass the ordered queue */
 								struct pb *dup_ack_p = conn->head[1][1];
 								__iip_dequeue_obj(conn->head[1], dup_ack_p, 0);
@@ -3304,7 +3306,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						} else { /* send dup ack */
 							uint16_t i;
 							for (i = 0; i < conn->do_ack_cnt && i < 3 /* this number is heuristic */; i++) {
-								__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, NULL, opaque);
+								__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, 0, NULL, opaque);
 								{ /* workaround to bypass the ordered queue */
 									struct pb *dup_ack_p = conn->head[1][1];
 									__iip_dequeue_obj(conn->head[1], dup_ack_p, 0);
