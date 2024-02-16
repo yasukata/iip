@@ -2575,7 +2575,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												uint16_t c = 2;
 												uint32_t __ex = __iip_ntohl(PB_TCP(conn->head[2][1]->buf)->seq_be) + PB_TCP_HDR_HAS_SYN(conn->head[2][1]->buf) + PB_TCP_HDR_HAS_FIN(conn->head[2][1]->buf) + PB_TCP_PAYLOAD_LEN(conn->head[2][1]->buf);
 												__iip_assert(PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off] <= sizeof(rx_sackbuf));
-												memcpy(rx_sackbuf, &(PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1]), PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]);
+												__iip_memcpy(rx_sackbuf, &(PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off - 1]), PB_TCP_OPT(p->buf)[p->tcp.opt.sack_opt_off]);
 												while (c <= rx_sackbuf[1]) {
 													uint8_t do_skip = 0;
 													if ((__iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4]))) - __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 0]))) >= 2147483648U)
