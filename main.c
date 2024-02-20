@@ -89,7 +89,7 @@ static void iip_ops_icmp_reply(void *, void *, void *);
 static uint8_t iip_ops_tcp_accept(void *, void *, void *);
 static void *iip_ops_tcp_accepted(void *, void *, void *, void *);
 static void *iip_ops_tcp_connected(void *, void *, void *, void *);
-static void iip_ops_tcp_closed(void *, void *, void *);
+static void iip_ops_tcp_closed(void *, uint8_t [], uint32_t, uint16_t, uint8_t [], uint32_t, uint16_t, void *, void *);
 static void iip_ops_tcp_payload(void *, void *, void *, void *, uint16_t, uint16_t, void *);
 static void iip_ops_tcp_acked(void *, void *, void *, void *, void *);
 static void iip_ops_udp_payload(void *, void *, void *);
@@ -3400,7 +3400,9 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 		{ /* close tcp connections */
 			struct iip_tcp_conn *conn, *_conn_n;
 			__iip_q_for_each_safe(s->tcp.closed_conns, conn, _conn_n, 0) {
-				iip_ops_tcp_closed(conn, conn->opaque, opaque);
+				iip_ops_tcp_closed(conn, conn->local_mac, conn->local_ip4_be, conn->local_port_be,
+						conn->peer_mac, conn->peer_ip4_be, conn->peer_port_be,
+						conn->opaque, opaque);
 				{
 					uint8_t i;
 					for (i = 0; i < 5; i++) {
