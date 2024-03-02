@@ -1,12 +1,8 @@
 # iip: an integratable TCP/IP stack
 
-iip is an integratable TCP/IP stack implementation, aiming to offer the following properties:
-- **easy integration**: iip aims to minimize dependencies on CPU architectures, NICs, libraries, and compiler features. Please see https://github.com/yasukata/iip#compilation-test for its dependency.
-- **good performance**: iip is aware of multi-core scalability, NIC hardware offloading features, and zero-copy I/O; on a 32 CPU core machine, iip can handle more than 60 millions of short TCP messages in one second, and for bulk TCP data transfer, a single CPU core is enough for iip to saturate a 100 Gbps link thanks to NIC offloading features and zero-copy I/O. Please see https://github.com/yasukata/bench-iip#rough-numbers for rough performance numbers and https://github.com/yasukata/bench-iip#performance-numbers-of-other-tcpip-stacks for the benchmark results of other existing TCP/IP stack implementations.
+iip is an integratable TCP/IP stack implementation aiming to allow for easy integration and good performance simultaneously.
 
-## WARNING
-
-The authors will not bear any responsibility if the implementations, provided by the authors, cause any problems.
+**WARNING: The authors will not bear any responsibility if the implementations, provided by the authors, cause any problems.**
 
 ## other building blocks
 
