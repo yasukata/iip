@@ -25,6 +25,10 @@ Please visit an example application page at [https://github.com/yasukata/bench-i
 
 The following program is to see the dependency of compilation.
 
+<details>
+
+<summary>please click here to show the program</summary>
+
 ```c
 typedef unsigned char	uint8_t;
 typedef unsigned short	uint16_t;
@@ -111,6 +115,8 @@ void _start(void) {
   (void) iip_workspace_size;
 }
 ```
+
+</details>
 
 When the code above is saved in a file named ```stub.c```, the following command supposedly generates a binary ```a.out```.
 
