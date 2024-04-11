@@ -470,6 +470,18 @@ Please visit an example application page at [https://github.com/yasukata/bench-i
 
 </details>
 
+### figure
+
+<details>
+
+<summary>please click here to show the diagram illustrating how the API works.</summary>
+
+note: this figure focuses on the common paths of TCP processing, and does not cover exhaustive code paths.
+
+<img src="https://raw.githubusercontent.com/yasukata/img/master/iip/fig/api.svg" width="800px">
+
+</details>
+
 ## compilation test
 
 The following program is to see the dependency of compilation.
