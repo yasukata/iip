@@ -590,3 +590,22 @@ g++ -Werror -Wextra -Wall -pedantic -m32 -std=c++98 -nostartfiles -nodefaultlibs
 ```
 
 Note that the program above is just for checking whether ```main.c``` can be compiled or not, and the generated binary ```a.out``` is not runnable.
+
+## more information
+
+### paper
+
+A paper about iip appears at ACM SIGCOMM Computer Communication Review (CCR).
+
+I would appreciate it if you cite this paper when you refer to iip in your work.
+
+### presentation
+
+The paper above is selected to be presented in [the Best of CCR session at SIGCOMM 2024](https://conferences.sigcomm.org/sigcomm/2024/ccr/).
+
+- prerecorded video: https://youtu.be/g7iq13SymUI?si=zBj2mUqesMmKYhXv
+- slides for the on-site presentation: https://yasukata.github.io/presentation/2024/08/sigcomm2024/sigcomm2024ccr_slides_yasukata.pdf
+
+### authors' other project/paper using iip
+
+- In a paper "Developing Process Scheduling Policies in User Space with Common OS Features" that appears at 15th ACM SIGOPS Asia-Pacific Workshop on Systems (APSys 2024), the authors leverage iip for networked server experiments : https://github.com/yasukata/priority-elevation-trick
