@@ -767,7 +767,7 @@ This section reports the performance numbers of iip.
 
 ***Figure 2: TCP bulk data transfer throughput (§ 4.3).***
 
-<img src="https://raw.githubusercontent.com/yasukata/img/master/iip/paper/ccr/fig1c.svg" width="500px">
+<img src="https://raw.githubusercontent.com/yasukata/img/master/iip/paper/ccr/fig2.svg" width="500px">
 
 **Experiment setup.** For the experiments, we use two machines; each machine has two 16-core Intel Xeon Gold 6326 CPUs clocked at 2.90 GHz and 128 GB of DRAM. The two machines are directly connected via Mellanox ConnectX-5 100 Gbps NICs. Both machines install Linux 6.2. The benchmark programs use iip for TCP/IP processing and leverage Data Plane Development Kit (DPDK) [9] to perform packet I/O over the NICs. We refer to a setup, that adopts the unified model (§ 2.1.3) and activates all of the commonly available NIC offloading features along with zero-copy I/O, as the default setup, and we apply it on both machines unless otherwise stated. In all cases, the number of NIC queues is the same as the number of threads executing the networking logic, and we activate the RSS feature of NIC hardware to distribute incoming packets to the multiple NIC queues in an affinity-aware manner (§ 3.1.6).
 
