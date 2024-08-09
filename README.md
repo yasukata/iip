@@ -595,7 +595,9 @@ Note that the program above is just for checking whether ```main.c``` can be com
 
 ### paper
 
-A paper about iip appears at ACM SIGCOMM Computer Communication Review (CCR).
+A paper about iip appears at ACM SIGCOMM Computer Communication Review (CCR) Volume 54 Issue 1 ( https://doi.org/10.1145/3687230.3687233 ).
+
+This paper describes motivation (Section 2), design (Section 3), and performance (Section 4) of iip.
 
 I would appreciate it if you cite this paper when you refer to iip in your work.
 
