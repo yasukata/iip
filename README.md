@@ -337,7 +337,7 @@ Please visit an example application page at [https://github.com/yasukata/bench-i
     7. a pointer to an opaque object
   - note
     - invoked when a TCP payload is received.
-    - ```head_off`` and ```tail_off``` are for handling TCP segments whose payloads have overlapping parts.
+    - ```head_off``` and ```tail_off``` are for handling TCP segments whose payloads have overlapping parts.
     - ```iip_ops_pkt_free``` will be called for ```pkt``` after this callback returns.
 - static void iip_ops_tcp_acked(void *context, void *handle, void *pkt, void *tcp_opaque, void *opaque)
   - arguments
