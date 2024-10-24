@@ -850,4 +850,4 @@ The paper above is selected to be presented in [the Best of CCR session at SIGCO
 
 ### authors' other project/paper using iip
 
-- In a paper "Developing Process Scheduling Policies in User Space with Common OS Features" that appears at 15th ACM SIGOPS Asia-Pacific Workshop on Systems (APSys 2024), the authors leverage iip for networked server experiments : https://github.com/yasukata/priority-elevation-trick
+- In a paper "[Developing Process Scheduling Policies in User Space with Common OS Features](https://doi.org/10.1145/3678015.3680481)" that appears at 15th ACM SIGOPS Asia-Pacific Workshop on Systems (APSys 2024), the authors leverage iip for networked server experiments : https://github.com/yasukata/priority-elevation-trick
