@@ -340,7 +340,7 @@ struct iip_udp_hdr {
 #define PB_TCP_OPTLEN(__b) (PB_TCP_HDR_LEN(__b) * 4 - sizeof(struct iip_tcp_hdr))
 #define PB_UDP(__b) ((struct iip_udp_hdr *)((uintptr_t) PB_IP4(__b) + (PB_IP4(__b)->vl & 0x0f) * 4))
 #define PB_UDP_PAYLOAD(__b) ((uint8_t *)((uintptr_t) PB_UDP(__b) + sizeof(struct iip_udp_hdr)))
-#define PB_UDP_PAYLOAD_LEN(__b) ((uint16_t)(__iip_ntohs(PB_UDP(__b)->len_be)))
+#define PB_UDP_PAYLOAD_LEN(__b) ((uint16_t)(__iip_ntohs(PB_UDP(__b)->len_be)) - sizeof(struct iip_udp_hdr))
 
 /* data structures */
 
