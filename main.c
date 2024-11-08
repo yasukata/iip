@@ -2499,7 +2499,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									}
 								}
 							}
-							if (p->tcp.opt.sack_opt_off) {
+							if (p->tcp.opt.sack_opt_off && conn->head[2][0] /* unacked packets remain */) {
 								__iip_enqueue_obj(conn->tcp_sack_rx, p, 0);
 								if (!(conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
 									IIP_OPS_DEBUG_PRINTF("loss detected (sack) : %p seq %u ack %u\n", (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
