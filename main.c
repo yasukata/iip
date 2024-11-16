@@ -1220,7 +1220,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								struct iip_tcp_conn *conn = (NULL);
 								{ /* connection lookup */
 									struct iip_tcp_conn *c, *_n;
-									__iip_q_for_each_safe(s->tcp.conns_ht[(PB_IP4(p->buf)->src_be + PB_TCP(p->buf)->src_be + PB_TCP(p->buf)->dst_be) % IIP_CONF_TCP_CONN_HT_SIZE], c, _n, 0) {
+									__iip_q_for_each_safe(s->tcp.conns_ht[(PB_IP4(p->buf)->src_be + PB_TCP(p->buf)->src_be + PB_TCP(p->buf)->dst_be) % IIP_CONF_TCP_CONN_HT_SIZE], c, _n, 1) {
 										if (c->local_port_be == PB_TCP(p->buf)->dst_be
 												&& c->peer_port_be == PB_TCP(p->buf)->src_be
 												&& c->peer_ip4_be == PB_IP4(p->buf)->src_be) {
