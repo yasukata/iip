@@ -313,7 +313,7 @@ struct iip_udp_hdr {
 	uint16_t csum_be;
 };
 
-#define PB_IP4(__b) ((struct iip_ip4_hdr *)((uintptr_t) (__b) + iip_ops_l2_hdr_len(__b, opaque)))
+#define PB_IP4(__b) ((struct iip_ip4_hdr *)((uintptr_t) (iip_ops_pkt_get_data((__b), opaque)) + iip_ops_l2_hdr_len((__b), opaque)))
 #define PB_ARP(__b) ((struct iip_arp_hdr *)(PB_IP4(__b)))
 #define PB_ARP_HW_SENDER(__b) ((uint8_t *)((uintptr_t) PB_ARP(__b) + sizeof(struct iip_arp_hdr)))
 #define PB_ARP_IP_SENDER(__b) ((uint8_t *)((uintptr_t) PB_ARP_HW_SENDER(__b) + PB_ARP(__b)->lhw))
