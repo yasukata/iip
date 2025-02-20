@@ -220,6 +220,19 @@ static uint16_t __iip_netcsum16(uint8_t *__b[], uint16_t __l[], uint16_t __c, ui
 	return (uint16_t)~((uint16_t) __r);
 }
 
+static uint16_t __iip_compute_tcp_win_be(uint32_t num_buf, uint16_t mss, uint8_t ws)
+{
+	uint32_t w;
+	if ((0xffffffff / mss) <= num_buf)
+		w = 0xffffffff;
+	else
+		w = num_buf * mss;
+	w >>= ws;
+	if (0xffff <= w)
+		w = 0xffff;
+	return __iip_htons((uint16_t) w);
+}
+
 #define __iip_round_up(_v, _r) ((((_v) / (_r)) + ((_v) % (_r) ? 1 : 0)) * (_r))
 
 #define __iip_dequeue_obj(__queue, __obj, __x) \
@@ -672,7 +685,7 @@ again:
 		tcph->flags = 0;
 		PB_TCP_HDR_SET_LEN(out_p->pkt, __iip_round_up(sizeof(struct iip_tcp_hdr) + (syn ? 4 + 3 + (IIP_CONF_TCP_OPT_SACK_OK ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 10 : 0), 4) / 4);
 		PB_TCP_HDR_SET_FLAGS(out_p->pkt, (syn ? 0x02U : 0) | (ack ? 0x10U : 0) | (rst ? 0x04U : 0) | (fin ? 0x01U : 0) | tcp_flags);
-		tcph->win_be = __iip_htons((uint16_t) (((conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used) * IIP_CONF_TCP_OPT_MSS) >> IIP_CONF_TCP_OPT_WS));
+		tcph->win_be = __iip_compute_tcp_win_be(conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used, IIP_CONF_TCP_OPT_MSS, IIP_CONF_TCP_OPT_WS);
 		tcph->urg_p_be = 0;
 		tcph->csum_be = 0;
 		{
@@ -815,7 +828,7 @@ static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_conn *conn,
 	conn->rtt.srtt = 0;
 	conn->rtt.rttvar = 24;
 	__iip_assert(conn->rx_buf_cnt.limit * IIP_CONF_TCP_OPT_MSS < (1U << 30));
-	conn->win_be = __iip_htons((conn->rx_buf_cnt.limit * IIP_CONF_TCP_OPT_MSS) >> IIP_CONF_TCP_OPT_WS);
+	conn->win_be = __iip_compute_tcp_win_be(conn->rx_buf_cnt.limit, IIP_CONF_TCP_OPT_MSS, IIP_CONF_TCP_OPT_WS);
 	__iip_enqueue_obj(s->tcp.conns, conn, 0);
 	__iip_enqueue_obj(s->tcp.conns_ht[(conn->peer_ip4_be + conn->local_port_be + conn->peer_port_be) % IIP_CONF_TCP_CONN_HT_SIZE], conn, 1);
 	__iip_assert(conn->rx_buf_cnt.used < conn->rx_buf_cnt.limit);
