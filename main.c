@@ -1453,60 +1453,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																			SEQ_RE_RAW(__p),
 																			SEQ_LE_RAW(_p),
 																			SEQ_RE_RAW(_p));
-																} else if ((SEQ_LE(_p) == SEQ_LE(__p)) && (SEQ_RE(_p) == SEQ_RE(__p))) {
-																	/*
-																	 * _p has the exact same range as __p
-																	 */
-																	if (_p->a_cnt - __p->a_cnt < 2147483648U) {
-																		/*
-																		 * _p is newer than __p
-																		 * replace __p with _p
-																		 */
-																		IIP_OPS_DEBUG_PRINTF("%4u pending tcp rx queue insert: replace __p with _p: __p %u %u _p %u %u\n",
-																				__LINE__,
-																				SEQ_LE_RAW(__p),
-																				SEQ_RE_RAW(__p),
-																				SEQ_LE_RAW(_p),
-																				SEQ_RE_RAW(_p));
-																		_p->prev[0] = __p->prev[0];
-																		_p->next[0] = __p->next[0];
-																		if (conn->head[4][0] == __p)
-																			conn->head[4][0] = _p;
-																		if (conn->head[4][1] == __p)
-																			conn->head[4][1] = _p;
-																		if (_p->prev[0])
-																			_p->prev[0]->next[0] = _p;
-																		if (_p->next[0])
-																			_p->next[0]->prev[0] = _p;
-																		__iip_free_pb(s, __p, opaque);
-																		__p = NULL; /* for easier assertion */
-																		p_replaced = 1;
-																	} else {
-																		/*
-																		 * __p is newer than _p
-																		 * discard _p
-																		 */
-																		IIP_OPS_DEBUG_PRINTF("%4u pending tcp rx queue insert: discard _p: __p %u %u _p %u %u\n",
-																				__LINE__,
-																				SEQ_LE_RAW(__p),
-																				SEQ_RE_RAW(__p),
-																				SEQ_LE_RAW(_p),
-																				SEQ_RE_RAW(_p));
-																		__iip_free_pb(s, _p, opaque);
-																		_p = NULL; /* for easier assertion */
-																		p_discard = 1;
-																	}
 																} else {
 																	/*
 																	 * _p and __p have overlapping part
 																	 *
-																	 * pattern A
-																	 * |--- __p ---|
-																	 * |-------- _p -------|
-																	 * or
-																	 * |------- __p -------|
-																	 * |---- _p ---|
-																	 * or
 																	 * pattern B
 																	 * |--- __p ---|
 																	 *         |--- _p ----|
@@ -1518,58 +1468,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																	 * |---------- __p --------------|
 																	 *         |--- _p ----|
 																	 */
-																	if (SEQ_LE(_p) == SEQ_LE(__p)) {
-																		/* pattern A
-																		 * |--- __p ---|
-																		 * |-------- _p -------|
-																		 * or
-																		 * |------- __p -------|
-																		 * |---- _p ---|
-																		 */
-																		if (SEQ_RE(_p) <= SEQ_RE(__p)) {
-																			/*
-																			 * |------- __p -------|
-																			 * |---- _p ---|
-																			 */
-																			if (_p->a_cnt - __p->a_cnt < 2147483648U) {
-																				/*
-																				 * _p is newer than __p
-																				 *             |- __p --|
-																				 * |---- _p ---|
-																				 * shrink __p head
-																				 */
-																				IIP_OPS_DEBUG_PRINTF("%4u pending tcp rx queue insert: increment __p head BEFORE: _p %u %u __p %u %u\n",
-																						__LINE__,
-																						SEQ_LE_RAW(_p),
-																						SEQ_RE_RAW(_p),
-																						SEQ_LE_RAW(__p),
-																						SEQ_RE_RAW(__p));
-
-																				__p->tcp.inc_head += PB_TCP_HDR_HAS_SYN(_p->pkt) + PB_TCP_HDR_HAS_FIN(_p->pkt) + PB_TCP_PAYLOAD_LEN(_p->pkt) - _p->tcp.dec_tail;
-																				IIP_OPS_DEBUG_PRINTF("%4u pending tcp rx queue insert: increment __p head AFTER : _p %u %u __p %u %u\n",
-																						__LINE__,
-																						SEQ_LE_RAW(_p),
-																						SEQ_RE_RAW(_p),
-																						SEQ_LE_RAW(__p),
-																						SEQ_RE_RAW(__p));
-																				__iip_assert(SEQ_RE(_p) == SEQ_LE(__p));
-																			} else {
-																				/*
-																				 * __p is newer than _p
-																				 * discard _p
-																				 */
-																				IIP_OPS_DEBUG_PRINTF("%4u pending tcp rx queue insert: discard _p: __p %u %u _p %u %u\n",
-																						__LINE__,
-																						SEQ_LE_RAW(__p),
-																						SEQ_RE_RAW(__p),
-																						SEQ_LE_RAW(_p),
-																						SEQ_RE_RAW(_p));
-																				__iip_free_pb(s, _p, opaque);
-																				_p = NULL; /* for easier assertion */
-																				p_discard = 1;
-																			}
-																		}
-																	} else if (SEQ_RE(__p) <= SEQ_RE(_p)) {
+																	if (SEQ_RE(__p) <= SEQ_RE(_p)) {
 																		/*
 																		 * pattern B
 																		 * |--- __p ---|
