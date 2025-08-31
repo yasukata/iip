@@ -2207,7 +2207,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											} else {
 												IIP_OPS_DEBUG_PRINTF("%p Weird, ack to already acked packet (acked %u pkt-ack %u)\n",
 														(void *) conn, conn->acked_seq, __iip_ntohl(PB_TCP(p->pkt)->ack_seq_be));
-												out_of_order = 1;
+												out_of_order = 2;
 											}
 										}
 									} else { /* pattern C */
@@ -2222,9 +2222,9 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										/* this is valid */
 									}
 								}
-								if (!out_of_order) {
+								if (out_of_order != 1) {
 									if (conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED) {
-										if (__iip_ntohl(PB_TCP(p->pkt)->ack_seq_be) - conn->sent_seq_when_loss_detected < 2147483648U) {
+										if (!out_of_order && __iip_ntohl(PB_TCP(p->pkt)->ack_seq_be) - conn->sent_seq_when_loss_detected < 2147483648U) {
 											conn->flags &= ~__IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
 											IIP_OPS_DEBUG_PRINTF("%p Peer succeed to recover: ACKed by peer %u\n", (void *) conn, conn->acked_seq);
 											{ /* extend timeout */
@@ -2268,7 +2268,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									if (PB_TCP_HDR_HAS_ACK(p->pkt))
 										conn->retrans_cnt = 0;
 									conn->ack_seq_be = __iip_htonl(__iip_ntohl(PB_TCP(p->pkt)->seq_be) + PB_TCP_HDR_HAS_SYN(p->pkt) + PB_TCP_HDR_HAS_FIN(p->pkt) + PB_TCP_PAYLOAD_LEN(p->pkt) - p->tcp.dec_tail);
-									conn->acked_seq = __iip_ntohl(PB_TCP(p->pkt)->ack_seq_be);
+									if (!out_of_order)
+										conn->acked_seq = __iip_ntohl(PB_TCP(p->pkt)->ack_seq_be);
 									/*IIP_OPS_DEBUG_PRINTF("tcp-in I src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
 									  (PB_IP4(p->pkt)->src_be >>  0) & 0x0ff,
 									  (PB_IP4(p->pkt)->src_be >>  8) & 0x0ff,
