@@ -13,6 +13,7 @@ iip is an integratable TCP/IP stack implementation aiming to allow for easy inte
 
 ### example application
 - [bench-iip](https://github.com/yasukata/bench-iip): a benchmark tool.
+- [mimicached](https://github.com/yasukata/mimicached): a memcached-compatible cache server.
 
 ### simulation
 - [iip-ns](https://github.com/yasukata/iip-ns): a helper for running iip on the ns-3 simulator (Linux).
