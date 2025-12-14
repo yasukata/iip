@@ -849,6 +849,7 @@ The paper above is selected to be presented in [the Best of CCR session at SIGCO
 - prerecorded video: https://youtu.be/g7iq13SymUI?si=zBj2mUqesMmKYhXv
 - slides for the on-site presentation: https://yasukata.github.io/presentation/2024/08/sigcomm2024/sigcomm2024ccr_slides_yasukata.pdf
 
-### authors' other project/paper using iip
+### authors' other projects/papers using iip
 
 - In a paper "[Developing Process Scheduling Policies in User Space with Common OS Features](https://doi.org/10.1145/3678015.3680481)" that appears at 15th ACM SIGOPS Asia-Pacific Workshop on Systems (APSys 2024), the authors leverage iip for networked server experiments : https://github.com/yasukata/priority-elevation-trick
+- In a paper "[svc-hook: hooking system calls on ARM64 by binary rewriting](https://doi.org/10.1145/3721462.3770771)" that appears at the 26th ACM/IFIP International Middleware Conference (Middleware 2025), the authors use iip for the benchmark client for networked server programs : https://github.com/retrage/svc-hook
