@@ -1282,13 +1282,14 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												l++;
 												break;
 											default:
-												if (PB_TCP_OPTLEN(p->pkt) - l <= 2) {
+												if (PB_TCP_OPTLEN(p->pkt) - l < 2) {
 													l = PB_TCP_OPTLEN(p->pkt); /* stop loop */
 													break;
 												}
 												switch (PB_TCP_OPT(p->pkt)[l]) {
 												case 2: /* mss */
-													if (PB_TCP_OPT(p->pkt)[l + 1] == 4) {
+													if (PB_TCP_OPT(p->pkt)[l + 1] == 4
+															&& PB_TCP_OPTLEN(p->pkt) - l >= 4) {
 														if (PB_TCP_HDR_HAS_SYN(p->pkt)) { /* accept only with syn */
 															conn->mss = (uint16_t) __iip_ntohs(*((uint16_t *) &PB_TCP_OPT(p->pkt)[l + 2]));
 															if (IIP_CONF_TCP_OPT_MSS < conn->mss)
@@ -1297,13 +1298,15 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													}
 													break;
 												case 3: /* window scale */
-													if (PB_TCP_OPT(p->pkt)[l + 1] == 3) {
+													if (PB_TCP_OPT(p->pkt)[l + 1] == 3
+															&& PB_TCP_OPTLEN(p->pkt) - l >= 3) {
 														if (PB_TCP_HDR_HAS_SYN(p->pkt)) /* accept only with syn */
 															conn->ws = PB_TCP_OPT(p->pkt)[l + 2];
 													}
 													break;
 												case 4: /* sack permitted */
-													if (PB_TCP_OPT(p->pkt)[l + 1] == 2) {
+													if (PB_TCP_OPT(p->pkt)[l + 1] == 2
+															&& PB_TCP_OPTLEN(p->pkt) - l >= 2) {
 														if (PB_TCP_HDR_HAS_SYN(p->pkt)) { /* accept only with syn */
 															if (IIP_CONF_TCP_OPT_SACK_OK)
 																conn->sack_ok = 1;
@@ -1311,7 +1314,9 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													}
 													break;
 												case 5: /* sack */
-													if (PB_TCP_OPT(p->pkt)[l + 1] >= (2 + 8))
+													if (PB_TCP_OPT(p->pkt)[l + 1] >= (2 + 8)
+															&& PB_TCP_OPT(p->pkt)[l + 1] <= PB_TCP_OPTLEN(p->pkt) - l
+															&& (PB_TCP_OPT(p->pkt)[l + 1] - 2) % 8 == 0)
 														p->tcp.opt.sack_opt_off = l + 1; /* pointing to the length, to diffrenciate sack starting at opt[0] */
 													if (p->tcp.opt.sack_opt_off) { /* debug */
 														uint16_t c = 2;
@@ -1327,7 +1332,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													}
 													break;
 												case 8: /* timestamp */
-													if (PB_TCP_OPT(p->pkt)[l + 1] == 10) {
+													if (PB_TCP_OPT(p->pkt)[l + 1] == 10
+															&& PB_TCP_OPTLEN(p->pkt) - l >= 10) {
 														p->flags |= __IIP_PB_FLAGS_OPT_HAS_TS;
 														p->tcp.opt.ts[0] = __iip_ntohl(*(uint32_t *) &PB_TCP_OPT(p->pkt)[l + 2]);
 														p->tcp.opt.ts[1] = __iip_ntohl(*(uint32_t *) &PB_TCP_OPT(p->pkt)[l + 6]);
@@ -1335,6 +1341,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													break;
 												default:
 													IIP_OPS_DEBUG_PRINTF("unknown tcp option %u\n", PB_TCP_OPT(p->pkt)[l]);
+													break;
+												}
+												if (!PB_TCP_OPT(p->pkt)[l + 1]) {
+													l = PB_TCP_OPTLEN(p->pkt); /* stop loop */
 													break;
 												}
 												l += PB_TCP_OPT(p->pkt)[l + 1];
