@@ -423,6 +423,7 @@ struct iip_tcp_conn {
 	uint8_t local_mac[IIP_CONF_L2ADDR_LEN_MAX];
 	uint8_t peer_mac[IIP_CONF_L2ADDR_LEN_MAX];
 
+	uint32_t iss_be;
 	uint32_t seq_be;
 	uint32_t ack_seq_be;
 	uint16_t win_be;
@@ -439,6 +440,7 @@ struct iip_tcp_conn {
 
 	uint8_t flags;
 #define __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED	(1U << 5)
+#define __IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN (1U << 6)
 
 	uint32_t do_ack_cnt;
 	uint32_t sent_seq_when_loss_detected;
@@ -831,7 +833,7 @@ static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_conn *conn,
 	__iip_memcpy(conn->peer_mac, peer_mac, sizeof(conn->peer_mac));
 	conn->peer_ip4_be = peer_ip4_be;
 	conn->peer_port_be = peer_port_be;
-	conn->seq_be = __iip_htonl(s->tcp.iss);
+	conn->seq_be = conn->iss_be = __iip_htonl(s->tcp.iss);
 	conn->ack_seq_be = 0;
 	conn->acked_seq = 0xffff; /* to differentiate from ack number for Dup ACK detection */
 	conn->state = state;
@@ -1273,8 +1275,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								}
 								if (PB_TCP_HDR_HAS_SYN(p->pkt)) {
 									if (conn) { /* connect */
-										if (!PB_TCP_HDR_HAS_ACK(p->pkt)) /* invalid, just ignore */
-											conn = NULL;
+										if (!PB_TCP_HDR_HAS_ACK(p->pkt)) {
+											if (conn->state != __IIP_TCP_STATE_SYN_SENT) /* simultaneous open */
+												conn = NULL; /* invalid, just ignore */
+										}
 									} else { /* accept */
 										if (iip_ops_tcp_accept(s, p->pkt, opaque)) {
 											if (PB_TCP_HDR_HAS_ACK(p->pkt)) {
@@ -2392,22 +2396,37 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												/* wait 2 MSL timeout */
 												break;
 											case __IIP_TCP_STATE_SYN_SENT:
-												if (PB_TCP_HDR_HAS_SYN(p->pkt) && PB_TCP_HDR_HAS_ACK(p->pkt)) {
-													ack = 1;
-													conn->state = __IIP_TCP_STATE_ESTABLISHED;
-													IIP_TEST_CALLBACK_TCP_STATE_SET();
-													is_connected = 1;
-													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_SYN_SENT - TCP_STATE_ESTABLISHED\n", (void *) conn);
+												if (PB_TCP_HDR_HAS_SYN(p->pkt)) {
+													if (PB_TCP_HDR_HAS_ACK(p->pkt)) {
+														ack = 1;
+														conn->state = __IIP_TCP_STATE_ESTABLISHED;
+														IIP_TEST_CALLBACK_TCP_STATE_SET();
+														is_connected = 1;
+														IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_SYN_SENT - TCP_STATE_ESTABLISHED\n", (void *) conn);
+													} else { /* simultaneous open */
+														syn = ack = 1;
+														conn->flags |= __IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN; /* to trigger connect callback when accepted */
+														conn->seq_be = conn->iss_be;
+														conn->state = __IIP_TCP_STATE_SYN_RECVD;
+														IIP_TEST_CALLBACK_TCP_STATE_SET();
+														IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_SYN_SENT - TCP_STATE_SYN_RECVD\n", (void *) conn);
+													}
 												}
 												break;
 												/* server */
 											case __IIP_TCP_STATE_SYN_RECVD:
-												syn = (PB_TCP_HDR_HAS_ACK(p->pkt) ? 0 : 1);
-												ack = 1;
-												conn->state = __IIP_TCP_STATE_ESTABLISHED;
-												IIP_TEST_CALLBACK_TCP_STATE_SET();
-												is_accepted = 1;
-												IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_SYN_RECVD - TCP_STATE_ESTABLISHED\n", (void *) conn);
+												if (PB_TCP_HDR_HAS_ACK(p->pkt)) {
+													ack = 1;
+													conn->state = __IIP_TCP_STATE_ESTABLISHED;
+													IIP_TEST_CALLBACK_TCP_STATE_SET();
+													is_accepted = 1;
+													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_SYN_RECVD - TCP_STATE_ESTABLISHED\n", (void *) conn);
+												} else if (PB_TCP_HDR_HAS_SYN(p->pkt)) {
+													syn = ack = 1;
+													conn->seq_be = conn->iss_be;
+													break;
+												} else
+													break;
 												/* fall through */
 											case __IIP_TCP_STATE_ESTABLISHED:
 												if (PB_TCP_HDR_HAS_FIN(p->pkt)) {
@@ -2452,11 +2471,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												conn->fin_ack_seq_be = conn->seq_be;
 										}
 										/* execute callback after establishing the connection */
-										if (is_connected) {
+										if (is_connected || (is_accepted && (conn->flags & __IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN))) {
+											conn->flags &= ~__IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN;
 											IIP_OPS_DEBUG_PRINTF("connected peer port %u\n", __iip_ntohs(PB_TCP(p->pkt)->src_be));
 											conn->opaque = iip_ops_tcp_connected(s, conn, p->pkt, opaque);
-										}
-										if (is_accepted) {
+										} else if (is_accepted) {
 											IIP_OPS_DEBUG_PRINTF("accept peer port %u\n", __iip_ntohs(PB_TCP(p->pkt)->src_be));
 											conn->opaque = iip_ops_tcp_accepted(s, conn, p->pkt, opaque);
 										}
