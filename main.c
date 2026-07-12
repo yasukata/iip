@@ -1232,6 +1232,17 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								}
 							}
 							__iip_assert(PB_TCP_HDR_LEN(p->pkt));
+							{ /* invalid source ip address */
+								if (__iip_ntohl(PB_IP4(p->pkt)->src_be) == 0xffffffff) /* limited broadcast */
+									break;
+								if (__iip_ntohl(PB_IP4(p->pkt)->src_be) >> 24 == 0) /* 0.0.0.0/8 */
+									break;
+								if (__iip_ntohl(PB_IP4(p->pkt)->src_be) >> 28 == 0xe) /* 224.0.0.0/4 */
+									break;
+								if (__iip_ntohl(PB_IP4(p->pkt)->src_be) >> 28 == 0xf) /* Class E */
+									break;
+								/* TODO: invalidate subnet-directed broadcast address */
+							}
 							{ /* find tcp conneciton and push the packet to its queue */
 								struct iip_tcp_conn *conn = (NULL);
 								{ /* connection lookup */
