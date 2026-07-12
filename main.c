@@ -60,6 +60,12 @@
 #define IIP_CONF_L2ADDR_LEN_MAX		(6)
 #endif
 
+/* test callback */
+
+#ifndef IIP_TEST_CALLBACK_TIMER
+#define IIP_TEST_CALLBACK_TIMER(_n) do { (void)(_n); } while (0)
+#endif
+
 /* functions implemented by app and io subsystems */
 
 static void *iip_ops_pkt_alloc(void *);
@@ -941,6 +947,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 	}
 	{ /* periodic timer */
 		if (200 <= now_ms - s->timer.prev_fast){ /* fast timer every 200 ms */
+			IIP_TEST_CALLBACK_TIMER(1);
 			/* send delayed ack */
 			{
 				struct iip_tcp_conn *conn, *_conn_n;
@@ -957,12 +964,14 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 			s->timer.prev_fast = now_ms;
 		}
 		if (500 <= now_ms - s->timer.prev_slow){ /* slow timer every 500 ms */
+			IIP_TEST_CALLBACK_TIMER(2);
 			{ /* incrment initial send sequence number */
 				s->tcp.iss++; /* while RFC 793 specifies to increment every 4 us */
 			}
 			s->timer.prev_slow = now_ms;
 		}
 		if (1000 <= now_ms - s->timer.prev_very_slow) { /* slow timer every 1000 ms */
+			IIP_TEST_CALLBACK_TIMER(3);
 			{ /* close connections */
 				struct iip_tcp_conn *conn, *_conn_n;
 				__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
