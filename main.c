@@ -858,12 +858,25 @@ static uint16_t iip_tcp_connect(void *_mem,
 				uint8_t peer_mac[], uint32_t peer_ip4_be, uint16_t peer_port_be,
 				void *opaque)
 {
-	struct workspace *s = (struct workspace *) _mem;
-	struct iip_tcp_conn *conn = s->pool.conn[0];
-	__iip_assert(conn);
-	__iip_dequeue_obj(s->pool.conn, conn, 0);
-	__iip_tcp_conn_init(s, conn, local_mac, local_ip4_be, local_port_be, peer_mac, peer_ip4_be, peer_port_be, __IIP_TCP_STATE_SYN_SENT, opaque);
-	return __iip_tcp_push(s, conn, NULL, 1, 0, 0, 0, 0, NULL, opaque);
+	{ /* invalid destination ip address */
+		if (__iip_ntohl(peer_ip4_be) == 0xffffffff) /* limited broadcast */
+			return 0xffff;
+		if (__iip_ntohl(peer_ip4_be) >> 24 == 0) /* 0.0.0.0/8 */
+			return 0xffff;
+		if (__iip_ntohl(peer_ip4_be) >> 28 == 0xe) /* 224.0.0.0/4 */
+			return 0xffff;
+		if (__iip_ntohl(peer_ip4_be) >> 28 == 0xf) /* Class E */
+			return 0xffff;
+		/* TODO: invalidate subnet-directed broadcast address */
+	}
+	{
+		struct workspace *s = (struct workspace *) _mem;
+		struct iip_tcp_conn *conn = s->pool.conn[0];
+		__iip_assert(conn);
+		__iip_dequeue_obj(s->pool.conn, conn, 0);
+		__iip_tcp_conn_init(s, conn, local_mac, local_ip4_be, local_port_be, peer_mac, peer_ip4_be, peer_port_be, __IIP_TCP_STATE_SYN_SENT, opaque);
+		return __iip_tcp_push(s, conn, NULL, 1, 0, 0, 0, 0, NULL, opaque);
+	}
 }
 
 static uint16_t iip_udp_send(void *_mem,
