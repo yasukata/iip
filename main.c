@@ -684,7 +684,8 @@ again:
 		tcph->ack_seq_be = conn->ack_seq_be;
 		tcph->flags = 0;
 		PB_TCP_HDR_SET_LEN(out_p->pkt, __iip_round_up(sizeof(struct iip_tcp_hdr) + (syn ? 4 + 3 + (IIP_CONF_TCP_OPT_SACK_OK ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0), 4) / 4);
-		PB_TCP_HDR_SET_FLAGS(out_p->pkt, (syn ? 0x02U : 0) | (ack ? 0x10U : 0) | (rst ? 0x04U : 0) | (fin ? 0x01U : 0) | tcp_flags);
+		PB_TCP_HDR_SET_FLAGS(out_p->pkt, (syn ? 0x02U : 0) | (ack ? 0x10U : 0) | (rst ? 0x04U : 0) | (fin ? 0x01U : 0)
+				| ((pushed_payload_len + payload_len != total_payload_len) ? (tcp_flags & ~0x08U) /* PSH must be only at the end */ : (_pkt && total_payload_len ? (tcp_flags | 0x08U) : tcp_flags)));
 		tcph->win_be = __iip_compute_tcp_win_be(conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used, IIP_CONF_TCP_OPT_MSS, IIP_CONF_TCP_OPT_WS);
 		tcph->urg_p_be = 0;
 		tcph->csum_be = 0;
