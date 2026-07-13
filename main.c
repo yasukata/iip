@@ -60,6 +60,12 @@
 #define IIP_CONF_L2ADDR_LEN_MAX		(6)
 #endif
 
+/* callback */
+
+#ifndef ____IIP_OPS_TCP_ISS_OFF
+#define ____IIP_OPS_TCP_ISS_OFF() do { } while (0)
+#endif
+
 /* test callback */
 
 #ifndef IIP_TEST_CALLBACK_TIMER
@@ -849,6 +855,7 @@ static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_conn *conn,
 	conn->peer_ip4_be = peer_ip4_be;
 	conn->peer_port_be = peer_port_be;
 	conn->seq_be = conn->iss_be = __iip_htonl(s->tcp.iss);
+	____IIP_OPS_TCP_ISS_OFF();
 	conn->ack_seq_be = 0;
 	conn->acked_seq = 0xffff; /* to differentiate from ack number for Dup ACK detection */
 	conn->state = state;
