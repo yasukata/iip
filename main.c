@@ -68,6 +68,9 @@
 #ifndef IIP_TEST_CALLBACK_TCP_STATE_SET
 #define IIP_TEST_CALLBACK_TCP_STATE_SET() do { } while (0)
 #endif
+#ifndef IIP_TEST_CALLBACK_TCP_RETRANSMISSION
+#define IIP_TEST_CALLBACK_TCP_RETRANSMISSION() do { } while (0)
+#endif
 
 /* functions implemented by app and io subsystems */
 
@@ -397,6 +400,14 @@ struct pb {
 			uint16_t decrement_tail;
 		} range[0xffff /* max frame size*/ / 512 /* minimum mtu */];
 	} clone;
+
+	struct {
+		struct {
+				struct {
+					uint8_t retransmit;
+				} flags;
+		} tcp;
+	} debug;
 
 	struct pb *prev[1];
 	struct pb *next[1];
@@ -3039,6 +3050,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												{
 													struct pb *out_p = _conn.head[1][1];
 													__iip_dequeue_obj(_conn.head[1], out_p, 0);
+													out_p->debug.tcp.flags.retransmit |= (1U << 3 /* sack */);
 													__iip_enqueue_obj(conn->head[3], out_p, 0); /* workaround to bypass the ordered queue */
 												}
 											}
@@ -3125,6 +3137,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									{
 										struct pb *out_p = _conn.head[1][1];
 										__iip_dequeue_obj(_conn.head[1], out_p, 0);
+										out_p->debug.tcp.flags.retransmit |= (1U << 2 /* dup ack */);
 										__iip_enqueue_obj(conn->head[3], out_p, 0); /* workaround to bypass the ordered queue */
 									}
 								}
@@ -3200,6 +3213,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										{
 											struct pb *out_p = _conn.head[1][1];
 											__iip_dequeue_obj(_conn.head[1], out_p, 0);
+											out_p->debug.tcp.flags.retransmit |= (1U << 1 /* timeout */);
 											__iip_enqueue_obj(conn->head[3], out_p, 0); /* workaround to bypass the ordered queue */
 										}
 									}
@@ -3260,6 +3274,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										{ /* workaround to bypass the ordered queue */
 											struct pb *dup_ack_p = conn->head[1][1];
 											__iip_dequeue_obj(conn->head[1], dup_ack_p, 0);
+											dup_ack_p->debug.tcp.flags.retransmit |= (1U << 3 /* sack */);
 											__iip_enqueue_obj(queue, dup_ack_p, 0);
 										}
 										{ /* debug */
@@ -3286,6 +3301,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							{ /* workaround to bypass the ordered queue */
 								struct pb *dup_ack_p = conn->head[1][1];
 								__iip_dequeue_obj(conn->head[1], dup_ack_p, 0);
+								dup_ack_p->debug.tcp.flags.retransmit |= (1U << 4 /* dup ack */);
 								__iip_enqueue_obj(queue, dup_ack_p, 0);
 							}
 							{ /* debug */
@@ -3307,6 +3323,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								{ /* workaround to bypass the ordered queue */
 									struct pb *dup_ack_p = conn->head[1][1];
 									__iip_dequeue_obj(conn->head[1], dup_ack_p, 0);
+									dup_ack_p->debug.tcp.flags.retransmit |= (1U << 4 /* dup ack */);
 									__iip_enqueue_obj(queue, dup_ack_p, 0);
 								}
 							}
@@ -3359,6 +3376,9 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										void *clone_pkt = iip_ops_pkt_clone(p->pkt, opaque);
 										__iip_assert(clone_pkt);
 										/*IIP_OPS_DEBUG_PRINTF("seq %u len %u\n", __iip_ntohl(PB_TCP(p->pkt)->seq_be), PB_TCP_PAYLOAD_LEN(p->pkt));*/
+										if (queue == conn->head[3]) { /* debug */
+											IIP_TEST_CALLBACK_TCP_RETRANSMISSION();
+										}
 										iip_ops_l2_push(clone_pkt, opaque);
 										s->monitor.tcp.tx_pkt++;
 									}
