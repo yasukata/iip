@@ -455,6 +455,7 @@ struct iip_tcp_conn {
 	uint8_t flags;
 #define __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED	(1U << 5)
 #define __IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN (1U << 6)
+#define __IIP_TCP_CONN_FLAGS_SKIP_TCP_CLOSE_CALLBACK (1U << 7)
 
 	uint32_t do_ack_cnt;
 	uint32_t sent_seq_when_loss_detected;
@@ -2343,8 +2344,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									  __iip_ntohs(PB_TCP(p->pkt)->dst_be),
 									  PB_TCP_HDR_HAS_SYN(p->pkt), PB_TCP_HDR_HAS_ACK(p->pkt), PB_TCP_HDR_HAS_FIN(p->pkt), PB_TCP_HDR_HAS_RST(p->pkt),
 									  __iip_ntohl(PB_TCP(p->pkt)->seq_be), __iip_ntohl(PB_TCP(p->pkt)->ack_seq_be),
-									  PB_TCP_PAYLOAD_LEN(p->pkt));*/
+										PB_TCP_PAYLOAD_LEN(p->pkt));*/
 									if (PB_TCP_HDR_HAS_RST(p->pkt)) {
+										if (conn->state == __IIP_TCP_STATE_SYN_RECVD
+												&& !(conn->flags & __IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN)) /* passive open */
+											conn->flags |= __IIP_TCP_CONN_FLAGS_SKIP_TCP_CLOSE_CALLBACK;
 										if (conn->state != __IIP_TCP_STATE_CLOSED) {
 											conn->state = __IIP_TCP_STATE_CLOSED;
 											IIP_TEST_CALLBACK_TCP_STATE_SET();
@@ -3435,9 +3439,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 		{ /* close tcp connections */
 			struct iip_tcp_conn *conn, *_conn_n;
 			__iip_q_for_each_safe(s->tcp.closed_conns, conn, _conn_n, 0) {
-				iip_ops_tcp_closed(conn, conn->local_mac, conn->local_ip4_be, conn->local_port_be,
-						conn->peer_mac, conn->peer_ip4_be, conn->peer_port_be,
-						conn->opaque, opaque);
+				if (!(conn->flags & __IIP_TCP_CONN_FLAGS_SKIP_TCP_CLOSE_CALLBACK)) {
+					iip_ops_tcp_closed(conn, conn->local_mac, conn->local_ip4_be, conn->local_port_be,
+							conn->peer_mac, conn->peer_ip4_be, conn->peer_port_be,
+							conn->opaque, opaque);
+				}
 				{
 					uint8_t i;
 					for (i = 0; i < 5; i++) {
