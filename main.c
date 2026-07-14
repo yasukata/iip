@@ -677,7 +677,7 @@ again:
 	pkt = _pkt;
 	out_p = __iip_alloc_pb(s, iip_ops_pkt_alloc(opaque), opaque);
 	if (!iip_ops_nic_feature_offload_tcp_tx_tso(opaque)) {
-		uint16_t l = (conn->mss < 536 ? 536 : conn->mss) - (0 /* size of ip option */ + __iip_round_up((syn ? 4 + 3 + (IIP_CONF_TCP_OPT_SACK_OK ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0), 4)) /* size of tcp option */;
+		uint16_t l = conn->mss - (0 /* size of ip option */ + __iip_round_up((syn ? 4 + 3 + (IIP_CONF_TCP_OPT_SACK_OK ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0), 4)) /* size of tcp option */;
 		payload_len = (l < (uint16_t) (total_payload_len - pushed_payload_len) ? l : total_payload_len - pushed_payload_len);
 		if (payload_len != total_payload_len) {
 			__iip_assert((pkt = iip_ops_pkt_clone(_pkt, opaque)) != NULL);
@@ -860,6 +860,7 @@ static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_conn *conn,
 	conn->acked_seq = 0xffff; /* to differentiate from ack number for Dup ACK detection */
 	conn->state = state;
 	IIP_TEST_CALLBACK_TCP_STATE_SET();
+	conn->mss = 536; /* default mss of IPv4 */
 	conn->rx_buf_cnt.limit = IIP_CONF_TCP_RX_BUF_CNT;
 	conn->cc.win = IIP_CONF_TCP_WIN_INIT;
 	conn->cc.ssthresh = IIP_CONF_TCP_SSTHRESH_INIT;
