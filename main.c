@@ -152,6 +152,31 @@ static void iip_ops_util_now_ns(uint32_t [3], void *);
 #error "invalid IIP_CONF_ENDIAN: it should be either 1 (little) or 2 (big)"
 #endif
 
+/* for the case of unaligned tcp options */
+static void __may_unaligned_write_be16(uint8_t *ptr, uint16_t val)
+{
+	ptr[0] = val >> 8;
+	ptr[1] = val;
+}
+
+static void __may_unaligned_write_be32(uint8_t *ptr, uint32_t val)
+{
+	ptr[0] = val >> 24;
+	ptr[1] = val >> 16;
+	ptr[2] = val >> 8;
+	ptr[3] = val;
+}
+
+static uint16_t __may_unaligned_read_hs(const uint8_t *ptr)
+{
+	return ((uint16_t)ptr[0] << 8) | (uint16_t) ptr[1];
+}
+
+static uint32_t __may_unaligned_read_hl(const uint8_t *ptr)
+{
+	return ((uint32_t) ptr[0] << 24) | ((uint32_t) ptr[1] << 16) | ((uint32_t) ptr[2] << 8) | (uint32_t) ptr[3];
+}
+
 #ifndef __iip_memcpy
 #define __iip_memcpy(__dest, __src, __n) \
 	do { \
@@ -727,7 +752,7 @@ again:
 				if (syn) { /* mss */
 					optbuf[optlen + 0] = 2;
 					optbuf[optlen + 1] = 4;
-					*((uint16_t *) &(optbuf[optlen + 2])) = __iip_htons(IIP_CONF_TCP_OPT_MSS);
+					__may_unaligned_write_be16((uint8_t *)&(optbuf[optlen + 2]), IIP_CONF_TCP_OPT_MSS);
 					optlen += optbuf[optlen + 1];
 				}
 				if (syn) { /* window scale */
@@ -751,8 +776,8 @@ again:
 					optbuf[optlen + 1] = 1; /* nop */
 					optbuf[optlen + 2] = 8;
 					optbuf[optlen + 3] = 10;
-					((uint32_t *) &optbuf[optlen + 4])[0] = __iip_htonl(s->tcp.pkt_ts);
-					((uint32_t *) &optbuf[optlen + 4])[1] = __iip_htonl(conn->ts);
+					__may_unaligned_write_be32((uint8_t *) &optbuf[optlen + 4], s->tcp.pkt_ts);
+					__may_unaligned_write_be32((uint8_t *) &optbuf[optlen + 8], conn->ts);
 					optlen += optbuf[optlen + 3] + 2;
 				}
 				__iip_assert(PB_TCP_HDR_LEN(out_p->pkt) == __iip_round_up(sizeof(struct iip_tcp_hdr) + optlen, 4) / 4); /* we already have configured */
@@ -1358,7 +1383,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													if (PB_TCP_OPT(p->pkt)[l + 1] == 4
 															&& PB_TCP_OPTLEN(p->pkt) - l >= 4) {
 														if (PB_TCP_HDR_HAS_SYN(p->pkt)) { /* accept only with syn */
-															conn->mss = (uint16_t) __iip_ntohs(*((uint16_t *) &PB_TCP_OPT(p->pkt)[l + 2]));
+															conn->mss = __may_unaligned_read_hs(&PB_TCP_OPT(p->pkt)[l + 2]);
 															if (IIP_CONF_TCP_OPT_MSS < conn->mss)
 																conn->mss = IIP_CONF_TCP_OPT_MSS;
 														}
@@ -1390,9 +1415,9 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														while (c < PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off]) {
 															IIP_OPS_DEBUG_PRINTF("rx sack: %2u/%2u: sle %u sre %u (len %u ack %u)\n",
 																	c, PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off],
-																	__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + c + 0]))),
-																	__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + c + 4]))),
-																	__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + c + 4]))) - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + c + 0]))),
+																	__may_unaligned_read_hl(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + c + 0]),
+																	__may_unaligned_read_hl(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + c + 4]),
+																	__may_unaligned_read_hl(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + c + 4]) - __may_unaligned_read_hl(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + c + 0]),
 																	__iip_ntohl(PB_TCP(p->pkt)->ack_seq_be));
 															c += 8;
 														}
@@ -1402,8 +1427,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													if (PB_TCP_OPT(p->pkt)[l + 1] == 10
 															&& PB_TCP_OPTLEN(p->pkt) - l >= 10) {
 														p->flags |= __IIP_PB_FLAGS_OPT_HAS_TS;
-														p->tcp.opt.ts[0] = __iip_ntohl(*(uint32_t *) &PB_TCP_OPT(p->pkt)[l + 2]);
-														p->tcp.opt.ts[1] = __iip_ntohl(*(uint32_t *) &PB_TCP_OPT(p->pkt)[l + 6]);
+														p->tcp.opt.ts[0] = __may_unaligned_read_hl(&PB_TCP_OPT(p->pkt)[l + 2]);
+														p->tcp.opt.ts[1] = __may_unaligned_read_hl(&PB_TCP_OPT(p->pkt)[l + 6]);
 													}
 													break;
 												default:
@@ -2595,14 +2620,14 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												uint32_t __ex = __iip_ntohl(PB_TCP(conn->head[2][1]->pkt)->seq_be) + PB_TCP_HDR_HAS_SYN(conn->head[2][1]->pkt) + PB_TCP_HDR_HAS_FIN(conn->head[2][1]->pkt) + PB_TCP_PAYLOAD_LEN(conn->head[2][1]->pkt);
 												__iip_assert(PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off] <= sizeof(rx_sackbuf));
 												__iip_memcpy(rx_sackbuf, &(PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1]), PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off]);
-												while (c <= rx_sackbuf[1]) {
+												while (c < rx_sackbuf[1]) {
 													uint8_t do_skip = 0;
-													if ((__iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4]))) - __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 0]))) >= 2147483648U)
-															|| (__iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4]))) == __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 0]))))) {
+													if ((__may_unaligned_read_hl(&rx_sackbuf[c + 4]) - __may_unaligned_read_hl(&rx_sackbuf[c + 0]) >= 2147483648U)
+															|| (__may_unaligned_read_hl(&rx_sackbuf[c + 4]) == __may_unaligned_read_hl(&rx_sackbuf[c + 0]))) {
 														/* invalid entry  */
 														do_skip = 1;
 													} else if (c == 2) {
-														if (__iip_ntohl(PB_TCP(p->pkt)->ack_seq_be) - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + 2 + 4]))) < 2147483648U) {
+														if (__iip_ntohl(PB_TCP(p->pkt)->ack_seq_be) - __may_unaligned_read_hl(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + 2 + 4]) < 2147483648U) {
 															/*
 															 * compare with the ack field
 															 * d-sack pattern 1
@@ -2613,19 +2638,19 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																 *  2: ...--|
 																 * 10:  ...---|
 																 */
-																&& ((__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + 10 + 4]))) - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + 2 + 4])))) < 2147483648U)
+																&& ((__may_unaligned_read_hl(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + 10 + 4]) - __may_unaligned_read_hl(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + 2 + 4])) < 2147483648U)
 																/*
 																 *  2:  |--...
 																 * 10: |---...
 																 */
-																&& ((__iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + 2 + 0]))) - __iip_ntohl(*((uint32_t *)(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + 10 + 0])))) < 2147483648U)) {
+																&& ((__may_unaligned_read_hl(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + 2 + 0]) - __may_unaligned_read_hl(&PB_TCP_OPT(p->pkt)[p->tcp.opt.sack_opt_off - 1 + 10 + 0])) < 2147483648U)) {
 															/*
 															 * compare with the second field
 															 * d-sack pattern 2
 															 */
 															do_skip = 1;
 														}
-													} else if (conn->acked_seq - __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4]))) < 2147483648U) {
+													} else if (conn->acked_seq - __may_unaligned_read_hl(&rx_sackbuf[c + 4]) < 2147483648U) {
 														/*
 														 * sack entry for acked packets,
 														 * data is properly received by peer,
@@ -2646,14 +2671,14 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																{
 																	uint16_t i;
 																	for (i = c; i < rx_sackbuf[1] - 8; i += 8) {
-																		if (__iip_ntohl(*((uint32_t *)(&rx_sackbuf[i + 4 + 8]))) - __iip_ntohl(*((uint32_t *)(&rx_sackbuf[i + 0]))) < 2147483648U) {
+																		if (__may_unaligned_read_hl(&rx_sackbuf[i + 4 + 8]) - __may_unaligned_read_hl(&rx_sackbuf[i + 0]) < 2147483648U) {
 																			uint32_t h, t;
-																			h = *((uint32_t *)(&rx_sackbuf[i + 0]));
-																			t = *((uint32_t *)(&rx_sackbuf[i + 4]));
-																			*((uint32_t *)(&rx_sackbuf[i + 0])) = *((uint32_t *)(&rx_sackbuf[i + 0 + 8]));
-																			*((uint32_t *)(&rx_sackbuf[i + 4])) = *((uint32_t *)(&rx_sackbuf[i + 4 + 8]));
-																			*((uint32_t *)(&rx_sackbuf[i + 0 + 8])) = h;
-																			*((uint32_t *)(&rx_sackbuf[i + 4 + 8])) = t;
+																			h = __may_unaligned_read_hl(&rx_sackbuf[i + 0]);
+																			t = __may_unaligned_read_hl(&rx_sackbuf[i + 4]);
+																			__may_unaligned_write_be32((uint8_t *) &rx_sackbuf[i + 0], __may_unaligned_read_hl(&rx_sackbuf[i + 0 + 8]));
+																			__may_unaligned_write_be32((uint8_t *) &rx_sackbuf[i + 4], __may_unaligned_read_hl(&rx_sackbuf[i + 4 + 8]));
+																			__may_unaligned_write_be32((uint8_t *) &rx_sackbuf[i + 0 + 8], h);
+																			__may_unaligned_write_be32((uint8_t *) &rx_sackbuf[i + 4 + 8], t);
 																			cnt++;
 																		}
 																	}
@@ -2671,8 +2696,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														}
 														/* set flag and increase congestion window if _p is sacked */
 														if (!(_p->flags & __IIP_PB_FLAGS_SACKED)) {
-															uint32_t sle = __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 0])));
-															uint32_t sre = __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4])));
+															uint32_t sle = __may_unaligned_read_hl(&rx_sackbuf[c + 0]);
+															uint32_t sre = __may_unaligned_read_hl(&rx_sackbuf[c + 4]);
 #define SEQ_LE_RAW(__pb) (__iip_ntohl(PB_TCP((__pb)->pkt)->seq_be) + (__pb)->tcp.inc_head)
 #define SEQ_RE_RAW(__pb) (__iip_ntohl(PB_TCP((__pb)->pkt)->seq_be) + PB_TCP_HDR_HAS_SYN((__pb)->pkt) + PB_TCP_HDR_HAS_FIN((__pb)->pkt) + PB_TCP_PAYLOAD_LEN((__pb)->pkt) - (__pb)->tcp.dec_tail)
 															/*IIP_OPS_DEBUG_PRINTF("cmp %u %u with sle %u sre %u\n",
@@ -2735,9 +2760,9 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														}
 													}
 													if (((c == rx_sackbuf[1]
-															|| __ex != __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4])))))
+															|| __ex != __may_unaligned_read_hl(&rx_sackbuf[c + 4])))
 															&& (__ex - conn->acked_seq < 2147483648U)) {
-														uint32_t mle = (c == rx_sackbuf[1] ? conn->acked_seq :__iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 4])))); /* missing left edge */
+														uint32_t mle = (c == rx_sackbuf[1] ? conn->acked_seq : __may_unaligned_read_hl(&rx_sackbuf[c + 4])); /* missing left edge */
 														uint32_t mre = __ex; /* missing right edge */
 														uint16_t to_be_updated = _p->clone.to_be_updated;
 														__iip_assert(mre - mle < 2147483648U);
@@ -2975,7 +3000,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															}
 														}
 													}
-													__ex = __iip_ntohl(*((uint32_t *)(&rx_sackbuf[c + 0])));
+													__ex = __may_unaligned_read_hl(&rx_sackbuf[c + 0]);
 													c += 8;
 												}
 											}
@@ -3293,11 +3318,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							uint8_t sackbuf[(15 * 4) - sizeof(struct iip_tcp_hdr) - 19] = { 5, 2, };
 							struct pb *__p = conn->head[4][1];
 							__iip_assert(__p);
-							*((uint32_t *) &sackbuf[sackbuf[1] +                0]) = __iip_htonl(SEQ_LE_RAW(__p));
-							*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)]) = __iip_htonl(SEQ_RE_RAW(__p));
+							__may_unaligned_write_be32((uint8_t *) &sackbuf[sackbuf[1] +                0], SEQ_LE_RAW(__p));
+							__may_unaligned_write_be32((uint8_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)], SEQ_RE_RAW(__p));
 							__p = __p->prev[0];
 							while (__p) { /* send multiple sack packets if entries do not fit in one packet */
-								if (__iip_htonl(SEQ_RE_RAW(__p)) != *((uint32_t *) &sackbuf[sackbuf[1] + 0])) {
+								if (SEQ_RE_RAW(__p) != __may_unaligned_read_hl(&sackbuf[sackbuf[1] + 0])) {
 									sackbuf[1] += 8;
 									if (sizeof(sackbuf) < (uint32_t) sackbuf[1] + 8) {
 										__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, 0, sackbuf, opaque);
@@ -3313,17 +3338,17 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												IIP_OPS_DEBUG_PRINTF("%u tx sack %2u-%2u/%2u: sle %u sre %u (len %u) expected seq %u\n",
 														now_ms,
 														__i, __i + 8, sackbuf[1],
-														__iip_ntohl(*((uint32_t *) &sackbuf[__i +                0])),
-														__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])),
-														__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])) - __iip_ntohl(*((uint32_t *) &sackbuf[__i + 0])),
+														__may_unaligned_read_hl(&sackbuf[__i +                0]),
+														__may_unaligned_read_hl(&sackbuf[__i + sizeof(uint32_t)]),
+														__may_unaligned_read_hl(&sackbuf[__i + sizeof(uint32_t)]) - __may_unaligned_read_hl(&sackbuf[__i + 0]),
 														conn->seq_next_expected);
 											}
 										}
 										sackbuf[1] = 2;
 									}
-									*((uint32_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)]) = __iip_htonl(SEQ_RE_RAW(__p));
+									__may_unaligned_write_be32((uint8_t *) &sackbuf[sackbuf[1] + sizeof(uint32_t)], SEQ_RE_RAW(__p));
 								}
-								*((uint32_t *) &sackbuf[sackbuf[1] + 0]) = __iip_htonl(SEQ_LE_RAW(__p));
+								__may_unaligned_write_be32((uint8_t *) &sackbuf[sackbuf[1] + 0], SEQ_LE_RAW(__p));
 								__p = __p->prev[0];
 							}
 							sackbuf[1] += 8;
@@ -3340,9 +3365,9 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									IIP_OPS_DEBUG_PRINTF("%u tx sack %2u-%2u/%2u: sle %u sre %u (len %u) expected seq %u\n",
 											now_ms,
 											__i, __i + 8, sackbuf[1],
-											__iip_ntohl(*((uint32_t *) &sackbuf[__i +                0])),
-											__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])),
-											__iip_ntohl(*((uint32_t *) &sackbuf[__i + sizeof(uint32_t)])) - __iip_ntohl(*((uint32_t *) &sackbuf[__i + 0])),
+											__may_unaligned_read_hl(&sackbuf[__i +                0]),
+											__may_unaligned_read_hl(&sackbuf[__i + sizeof(uint32_t)]),
+											__may_unaligned_read_hl(&sackbuf[__i + sizeof(uint32_t)]) - __may_unaligned_read_hl(&sackbuf[__i + 0]),
 											conn->seq_next_expected);
 								}
 							}
