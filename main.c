@@ -394,7 +394,7 @@ struct iip_udp_hdr {
 #define PB_TCP_HDR_SET_LEN(__b, __l) do { PB_TCP(__b)->flags = (__iip_htons(((__l) << 12) | ((uint8_t)(__iip_ntohs(PB_TCP(__b)->flags) & 0x3fU)))); } while (0)
 #define PB_TCP_HDR_SET_FLAGS(__b, __f) do { PB_TCP(__b)->flags = (PB_TCP(__b)->flags & __iip_htons(~0x3fU)) | __iip_htons(__f); } while (0)
 #define PB_TCP_PAYLOAD(__b) ((uint8_t *)((uintptr_t) PB_TCP(__b) + PB_TCP_HDR_LEN(__b) * 4))
-#define PB_TCP_PAYLOAD_LEN(__b) ((uint16_t)(__iip_htons(PB_IP4(__b)->len_be) - (PB_IP4(__b)->vl & 0x0f) * 4 - PB_TCP_HDR_LEN(__b) * 4))
+#define PB_TCP_PAYLOAD_LEN(__b) ((uint16_t)(__iip_ntohs(PB_IP4(__b)->len_be) - (PB_IP4(__b)->vl & 0x0f) * 4 - PB_TCP_HDR_LEN(__b) * 4))
 #define PB_TCP_OPT(__b) ((uint8_t *)((uintptr_t) PB_TCP(__b) + sizeof(struct iip_tcp_hdr)))
 #define PB_TCP_OPTLEN(__b) (PB_TCP_HDR_LEN(__b) * 4 - sizeof(struct iip_tcp_hdr))
 #define PB_UDP(__b) ((struct iip_udp_hdr *)((uintptr_t) PB_IP4(__b) + (PB_IP4(__b)->vl & 0x0f) * 4))
