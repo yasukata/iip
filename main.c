@@ -71,6 +71,9 @@
 #ifndef IIP_TEST_CALLBACK_TIMER
 #define IIP_TEST_CALLBACK_TIMER(_n) do { (void)(_n); } while (0)
 #endif
+#ifndef IIP_TEST_CALLBACK_ICMP_ERROR
+#define IIP_TEST_CALLBACK_ICMP_ERROR() do { } while (0)
+#endif
 #ifndef IIP_TEST_CALLBACK_TCP_STATE_SET
 #define IIP_TEST_CALLBACK_TCP_STATE_SET() do { } while (0)
 #endif
@@ -340,10 +343,6 @@ struct iip_icmp_hdr {
 	uint8_t type;
 	uint8_t code;
 	uint16_t csum_be;
-	struct {
-		uint16_t id_be;
-		uint16_t seq_be;
-	} echo;
 };
 
 struct iip_l4_ip4_pseudo_hdr {
@@ -379,8 +378,7 @@ struct iip_udp_hdr {
 #define PB_ARP_HW_TARGET(__b) ((uint8_t *)((uintptr_t) PB_ARP_IP_SENDER(__b) + PB_ARP(__b)->lproto))
 #define PB_ARP_IP_TARGET(__b) ((uint8_t *)((uintptr_t) PB_ARP_HW_TARGET(__b) + PB_ARP(__b)->lhw))
 #define PB_ICMP(__b) ((struct iip_icmp_hdr *)((uintptr_t) PB_IP4(__b) + (PB_IP4(__b)->vl & 0x0f) * 4))
-#define PB_ICMP_PAYLOAD(__b) ((uint8_t *)((uintptr_t) PB_ICMP(__b) + sizeof(struct iip_icmp_hdr)))
-#define PB_ICMP_PAYLOAD_LEN(__b) ((uint16_t)(__iip_htons(PB_IP4(__b)->len_be) - (PB_IP4(__b)->vl & 0x0f) * 4 - sizeof(struct iip_icmp_hdr)))
+#define PB_ICMP_DATA(__b) ((uint8_t *)((struct iip_icmp_hdr *)((uintptr_t) PB_IP4(__b) + (PB_IP4(__b)->vl & 0x0f) * 4) + sizeof(struct iip_icmp_hdr)))
 #define PB_TCP(__b) ((struct iip_tcp_hdr *)((uintptr_t) PB_IP4(__b) + (PB_IP4(__b)->vl & 0x0f) * 4))
 #define PB_TCP_HDR_LEN(__b) ((uint16_t) __iip_ntohs(PB_TCP(__b)->flags) >> 12)
 #define PB_TCP_HDR_HAS_FIN(__b) ((((uint8_t)(__iip_ntohs(PB_TCP(__b)->flags) & 0x3fU)) & 0x01U) ? 1 : 0)
@@ -496,6 +494,8 @@ struct iip_tcp_conn {
 	uint8_t ws;
 	uint8_t sack_ok;
 	uint16_t mss;
+
+	uint16_t path_mtu;
 
 	uint32_t a_cnt; /* arrival count */
 
@@ -703,6 +703,8 @@ again:
 	out_p = __iip_alloc_pb(s, iip_ops_pkt_alloc(opaque), opaque);
 	if (!iip_ops_nic_feature_offload_tcp_tx_tso(opaque)) {
 		uint16_t l = conn->mss - (0 /* size of ip option */ + __iip_round_up((syn ? 4 + 3 + (IIP_CONF_TCP_OPT_SACK_OK ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0), 4)) /* size of tcp option */;
+		if (conn->path_mtu - 0 /* size of ip option */  < l)
+			l = conn->path_mtu;
 		payload_len = (l < (uint16_t) (total_payload_len - pushed_payload_len) ? l : total_payload_len - pushed_payload_len);
 		if (payload_len != total_payload_len) {
 			__iip_assert((pkt = iip_ops_pkt_clone(_pkt, opaque)) != NULL);
@@ -886,6 +888,7 @@ static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_conn *conn,
 	conn->state = state;
 	IIP_TEST_CALLBACK_TCP_STATE_SET();
 	conn->mss = 536; /* default mss of IPv4 */
+	conn->path_mtu = 0xffff;
 	conn->rx_buf_cnt.limit = IIP_CONF_TCP_RX_BUF_CNT;
 	conn->cc.win = IIP_CONF_TCP_WIN_INIT;
 	conn->cc.ssthresh = IIP_CONF_TCP_SSTHRESH_INIT;
@@ -1252,63 +1255,133 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								break;
 							}
 							{
-								switch (PB_ICMP(p->pkt)->type) {
-								case 0: /* reply */
-									iip_ops_icmp_reply(s, p->pkt, opaque);
-									break;
-								case 8: /* echo */
-									IIP_OPS_DEBUG_PRINTF("icmp echo (id %u, seq %u)\n",
-											__iip_ntohs(PB_ICMP(p->pkt)->echo.id_be),
-											__iip_ntohs(PB_ICMP(p->pkt)->echo.seq_be));
-									{
-										void *out_pkt = iip_ops_pkt_alloc(opaque);
-										__iip_assert(out_pkt);
-										iip_ops_l2_hdr_craft(out_pkt, iip_ops_l2_hdr_dst_ptr(p->pkt, opaque), iip_ops_l2_hdr_src_ptr(p->pkt, opaque), __iip_htons(0x0800), opaque);
-										{
-											struct iip_ip4_hdr *ip4h = PB_IP4(out_pkt);
-											ip4h->vl = (4 /* ver ipv4 */ << 4) | (sizeof(struct iip_ip4_hdr) / 4 /* len in octet */);
-											ip4h->len_be = __iip_htons((ip4h->vl & 0x0f) * 4 + sizeof(struct iip_icmp_hdr) + (PB_ICMP_PAYLOAD_LEN(p->pkt)));
-											ip4h->tos = 0;
-											ip4h->id_be = 0; /* no ip4 fragment */
-											ip4h->off_be = 0; /* no ip4 fragment */
-											ip4h->ttl = IIP_CONF_IP4_TTL;
-											ip4h->proto = 1; /* icmp */
-											ip4h->src_be = PB_IP4(p->pkt)->dst_be;
-											ip4h->dst_be = PB_IP4(p->pkt)->src_be;
-											ip4h->csum_be = 0;
-											if (!iip_ops_nic_feature_offload_ip4_tx_checksum(opaque)) { /* ip4 csum */
-												uint8_t *_b[1]; _b[0] = (uint8_t *) ip4h;
-												{
-													uint16_t _l[1]; _l[0] = (uint16_t) ((ip4h->vl & 0x0f) * 4);
-													ip4h->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1, 0));
+								uint8_t *_b[1]; _b[0] = (uint8_t *) PB_ICMP(p->pkt);
+								{
+									uint16_t _l[1]; _l[0] = (uint16_t) __iip_ntohs(PB_IP4(p->pkt)->len_be) - (PB_IP4(p->pkt)->vl & 0x0f) * 4;
+									uint16_t csum = __iip_ntohs(PB_ICMP(p->pkt)->csum_be);
+									if (csum != __iip_netcsum16(_b, _l, 1, csum)) {
+										IIP_OPS_DEBUG_PRINTF("icmp hdr invalid csum\n");
+										break;
+									}
+								}
+							}
+							{
+								uint16_t payload_len =  __iip_htons((PB_IP4(p->pkt)->vl & 0x0f) * 4 + sizeof(struct iip_icmp_hdr) + (__iip_htons(PB_IP4(p->pkt)->len_be) - (PB_IP4(p->pkt)->vl & 0x0f) * 4 - sizeof(struct iip_icmp_hdr)));
+								{
+									switch (PB_ICMP(p->pkt)->type) {
+									case 0: /* reply */
+										iip_ops_icmp_reply(s, p->pkt, opaque);
+										break;
+									case 3: /* error */
+										switch (PB_ICMP(p->pkt)->code) {
+										case 0: /* destination unreachable */
+											if (payload_len < 4 /* unused + next_hop_mtu */ + sizeof(struct iip_ip4_hdr)) {
+												IIP_OPS_DEBUG_PRINTF("icmp hdr error invalid\n");
+												break;
+											}
+											{
+												uint16_t next_hop_mtu_be;
+												struct iip_ip4_hdr ip4h;
+												__iip_memcpy((uint8_t *) &next_hop_mtu_be, &PB_ICMP_DATA(p->pkt)[2], sizeof(next_hop_mtu_be));
+												__iip_memcpy((uint8_t *) &ip4h, &PB_ICMP_DATA(p->pkt)[4], sizeof(ip4h));
+												if (((ip4h.vl & 0x0f) * 4) < 20) {
+													IIP_OPS_DEBUG_PRINTF("icmp hdr error invalid ip hdr len\n");
+													break;
 												}
-											} else
-												iip_ops_nic_offload_ip4_tx_checksum_mark(out_pkt, opaque);
-										}
-										{
-											struct iip_icmp_hdr *icmph = PB_ICMP(out_pkt);
-											icmph->type = 0; /* icmp reply */
-											icmph->code = 0;
-											icmph->csum_be = 0;
-											icmph->echo.id_be = PB_ICMP(p->pkt)->echo.id_be;
-											icmph->echo.seq_be = PB_ICMP(p->pkt)->echo.seq_be;
-											__iip_memcpy(PB_ICMP_PAYLOAD(out_pkt), PB_ICMP_PAYLOAD(p->pkt), PB_ICMP_PAYLOAD_LEN(p->pkt));
-											/* TODO: large icmp packet */
-											{ /* icmp csum */
-												uint8_t *_b[2]; _b[0] = (uint8_t *) icmph; _b[1] = (uint8_t *) PB_ICMP_PAYLOAD(p->pkt);
-												{
-													uint16_t _l[2]; _l[0] = sizeof(struct iip_icmp_hdr); _l[1] = PB_ICMP_PAYLOAD_LEN(p->pkt);
-													icmph->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 2, 0));
+												if (__iip_ntohs(ip4h.len_be) < (ip4h.vl & 0x0f) * 4) {
+													IIP_OPS_DEBUG_PRINTF("icmp hdr error invalid ip pkt len\n");
+													break;
+												}
+												if (((ip4h.vl >> 4) != 4)) {
+													IIP_OPS_DEBUG_PRINTF("icmp hdr error not ip4 hdr\n");
+													break;
+												}
+												if (__iip_ntohs(ip4h.len_be) - (ip4h.vl & 0x0f) * 4 < 8) {
+													IIP_OPS_DEBUG_PRINTF("icmp hdr error invalid length\n");
+													break;
+												}
+												switch (ip4h.proto) {
+												case 6: /* tcp */
+													{
+														uint16_t src_be, dst_be;
+														__iip_memcpy(&src_be, &PB_ICMP_DATA(p->pkt)[4 + (ip4h.vl & 0x0f) * 4 + 0], sizeof(src_be));
+														__iip_memcpy(&dst_be, &PB_ICMP_DATA(p->pkt)[4 + (ip4h.vl & 0x0f) * 4 + 2], sizeof(dst_be));
+														{
+															struct iip_tcp_conn *conn, *_conn_n;
+															__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
+																if (conn->peer_port_be == dst_be
+																		&& conn->local_port_be == src_be
+																		&& conn->peer_ip4_be == ip4h.dst_be
+																		&& conn->local_ip4_be == ip4h.src_be) {
+																	conn->path_mtu = __iip_ntohs(next_hop_mtu_be);
+																	IIP_TEST_CALLBACK_ICMP_ERROR();
+																}
+															}
+														}
+													}
+													break;
+												default:
+													break;
 												}
 											}
 										}
-										iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + __iip_htons(PB_IP4(p->pkt)->len_be), opaque);
-										iip_ops_l2_push(out_pkt, opaque);
+										break;
+									case 8: /* echo */
+										{
+											if (payload_len < 4 /* echo id_be and seq_be */) {
+												IIP_OPS_DEBUG_PRINTF("icmp hdr echo invalid\n");
+												break;
+											}
+											{
+												void *out_pkt = iip_ops_pkt_alloc(opaque);
+												__iip_assert(out_pkt);
+												iip_ops_l2_hdr_craft(out_pkt, iip_ops_l2_hdr_dst_ptr(p->pkt, opaque), iip_ops_l2_hdr_src_ptr(p->pkt, opaque), __iip_htons(0x0800), opaque);
+												{
+													struct iip_ip4_hdr *ip4h = PB_IP4(out_pkt);
+													ip4h->vl = (4 /* ver ipv4 */ << 4) | (sizeof(struct iip_ip4_hdr) / 4 /* len in octet */);
+													ip4h->len_be = __iip_htons((ip4h->vl & 0x0f) * 4 + sizeof(struct iip_icmp_hdr) + (__iip_htons(PB_IP4(p->pkt)->len_be) - (PB_IP4(p->pkt)->vl & 0x0f) * 4 - sizeof(struct iip_icmp_hdr) + 4 /* echo hdr */) /* payload len */);
+													ip4h->tos = 0;
+													ip4h->id_be = 0; /* no ip4 fragment */
+													ip4h->off_be = 0; /* no ip4 fragment */
+													ip4h->ttl = IIP_CONF_IP4_TTL;
+													ip4h->proto = 1; /* icmp */
+													ip4h->src_be = PB_IP4(p->pkt)->dst_be;
+													ip4h->dst_be = PB_IP4(p->pkt)->src_be;
+													ip4h->csum_be = 0;
+													if (!iip_ops_nic_feature_offload_ip4_tx_checksum(opaque)) { /* ip4 csum */
+														uint8_t *_b[1]; _b[0] = (uint8_t *) ip4h;
+														{
+															uint16_t _l[1]; _l[0] = (uint16_t) ((ip4h->vl & 0x0f) * 4);
+															ip4h->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1, 0));
+														}
+													} else
+														iip_ops_nic_offload_ip4_tx_checksum_mark(out_pkt, opaque);
+												}
+												{
+													struct iip_icmp_hdr *icmph = PB_ICMP(out_pkt);
+													icmph->type = 0; /* icmp reply */
+													icmph->code = 0;
+													icmph->csum_be = 0;
+													/* TODO: boundary check */
+													__iip_memcpy(PB_ICMP_DATA(out_pkt), PB_ICMP_DATA(p->pkt), payload_len); /* copying echo id_be and seq_be fields and payload */
+													/* TODO: large icmp packet */
+													{ /* icmp csum */
+														uint8_t *_b[2]; _b[0] = (uint8_t *) icmph; _b[1] = (uint8_t *) &PB_ICMP_DATA(p->pkt)[4 /* echo */];
+														{
+															uint16_t _l[2]; _l[0] = sizeof(struct iip_icmp_hdr) + 4 /* echo */; _l[1] = payload_len - 4 /* echo */;
+															icmph->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 2, 0));
+														}
+													}
+												}
+												iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + __iip_htons(PB_IP4(p->pkt)->len_be), opaque);
+												iip_ops_l2_push(out_pkt, opaque);
+											}
+										}
+										break;
+									default: /* TODO */
+										IIP_OPS_DEBUG_PRINTF("unsupported icmp type %u\n", PB_ICMP(p->pkt)->type);
+										break;
 									}
-									break;
-								default: /* TODO */
-									IIP_OPS_DEBUG_PRINTF("unsupported icmp type %u\n", PB_ICMP(p->pkt)->type);
-									break;
 								}
 							}
 							break;
