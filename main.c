@@ -1072,13 +1072,14 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 		{
 			uint16_t i;
 			for (i = 0; i < cnt; i++) {
-				if (iip_ops_l2_skip(pkt[i], opaque))
+				if (iip_ops_pkt_get_len(pkt[i], opaque) < iip_ops_l2_hdr_len(pkt[i], opaque) || iip_ops_l2_skip(pkt[i], opaque))
 					iip_ops_pkt_free(pkt[i], opaque);
 				else {
 					uint8_t pkt_used = 0;
 					struct pb *p = __iip_alloc_pb(s, pkt[i], opaque);
 					switch (__iip_ntohs(iip_ops_l2_ethertype_be(p->pkt, opaque))) {
 					case 0x0800: /* ip */
+						__iip_assert(iip_ops_l2_addr_len(opaque) < iip_ops_l2_hdr_len(pkt[i], opaque));
 						if (!__iip_memcmp(mac, iip_ops_l2_hdr_dst_ptr(p->pkt, opaque), iip_ops_l2_addr_len(opaque))) {
 							/*IIP_OPS_DEBUG_PRINTF("ip4-in : src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u v %u, l %u, proto %u\n",
 									(PB_IP4(p->pkt)->src_be >>  0) & 0x0ff,
@@ -1091,12 +1092,28 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									(PB_IP4(p->pkt)->dst_be >> 24) & 0x0ff,
 									PB_IP4(p->pkt)->vl >> 4, PB_IP4(p->pkt)->l,
 									PB_IP4(p->pkt)->proto);*/
-							if ((PB_IP4(p->pkt)->vl >> 4) != 4) { /* ip version*/
-								IIP_OPS_DEBUG_PRINTF("this is not ipv4 (%u)\n", PB_IP4(p->pkt)->vl >> 4);
+							if (iip_ops_pkt_get_len(pkt[i], opaque) < iip_ops_l2_hdr_len(pkt[i], opaque) + sizeof(struct iip_ip4_hdr)) {
+								IIP_OPS_DEBUG_PRINTF("ip4 hdr is not in the packet (pkt size %u / %lu)\n", iip_ops_pkt_get_len(pkt[i], opaque), iip_ops_l2_hdr_len(pkt[i], opaque) + sizeof(struct iip_ip4_hdr));
 								break;
 							}
-							if ((PB_IP4(p->pkt)->vl & 0x0f) * 4 > iip_ops_pkt_get_len(pkt[i], opaque)) {
-								IIP_OPS_DEBUG_PRINTF("ip4 hdr invalid length (%u)\n", (PB_IP4(p->pkt)->vl & 0x0f) * 4);
+							if (iip_ops_pkt_get_len(pkt[i], opaque) < iip_ops_l2_hdr_len(pkt[i], opaque) + (PB_IP4(p->pkt)->vl & 0x0f) * 4) {
+								IIP_OPS_DEBUG_PRINTF("ip4 hdr invalid length (%u / %u)\n", (PB_IP4(p->pkt)->vl & 0x0f) * 4, iip_ops_l2_hdr_len(pkt[i], opaque) + (PB_IP4(p->pkt)->vl & 0x0f) * 4);
+								break;
+							}
+							if (iip_ops_pkt_get_len(pkt[i], opaque) < iip_ops_l2_hdr_len(pkt[i], opaque) + __iip_ntohs(PB_IP4(p->pkt)->len_be)) {
+								IIP_OPS_DEBUG_PRINTF("ip4 hdr invalid data length (%u / %u)\n", iip_ops_pkt_get_len(pkt[i], opaque), iip_ops_l2_hdr_len(pkt[i], opaque) + __iip_ntohs(PB_IP4(p->pkt)->len_be));
+								break;
+							}
+							if ((PB_IP4(p->pkt)->vl & 0x0f) * 4 < sizeof(struct iip_ip4_hdr)) {
+								IIP_OPS_DEBUG_PRINTF("ip4 hdr invalid hdr length (%u / %lu)\n", (PB_IP4(p->pkt)->vl & 0x0f) * 4, sizeof(struct iip_ip4_hdr));
+								break;
+							}
+							if (__iip_ntohs(PB_IP4(p->pkt)->len_be) < (PB_IP4(p->pkt)->vl & 0x0f) * 4) {
+								IIP_OPS_DEBUG_PRINTF("ip4 hdr invalid length fields (%u / %u)\n", __iip_ntohs(PB_IP4(p->pkt)->len_be), (PB_IP4(p->pkt)->vl & 0x0f) * 4);
+								break;
+							}
+							if ((PB_IP4(p->pkt)->vl >> 4) != 4) { /* ip version */
+								IIP_OPS_DEBUG_PRINTF("this is not ipv4 (%u)\n", PB_IP4(p->pkt)->vl >> 4);
 								break;
 							}
 							if (iip_ops_nic_feature_offload_ip4_rx_checksum(opaque)) {
@@ -1134,6 +1151,14 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						}
 						break;
 					case 0x0806: /* arp */
+						if (iip_ops_pkt_get_len(pkt[i], opaque) < iip_ops_l2_hdr_len(pkt[i], opaque) + sizeof(struct iip_arp_hdr)) {
+								IIP_OPS_DEBUG_PRINTF("arp hdr is not in the pkt (%u / %lu)\n", iip_ops_pkt_get_len(pkt[i], opaque), iip_ops_l2_hdr_len(pkt[i], opaque) + sizeof(struct iip_arp_hdr));
+								break;
+						}
+						if (iip_ops_pkt_get_len(pkt[i], opaque) < iip_ops_l2_hdr_len(pkt[i], opaque) + sizeof(struct iip_arp_hdr) + 2 * PB_ARP(p->pkt)->lhw + 2 * PB_ARP(p->pkt)->lproto) {
+								IIP_OPS_DEBUG_PRINTF("arp hdr invalid length field line:%u\n", __LINE__);
+								break;
+						}
 						{
 							uint8_t bc_mac[IIP_CONF_L2ADDR_LEN_MAX];
 							iip_ops_l2_broadcast_addr(bc_mac, opaque);
@@ -1217,10 +1242,15 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 				struct pb *p, *_n;
 				__iip_q_for_each_safe(ip4_rx, p, _n, 0) {
 					__iip_dequeue_obj(ip4_rx, p, 0);
+					__iip_assert(__iip_ntohs(PB_IP4(p->pkt)->len_be) >= (PB_IP4(p->pkt)->vl & 0x0f) * 4); /* this check is done during ip4 hdr check */
 					{
 						uint8_t pkt_used = 0;
 						switch (PB_IP4(p->pkt)->proto) {
 						case 1: /* icmp */
+							if ((uint16_t)(__iip_ntohs(PB_IP4(p->pkt)->len_be) - (PB_IP4(p->pkt)->vl & 0x0f) * 4) < sizeof(struct iip_icmp_hdr)) {
+								IIP_OPS_DEBUG_PRINTF("icmp hdr invalid len (%u / %lu)\n", __iip_ntohs(PB_IP4(p->pkt)->len_be) - (PB_IP4(p->pkt)->vl & 0x0f) * 4, sizeof(struct iip_icmp_hdr));
+								break;
+							}
 							{
 								switch (PB_ICMP(p->pkt)->type) {
 								case 0: /* reply */
@@ -1283,6 +1313,18 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							}
 							break;
 						case 6: /* tcp */
+							if ((uint16_t)(__iip_ntohs(PB_IP4(p->pkt)->len_be) - (PB_IP4(p->pkt)->vl & 0x0f) * 4) < sizeof(struct iip_tcp_hdr)) {
+								IIP_OPS_DEBUG_PRINTF("tcp hdr is not in the packet (pkt size %u %lu)\n", __iip_ntohs(PB_IP4(p->pkt)->len_be) - (PB_IP4(p->pkt)->vl & 0x0f) * 4, sizeof(struct iip_tcp_hdr));
+								break;
+							}
+							if (PB_TCP_HDR_LEN(p->pkt) * 4 < sizeof(struct iip_tcp_hdr)) { /* for PB_TCP_OPTLEN */
+								IIP_OPS_DEBUG_PRINTF("tcp hdr invalid len (%u)\n", PB_TCP_HDR_LEN(p->pkt) * 4);
+								break;
+							}
+							if (__iip_ntohs(PB_IP4(p->pkt)->len_be) - (PB_IP4(p->pkt)->vl & 0x0f) * 4 < PB_TCP_HDR_LEN(p->pkt) * 4) { /* for PB_TCP_PAYLOAD_LEN */
+								IIP_OPS_DEBUG_PRINTF("tcp hdr invalid len (%u %u)\n", __iip_ntohs(PB_IP4(p->pkt)->len_be) - (PB_IP4(p->pkt)->vl & 0x0f) * 4, PB_TCP_HDR_LEN(p->pkt) * 4);
+								break;
+							}
 							if (iip_ops_nic_feature_offload_tcp_rx_checksum(opaque)) {
 								if (!iip_ops_nic_offload_tcp_rx_checksum(p->pkt, opaque)) {
 									IIP_OPS_DEBUG_PRINTF("pkt %p: invalid tcp checksum hdr commputed by NIC\n", p->pkt);
@@ -2142,6 +2184,18 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							}
 							break;
 						case 17: /* udp */
+							if ((uint16_t)(__iip_ntohs(PB_IP4(p->pkt)->len_be) - (PB_IP4(p->pkt)->vl & 0x0f) * 4) < sizeof(struct iip_udp_hdr)) {
+								IIP_OPS_DEBUG_PRINTF("udp hdr is not in the packet (pkt size %u %lu)\n", __iip_ntohs(PB_IP4(p->pkt)->len_be) - (PB_IP4(p->pkt)->vl & 0x0f) * 4, sizeof(struct iip_udp_hdr));
+								break;
+							}
+							if (__iip_ntohs(PB_UDP(p->pkt)->len_be) < sizeof(struct iip_udp_hdr)) {
+								IIP_OPS_DEBUG_PRINTF("udp hdr is not in the packet (%u / %lu)\n", __iip_ntohs(PB_UDP(p->pkt)->len_be), sizeof(struct iip_udp_hdr));
+								break;
+							}
+							if (__iip_ntohs(PB_IP4(p->pkt)->len_be) - (PB_IP4(p->pkt)->vl & 0x0f) * 4 != __iip_ntohs(PB_UDP(p->pkt)->len_be)) {
+								IIP_OPS_DEBUG_PRINTF("udp hdr invalid data length (%u / %u)\n", __iip_ntohs(PB_IP4(p->pkt)->len_be) - (PB_IP4(p->pkt)->vl & 0x0f) * 4, __iip_ntohs(PB_UDP(p->pkt)->len_be));
+								break;
+							}
 							if (iip_ops_nic_feature_offload_udp_rx_checksum(opaque)) {
 								if (!iip_ops_nic_offload_udp_rx_checksum(p->pkt, opaque)) {
 									IIP_OPS_DEBUG_PRINTF("pkt %p: invalid udp checksum hdr computed by NIC\n", p->pkt);
