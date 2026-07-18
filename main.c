@@ -63,6 +63,33 @@
 #define ____IIP_OPS_TCP_ISS_OFF() do { } while (0)
 #endif
 
+/* experimental API */
+
+#ifndef IIP_EX_TCP_SET_RETRANS_R2
+#define IIP_EX_TCP_SET_RETRANS_R2(_s, _handle, _val, _o) \
+	do { \
+		((struct iip_tcp_conn *) _handle)->retrans_r2 = _val; \
+	} while (0)
+#endif
+#ifndef IIP_EX_TCP_SET_DIFFSERV
+#define IIP_EX_TCP_SET_DIFFSERV(_s, _handle, _val, _o) \
+	do { \
+		((struct iip_tcp_conn *) _handle)->diffserv = _val; \
+	} while (0)
+#endif
+#ifndef IIP_EX_TCP_SET_NAGLE_DISABLED
+#define IIP_EX_TCP_SET_NAGLE_DISABLED(_s, _handle, _set_disabled, _o) \
+	do { \
+		if (_set_disabled) \
+		((struct iip_tcp_conn *) _handle)->flags |= __IIP_TCP_CONN_FLAGS_NAGLE_DISABLED; \
+		else \
+		((struct iip_tcp_conn *) _handle)->flags &= ~__IIP_TCP_CONN_FLAGS_NAGLE_DISABLED; \
+	} while (0)
+#endif
+#ifndef IIP_EX_OPS_TCP_IP_NEGATIVE_ADVICE
+#define IIP_EX_OPS_TCP_IP_NEGATIVE_ADVICE(_s, _handle, _tcp_opaque, _o) do { } while (0)
+#endif
+
 /* test callback */
 
 #ifndef IIP_TEST_CALLBACK_TIMER
@@ -79,9 +106,6 @@
 #endif
 #ifndef IIP_TEST_CALLBACK_LOSS_DETECTED
 #define IIP_TEST_CALLBACK_LOSS_DETECTED(_n) do { (void) _n; (void) old_cc_ssthresh; (void) old_cc_win; } while (0)
-#endif
-#ifndef IIP_TEST_CALLBACK_TCP_IP4_NEGATIVE_ADVICE
-#define IIP_TEST_CALLBACK_TCP_IP4_NEGATIVE_ADVICE() do { } while (0)
 #endif
 
 /* functions implemented by app and io subsystems */
@@ -463,7 +487,6 @@ struct iip_tcp_conn {
 	uint16_t peer_port_be;
 	uint32_t local_ip4_be;
 	uint32_t peer_ip4_be;
-	uint32_t gw_ip4_be;
 	uint8_t local_mac[IIP_CONF_L2ADDR_LEN_MAX];
 	uint8_t peer_mac[IIP_CONF_L2ADDR_LEN_MAX];
 
@@ -484,7 +507,7 @@ struct iip_tcp_conn {
 	uint32_t retrans_r2;
 
 	uint8_t flags;
-#define __IIP_TCP_CONN_FLAGS_NAGLE_DISABLED	(1U << 4) /* TODO: API for this setting is not made yet */
+#define __IIP_TCP_CONN_FLAGS_NAGLE_DISABLED	(1U << 4)
 #define __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED	(1U << 5)
 #define __IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN (1U << 6)
 #define __IIP_TCP_CONN_FLAGS_SKIP_TCP_CLOSE_CALLBACK (1U << 7)
@@ -499,7 +522,7 @@ struct iip_tcp_conn {
 	uint16_t mss;
 
 	uint16_t path_mtu;
-	uint8_t diffserv; /* TODO: API for this setting is not made yet */
+	uint8_t diffserv;
 
 	uint32_t a_cnt; /* arrival count */
 
@@ -899,7 +922,6 @@ static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_conn *conn,
 	__iip_memcpy(conn->peer_mac, peer_mac, sizeof(conn->peer_mac));
 	conn->peer_ip4_be = peer_ip4_be;
 	conn->peer_port_be = peer_port_be;
-	conn->gw_ip4_be = conn->peer_ip4_be; /* FIXME: to be replaced */
 	conn->seq_be = conn->iss_be = __iip_htonl(s->tcp.iss);
 	____IIP_OPS_TCP_ISS_OFF();
 	conn->acked_seq = __iip_ntohl(conn->seq_be);
@@ -1223,18 +1245,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											}
 											break;
 										case 0x0002: /* reply */
-											if (ip4_be == *((uint32_t *) PB_ARP_IP_TARGET(p->pkt))) {
-												{
-													struct iip_tcp_conn *conn, *_conn_n;
-													__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
-														if (conn->gw_ip4_be == *((uint32_t *) PB_ARP_IP_SENDER(p->pkt))) {
-															if (PB_ARP(p->pkt)->lhw <= sizeof(conn->peer_mac))
-																__iip_memcpy(conn->peer_mac, PB_ARP_HW_SENDER(p->pkt), PB_ARP(p->pkt)->lhw);
-														}
-													}
-												}
-												iip_ops_arp_reply(s, pkt[i], opaque);
-											}
+											iip_ops_arp_reply(s, pkt[i], opaque);
 											break;
 										default:
 											IIP_OPS_DEBUG_PRINTF("unknown arp op 0x%x\n", __iip_ntohs(PB_ARP(p->pkt)->op_be));
@@ -3464,9 +3475,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									conn->retrans_cnt++;
 									s->monitor.tcp.tx_pkt_re++;
 									if (conn->retrans_cnt == conn->retrans_r2) {
-										/* ipv4 negative advice */
-										iip_arp_request(s, conn->local_mac, conn->local_ip4_be, conn->gw_ip4_be, opaque);
-										IIP_TEST_CALLBACK_TCP_IP4_NEGATIVE_ADVICE();
+										/* ip negative advice */
+										IIP_EX_OPS_TCP_IP_NEGATIVE_ADVICE(s, conn, conn->opaque, opaque);
 									}
 									if (!(conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
 										IIP_OPS_DEBUG_PRINTF("loss detected (timeout retransmit cnt %u rto %u) : %p seq %u ack %u\n",
