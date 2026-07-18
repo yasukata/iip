@@ -496,6 +496,7 @@ struct iip_tcp_conn {
 	uint16_t mss;
 
 	uint16_t path_mtu;
+	uint8_t diffserv; /* TODO: API for this setting is not made yet */
 
 	uint32_t a_cnt; /* arrival count */
 
@@ -717,7 +718,7 @@ again:
 		struct iip_ip4_hdr *ip4h = PB_IP4(out_p->pkt);
 		ip4h->vl = (4 /* ver ipv4 */ << 4) | (sizeof(struct iip_ip4_hdr) / 4 /* len in octet */);
 		ip4h->len_be = __iip_htons(sizeof(struct iip_ip4_hdr) + __iip_round_up(sizeof(struct iip_tcp_hdr) + (syn ? 4 + 3 + (IIP_CONF_TCP_OPT_SACK_OK ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0), 4) + payload_len);
-		ip4h->tos = 0;
+		ip4h->tos = conn->diffserv;
 		ip4h->id_be = 0; /* no ip4 fragment */
 		ip4h->off_be = 0; /* no ip4 fragment */
 		ip4h->ttl = IIP_CONF_IP4_TTL;
@@ -926,6 +927,7 @@ static uint16_t iip_tcp_connect(void *_mem,
 		__iip_assert(conn);
 		__iip_dequeue_obj(s->pool.conn, conn, 0);
 		__iip_tcp_conn_init(s, conn, local_mac, local_ip4_be, local_port_be, peer_mac, peer_ip4_be, peer_port_be, __IIP_TCP_STATE_SYN_SENT, opaque);
+		/* TODO: to allow for diffserv setting for the first syn, changes to this API is necessary */
 		return __iip_tcp_push(s, conn, NULL, 1, 0, 0, 0, 0, NULL, opaque);
 	}
 }
