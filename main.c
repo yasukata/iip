@@ -83,6 +83,9 @@
 #ifndef IIP_TEST_CALLBACK_LOSS_DETECTED
 #define IIP_TEST_CALLBACK_LOSS_DETECTED(_n) do { (void) _n; (void) old_cc_ssthresh; (void) old_cc_win; } while (0)
 #endif
+#ifndef IIP_TEST_CALLBACK_TCP_IP4_NEGATIVE_ADVICE
+#define IIP_TEST_CALLBACK_TCP_IP4_NEGATIVE_ADVICE() do { } while (0)
+#endif
 
 /* functions implemented by app and io subsystems */
 
@@ -463,6 +466,7 @@ struct iip_tcp_conn {
 	uint16_t peer_port_be;
 	uint32_t local_ip4_be;
 	uint32_t peer_ip4_be;
+	uint32_t gw_ip4_be;
 	uint8_t local_mac[IIP_CONF_L2ADDR_LEN_MAX];
 	uint8_t peer_mac[IIP_CONF_L2ADDR_LEN_MAX];
 
@@ -897,6 +901,7 @@ static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_conn *conn,
 	__iip_memcpy(conn->peer_mac, peer_mac, sizeof(conn->peer_mac));
 	conn->peer_ip4_be = peer_ip4_be;
 	conn->peer_port_be = peer_port_be;
+	conn->gw_ip4_be = conn->peer_ip4_be; /* FIXME: to be replaced */
 	conn->seq_be = conn->iss_be = __iip_htonl(s->tcp.iss);
 	____IIP_OPS_TCP_ISS_OFF();
 	conn->acked_seq = __iip_ntohl(conn->seq_be);
@@ -1219,8 +1224,18 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											}
 											break;
 										case 0x0002: /* reply */
-											if (ip4_be == *((uint32_t *) PB_ARP_IP_TARGET(p->pkt)))
+											if (ip4_be == *((uint32_t *) PB_ARP_IP_TARGET(p->pkt))) {
+												{
+													struct iip_tcp_conn *conn, *_conn_n;
+													__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
+														if (conn->gw_ip4_be == *((uint32_t *) PB_ARP_IP_SENDER(p->pkt))) {
+															if (PB_ARP(p->pkt)->lhw <= sizeof(conn->peer_mac))
+																__iip_memcpy(conn->peer_mac, PB_ARP_HW_SENDER(p->pkt), PB_ARP(p->pkt)->lhw);
+														}
+													}
+												}
 												iip_ops_arp_reply(s, pkt[i], opaque);
+											}
 											break;
 										default:
 											IIP_OPS_DEBUG_PRINTF("unknown arp op 0x%x\n", __iip_ntohs(PB_ARP(p->pkt)->op_be));
@@ -3449,6 +3464,14 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										conn->head[2][0]->tcp.rto_ms = 60000U;
 									conn->retrans_cnt++;
 									s->monitor.tcp.tx_pkt_re++;
+#if IIP_CONF_TCP_RETRANS_CNT < 2
+#error "invalid IIP_CONF_TCP_RETRANS_CNT"
+#endif
+									if (conn->retrans_cnt == IIP_CONF_TCP_RETRANS_CNT - 1) {
+										/* ipv4 negative advice */
+										iip_arp_request(s, conn->local_mac, conn->local_ip4_be, conn->gw_ip4_be, opaque);
+										IIP_TEST_CALLBACK_TCP_IP4_NEGATIVE_ADVICE();
+									}
 									if (!(conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
 										IIP_OPS_DEBUG_PRINTF("loss detected (timeout retransmit cnt %u rto %u) : %p seq %u ack %u\n",
 												conn->retrans_cnt, conn->head[2][0]->tcp.rto_ms, (void *) conn, __iip_ntohl(conn->seq_be), __iip_ntohl(conn->ack_seq_be));
