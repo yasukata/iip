@@ -482,6 +482,7 @@ struct iip_tcp_conn {
 	uint32_t retrans_cnt;
 
 	uint8_t flags;
+#define __IIP_TCP_CONN_FLAGS_NAGLE_DISABLED	(1U << 4) /* TODO: API for this setting is not made yet */
 #define __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED	(1U << 5)
 #define __IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN (1U << 6)
 #define __IIP_TCP_CONN_FLAGS_SKIP_TCP_CLOSE_CALLBACK (1U << 7)
@@ -702,107 +703,115 @@ again:
 	frag_cnt++;
 	pkt = _pkt;
 	out_p = __iip_alloc_pb(s, iip_ops_pkt_alloc(opaque), opaque);
-	if (!iip_ops_nic_feature_offload_tcp_tx_tso(opaque)) {
-		uint16_t l = conn->mss - (0 /* size of ip option */ + __iip_round_up((syn ? 4 + 3 + (IIP_CONF_TCP_OPT_SACK_OK ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0), 4)) /* size of tcp option */;
-		if (conn->path_mtu - 0 /* size of ip option */  < l)
-			l = conn->path_mtu;
-		payload_len = (l < (uint16_t) (total_payload_len - pushed_payload_len) ? l : total_payload_len - pushed_payload_len);
-		if (payload_len != total_payload_len) {
-			__iip_assert((pkt = iip_ops_pkt_clone(_pkt, opaque)) != NULL);
-			iip_ops_pkt_increment_head(pkt, pushed_payload_len, opaque);
-			iip_ops_pkt_set_len(pkt, payload_len, opaque);
-		}
-	}
-	iip_ops_l2_hdr_craft(out_p->pkt, conn->local_mac, conn->peer_mac, __iip_htons(0x0800), opaque);
 	{
-		struct iip_ip4_hdr *ip4h = PB_IP4(out_p->pkt);
-		ip4h->vl = (4 /* ver ipv4 */ << 4) | (sizeof(struct iip_ip4_hdr) / 4 /* len in octet */);
-		ip4h->len_be = __iip_htons(sizeof(struct iip_ip4_hdr) + __iip_round_up(sizeof(struct iip_tcp_hdr) + (syn ? 4 + 3 + (IIP_CONF_TCP_OPT_SACK_OK ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0), 4) + payload_len);
-		ip4h->tos = conn->diffserv;
-		ip4h->id_be = 0; /* no ip4 fragment */
-		ip4h->off_be = 0; /* no ip4 fragment */
-		ip4h->ttl = IIP_CONF_IP4_TTL;
-		ip4h->proto = 6; /* tcp */
-		ip4h->src_be = conn->local_ip4_be;
-		ip4h->dst_be = conn->peer_ip4_be;
-		ip4h->csum_be = 0;
-		if (!iip_ops_nic_feature_offload_ip4_tx_checksum(opaque)) { /* ip4 csum */
-			uint8_t *_b[1]; _b[0] = (uint8_t *) ip4h;
-			{
-				uint16_t _l[1]; _l[0] = (uint16_t) ((ip4h->vl & 0x0f) * 4);
-				ip4h->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1, 0));
+		uint16_t tcp_opt_len = __iip_round_up((syn ? 4 + 3 + (IIP_CONF_TCP_OPT_SACK_OK ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0), 4) /* size of tcp option */;
+		if (!iip_ops_nic_feature_offload_tcp_tx_tso(opaque)) {
+			uint16_t l = conn->mss;
+			__iip_assert(conn->path_mtu > (sizeof(struct iip_ip4_hdr) + 0 /* ip option size */)); /* ensured in the setting phase */
+			if (conn->path_mtu - (sizeof(struct iip_ip4_hdr) + 0 /* ip option size */) < conn->mss)
+				l = conn->path_mtu - (sizeof(struct iip_ip4_hdr) + 0 /* ip option size */);
+			if (l <= tcp_opt_len)
+				tcp_opt_len = 0;
+			else
+				l -= tcp_opt_len;
+			payload_len = (l < (uint16_t) (total_payload_len - pushed_payload_len) ? l : total_payload_len - pushed_payload_len);
+			if (payload_len != total_payload_len) {
+				__iip_assert((pkt = iip_ops_pkt_clone(_pkt, opaque)) != NULL);
+				iip_ops_pkt_increment_head(pkt, pushed_payload_len, opaque);
+				iip_ops_pkt_set_len(pkt, payload_len, opaque);
 			}
-		} else
-			iip_ops_nic_offload_ip4_tx_checksum_mark(out_p->pkt, opaque);
-	}
-	__iip_assert(conn->rx_buf_cnt.limit < (1U << 30) /* 1GB limit : RFC 7323 */ / IIP_CONF_TCP_OPT_MSS);
-	{
-		struct iip_tcp_hdr *tcph = PB_TCP(out_p->pkt);
-		tcph->src_be = conn->local_port_be;
-		tcph->dst_be = conn->peer_port_be;
-		tcph->seq_be = conn->seq_be;
-		tcph->ack_seq_be = conn->ack_seq_be;
-		tcph->flags = 0;
-		PB_TCP_HDR_SET_LEN(out_p->pkt, __iip_round_up(sizeof(struct iip_tcp_hdr) + (syn ? 4 + 3 + (IIP_CONF_TCP_OPT_SACK_OK ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0), 4) / 4);
-		PB_TCP_HDR_SET_FLAGS(out_p->pkt, (syn ? 0x02U : 0) | (ack ? 0x10U : 0) | (rst ? 0x04U : 0) | (fin ? 0x01U : 0)
-				| ((pushed_payload_len + payload_len != total_payload_len) ? (tcp_flags & ~0x08U) /* PSH must be only at the end */ : (_pkt && total_payload_len ? (tcp_flags | 0x08U) : tcp_flags)));
-		tcph->win_be = __iip_compute_tcp_win_be(conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used, IIP_CONF_TCP_OPT_MSS, IIP_CONF_TCP_OPT_WS);
-		tcph->urg_p_be = 0;
-		tcph->csum_be = 0;
+		}
+		iip_ops_l2_hdr_craft(out_p->pkt, conn->local_mac, conn->peer_mac, __iip_htons(0x0800), opaque);
 		{
-			uint8_t *optbuf = PB_TCP_OPT(out_p->pkt), optlen = 0;
-			{
-				if (syn) { /* mss */
-					optbuf[optlen + 0] = 2;
-					optbuf[optlen + 1] = 4;
-					__may_unaligned_write_be16((uint8_t *)&(optbuf[optlen + 2]), IIP_CONF_TCP_OPT_MSS);
-					optlen += optbuf[optlen + 1];
-				}
-				if (syn) { /* window scale */
-					optbuf[optlen + 0] = 3;
-					optbuf[optlen + 1] = 3;
-					__iip_assert(IIP_CONF_TCP_OPT_WS < 15); /* RFC 7323 */
-					optbuf[optlen + 2] = IIP_CONF_TCP_OPT_WS;
-					optlen += optbuf[optlen + 1];
-				}
-				if (syn && IIP_CONF_TCP_OPT_SACK_OK) { /* sack ok */
-					optbuf[optlen + 0] = 4;
-					optbuf[optlen + 1] = 2;
-					optlen += optbuf[optlen + 1];
-				}
-				if (sackbuf) { /* sack */
-					__iip_memcpy(&optbuf[optlen], sackbuf, sackbuf[1]);
-					optlen += sackbuf[1];
-				}
-				if (IIP_CONF_TCP_TIMESTAMP_ENABLE) { /* time stamp */
-					optbuf[optlen + 0] = 1; /* nop */
-					optbuf[optlen + 1] = 1; /* nop */
-					optbuf[optlen + 2] = 8;
-					optbuf[optlen + 3] = 10;
-					__may_unaligned_write_be32((uint8_t *) &optbuf[optlen + 4], s->tcp.pkt_ts);
-					__may_unaligned_write_be32((uint8_t *) &optbuf[optlen + 8], conn->ts);
-					optlen += optbuf[optlen + 3] + 2;
-				}
-				__iip_assert(PB_TCP_HDR_LEN(out_p->pkt) == __iip_round_up(sizeof(struct iip_tcp_hdr) + optlen, 4) / 4); /* we already have configured */
-			}
-			__iip_memset(&optbuf[optlen], 0, PB_TCP_HDR_LEN(out_p->pkt) * 4 - optlen);
-		}
-		if (!iip_ops_nic_feature_offload_tcp_tx_checksum(opaque)) {
-			struct iip_l4_ip4_pseudo_hdr _pseudo;
-			_pseudo.ip4_src_be = conn->local_ip4_be;
-			_pseudo.ip4_dst_be = conn->peer_ip4_be;
-			_pseudo.pad = 0;
-			_pseudo.proto = 6;
-			_pseudo.len_be = __iip_htons(PB_TCP_HDR_LEN(out_p->pkt) * 4 + payload_len);
-			{
-				uint8_t *_b[3]; _b[0] = (uint8_t *) &_pseudo; _b[1] = (uint8_t *) tcph; _b[2] = (pkt ? (uint8_t *) iip_ops_pkt_get_data(pkt, opaque) : NULL);
+			struct iip_ip4_hdr *ip4h = PB_IP4(out_p->pkt);
+			ip4h->vl = (4 /* ver ipv4 */ << 4) | (sizeof(struct iip_ip4_hdr) / 4 /* len in octet */);
+			ip4h->len_be = __iip_htons(sizeof(struct iip_ip4_hdr) + __iip_round_up(sizeof(struct iip_tcp_hdr) + tcp_opt_len, 4) + payload_len);
+			ip4h->tos = conn->diffserv;
+			ip4h->id_be = 0; /* no ip4 fragment */
+			ip4h->off_be = 0; /* no ip4 fragment */
+			ip4h->ttl = IIP_CONF_IP4_TTL;
+			ip4h->proto = 6; /* tcp */
+			ip4h->src_be = conn->local_ip4_be;
+			ip4h->dst_be = conn->peer_ip4_be;
+			ip4h->csum_be = 0;
+			if (!iip_ops_nic_feature_offload_ip4_tx_checksum(opaque)) { /* ip4 csum */
+				uint8_t *_b[1]; _b[0] = (uint8_t *) ip4h;
 				{
-					uint16_t _l[3]; _l[0] = sizeof(_pseudo); _l[1] = (uint16_t) (PB_TCP_HDR_LEN(out_p->pkt) * 4); _l[2] = payload_len;
-					tcph->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 3, 0));
+					uint16_t _l[1]; _l[0] = (uint16_t) ((ip4h->vl & 0x0f) * 4);
+					ip4h->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1, 0));
 				}
+			} else
+				iip_ops_nic_offload_ip4_tx_checksum_mark(out_p->pkt, opaque);
+		}
+		__iip_assert(conn->rx_buf_cnt.limit < (1U << 30) /* 1GB limit : RFC 7323 */ / IIP_CONF_TCP_OPT_MSS);
+		{
+			struct iip_tcp_hdr *tcph = PB_TCP(out_p->pkt);
+			tcph->src_be = conn->local_port_be;
+			tcph->dst_be = conn->peer_port_be;
+			tcph->seq_be = conn->seq_be;
+			tcph->ack_seq_be = conn->ack_seq_be;
+			tcph->flags = 0;
+			PB_TCP_HDR_SET_LEN(out_p->pkt, __iip_round_up(sizeof(struct iip_tcp_hdr) + tcp_opt_len, 4) / 4);
+			PB_TCP_HDR_SET_FLAGS(out_p->pkt, (syn ? 0x02U : 0) | (ack ? 0x10U : 0) | (rst ? 0x04U : 0) | (fin ? 0x01U : 0)
+					| ((pushed_payload_len + payload_len != total_payload_len) ? (tcp_flags & ~0x08U) /* PSH must be only at the end */ : (_pkt && total_payload_len ? (tcp_flags | 0x08U) : tcp_flags)));
+			tcph->win_be = __iip_compute_tcp_win_be(conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used, IIP_CONF_TCP_OPT_MSS, IIP_CONF_TCP_OPT_WS);
+			tcph->urg_p_be = 0;
+			tcph->csum_be = 0;
+			if (tcp_opt_len) {
+				uint8_t *optbuf = PB_TCP_OPT(out_p->pkt), optlen = 0;
+				{
+					if (syn) { /* mss */
+						optbuf[optlen + 0] = 2;
+						optbuf[optlen + 1] = 4;
+						__may_unaligned_write_be16((uint8_t *)&(optbuf[optlen + 2]), IIP_CONF_TCP_OPT_MSS);
+						optlen += optbuf[optlen + 1];
+					}
+					if (syn) { /* window scale */
+						optbuf[optlen + 0] = 3;
+						optbuf[optlen + 1] = 3;
+						__iip_assert(IIP_CONF_TCP_OPT_WS < 15); /* RFC 7323 */
+						optbuf[optlen + 2] = IIP_CONF_TCP_OPT_WS;
+						optlen += optbuf[optlen + 1];
+					}
+					if (syn && IIP_CONF_TCP_OPT_SACK_OK) { /* sack ok */
+						optbuf[optlen + 0] = 4;
+						optbuf[optlen + 1] = 2;
+						optlen += optbuf[optlen + 1];
+					}
+					if (sackbuf) { /* sack */
+						__iip_memcpy(&optbuf[optlen], sackbuf, sackbuf[1]);
+						optlen += sackbuf[1];
+					}
+					if (IIP_CONF_TCP_TIMESTAMP_ENABLE) { /* time stamp */
+						optbuf[optlen + 0] = 1; /* nop */
+						optbuf[optlen + 1] = 1; /* nop */
+						optbuf[optlen + 2] = 8;
+						optbuf[optlen + 3] = 10;
+						__may_unaligned_write_be32((uint8_t *) &optbuf[optlen + 4], s->tcp.pkt_ts);
+						__may_unaligned_write_be32((uint8_t *) &optbuf[optlen + 8], conn->ts);
+						optlen += optbuf[optlen + 3] + 2;
+					}
+					__iip_assert(PB_TCP_HDR_LEN(out_p->pkt) == __iip_round_up(sizeof(struct iip_tcp_hdr) + optlen, 4) / 4); /* we already have configured */
+				}
+				__iip_memset(&optbuf[optlen], 0, PB_TCP_HDR_LEN(out_p->pkt) * 4 - optlen);
 			}
-		} else
-			iip_ops_nic_offload_tcp_tx_checksum_mark(out_p->pkt, opaque); /* relies on the value of tcp hdr len on packet buf */
+			if (!iip_ops_nic_feature_offload_tcp_tx_checksum(opaque)) {
+				struct iip_l4_ip4_pseudo_hdr _pseudo;
+				_pseudo.ip4_src_be = conn->local_ip4_be;
+				_pseudo.ip4_dst_be = conn->peer_ip4_be;
+				_pseudo.pad = 0;
+				_pseudo.proto = 6;
+				_pseudo.len_be = __iip_htons(PB_TCP_HDR_LEN(out_p->pkt) * 4 + payload_len);
+				{
+					uint8_t *_b[3]; _b[0] = (uint8_t *) &_pseudo; _b[1] = (uint8_t *) tcph; _b[2] = (pkt ? (uint8_t *) iip_ops_pkt_get_data(pkt, opaque) : NULL);
+					{
+						uint16_t _l[3]; _l[0] = sizeof(_pseudo); _l[1] = (uint16_t) (PB_TCP_HDR_LEN(out_p->pkt) * 4); _l[2] = payload_len;
+						tcph->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 3, 0));
+					}
+				}
+			} else
+				iip_ops_nic_offload_tcp_tx_checksum_mark(out_p->pkt, opaque); /* relies on the value of tcp hdr len on packet buf */
+		}
 	}
 
 	if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
@@ -1315,8 +1324,12 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																		&& conn->local_port_be == src_be
 																		&& conn->peer_ip4_be == ip4h.dst_be
 																		&& conn->local_ip4_be == ip4h.src_be) {
-																	conn->path_mtu = __iip_ntohs(next_hop_mtu_be);
-																	IIP_TEST_CALLBACK_ICMP_ERROR();
+																	if ((sizeof(struct iip_ip4_hdr) + 0 /* ip option size */) < __iip_ntohs(next_hop_mtu_be)) {
+																		conn->path_mtu = __iip_ntohs(next_hop_mtu_be);
+																		IIP_TEST_CALLBACK_ICMP_ERROR();
+																	} else {
+																		/* ignore too small path mtu specification */
+																	}
 																}
 															}
 														}
@@ -1500,9 +1513,14 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													if (PB_TCP_OPT(p->pkt)[l + 1] == 4
 															&& PB_TCP_OPTLEN(p->pkt) - l >= 4) {
 														if (PB_TCP_HDR_HAS_SYN(p->pkt)) { /* accept only with syn */
-															conn->mss = __may_unaligned_read_hs(&PB_TCP_OPT(p->pkt)[l + 2]);
-															if (IIP_CONF_TCP_OPT_MSS < conn->mss)
-																conn->mss = IIP_CONF_TCP_OPT_MSS;
+															uint16_t mss = __may_unaligned_read_hs(&PB_TCP_OPT(p->pkt)[l + 2]);
+															if (!mss) {
+																/* ignore mss 0 */
+															} else {
+																conn->mss = mss;
+																if (IIP_CONF_TCP_OPT_MSS < conn->mss)
+																	conn->mss = IIP_CONF_TCP_OPT_MSS;
+															}
 														}
 													}
 													break;
@@ -3558,6 +3576,19 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						{ /* either retransmission or normal queue */
 							struct pb *p, *_n;
 							__iip_q_for_each_safe(queue, p, _n, 0) {
+								if (!(conn->flags & __IIP_TCP_CONN_FLAGS_NAGLE_DISABLED) /* Nagle check */
+										&& queue != conn->head[3] /* retransmission queue is empty */
+										&& conn->head[2][0] /* having unacked data */
+										&& PB_TCP_PAYLOAD_LEN(p->pkt) /* to allow flags-only transmissions */
+										&& !PB_TCP_HDR_HAS_SYN(p->pkt) && !PB_TCP_HDR_HAS_FIN(p->pkt) /* do not stop syn/fin */) {
+									uint16_t l = conn->mss;
+									if (conn->path_mtu < l + sizeof(struct iip_ip4_hdr)) {
+										__iip_assert(conn->path_mtu > (sizeof(struct iip_ip4_hdr) + 0 /* ip option size */)); /* ensured in the setting phase */
+										l = conn->path_mtu - (sizeof(struct iip_ip4_hdr) + 0 /* ip option size */);
+									}
+									if (PB_TCP_OPTLEN(p->pkt) + PB_TCP_PAYLOAD_LEN(p->pkt) < l)
+										break;
+								}
 								/* check if flow/congestion control stops tx */
 								if (PB_TCP_PAYLOAD_LEN(p->pkt)) {
 									/* congestion control */
