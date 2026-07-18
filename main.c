@@ -699,21 +699,27 @@ static uint16_t __iip_tcp_push(struct workspace *s,
 	void *pkt;
 	struct pb *out_p;
 	uint16_t total_payload_len = (_pkt ? iip_ops_pkt_get_len(_pkt, opaque) : 0), payload_len = total_payload_len, pushed_payload_len = 0, frag_cnt = 0;
+	uint16_t tcp_opt_len = __iip_round_up((syn ? 4 + 3 + (IIP_CONF_TCP_OPT_SACK_OK ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0), 4) /* size of tcp option */;
+	if (total_payload_len /* allow transmission of control packets */
+			&& (conn->mss <= tcp_opt_len
+				|| conn->path_mtu <= (sizeof(struct iip_ip4_hdr) + 0 /* ip option size */) + sizeof(struct iip_tcp_hdr) + tcp_opt_len)) {
+		IIP_OPS_DEBUG_PRINTF("cannot send packets due to too narrow path (mss %u / path mtu %u)\n", conn->mss, conn->path_mtu);
+		iip_ops_pkt_free(_pkt, opaque);
+		return 0xffff; /* failed to send */
+	}
 again:
 	frag_cnt++;
 	pkt = _pkt;
 	out_p = __iip_alloc_pb(s, iip_ops_pkt_alloc(opaque), opaque);
 	{
-		uint16_t tcp_opt_len = __iip_round_up((syn ? 4 + 3 + (IIP_CONF_TCP_OPT_SACK_OK ? 2 : 0) : 0) + (sackbuf ? sackbuf[1] : 0) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0), 4) /* size of tcp option */;
-		if (!iip_ops_nic_feature_offload_tcp_tx_tso(opaque)) {
-			uint16_t l = conn->mss;
-			__iip_assert(conn->path_mtu > (sizeof(struct iip_ip4_hdr) + 0 /* ip option size */)); /* ensured in the setting phase */
-			if (conn->path_mtu - (sizeof(struct iip_ip4_hdr) + 0 /* ip option size */) < conn->mss)
-				l = conn->path_mtu - (sizeof(struct iip_ip4_hdr) + 0 /* ip option size */);
-			if (l <= tcp_opt_len)
-				tcp_opt_len = 0;
-			else
-				l -= tcp_opt_len;
+		if (!iip_ops_nic_feature_offload_tcp_tx_tso(opaque)
+				&& total_payload_len) {
+			uint16_t l = conn->mss - tcp_opt_len;
+			{
+				uint16_t _pmtu = conn->path_mtu - (sizeof(struct iip_ip4_hdr) + 0 /* ip option size */) - sizeof(struct iip_tcp_hdr) - tcp_opt_len;
+				if (_pmtu < l)
+					l = _pmtu;
+			}
 			payload_len = (l < (uint16_t) (total_payload_len - pushed_payload_len) ? l : total_payload_len - pushed_payload_len);
 			if (payload_len != total_payload_len) {
 				__iip_assert((pkt = iip_ops_pkt_clone(_pkt, opaque)) != NULL);
@@ -725,7 +731,7 @@ again:
 		{
 			struct iip_ip4_hdr *ip4h = PB_IP4(out_p->pkt);
 			ip4h->vl = (4 /* ver ipv4 */ << 4) | (sizeof(struct iip_ip4_hdr) / 4 /* len in octet */);
-			ip4h->len_be = __iip_htons(sizeof(struct iip_ip4_hdr) + __iip_round_up(sizeof(struct iip_tcp_hdr) + tcp_opt_len, 4) + payload_len);
+			ip4h->len_be = __iip_htons(sizeof(struct iip_ip4_hdr) + 0 /* ip option size */ + sizeof(struct iip_tcp_hdr) + tcp_opt_len + payload_len);
 			ip4h->tos = conn->diffserv;
 			ip4h->id_be = 0; /* no ip4 fragment */
 			ip4h->off_be = 0; /* no ip4 fragment */
@@ -751,13 +757,13 @@ again:
 			tcph->seq_be = conn->seq_be;
 			tcph->ack_seq_be = conn->ack_seq_be;
 			tcph->flags = 0;
-			PB_TCP_HDR_SET_LEN(out_p->pkt, __iip_round_up(sizeof(struct iip_tcp_hdr) + tcp_opt_len, 4) / 4);
+			PB_TCP_HDR_SET_LEN(out_p->pkt, (sizeof(struct iip_tcp_hdr) + tcp_opt_len) >> 2);
 			PB_TCP_HDR_SET_FLAGS(out_p->pkt, (syn ? 0x02U : 0) | (ack ? 0x10U : 0) | (rst ? 0x04U : 0) | (fin ? 0x01U : 0)
 					| ((pushed_payload_len + payload_len != total_payload_len) ? (tcp_flags & ~0x08U) /* PSH must be only at the end */ : (_pkt && total_payload_len ? (tcp_flags | 0x08U) : tcp_flags)));
 			tcph->win_be = __iip_compute_tcp_win_be(conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used, IIP_CONF_TCP_OPT_MSS, IIP_CONF_TCP_OPT_WS);
 			tcph->urg_p_be = 0;
 			tcph->csum_be = 0;
-			if (tcp_opt_len) {
+			{
 				uint8_t *optbuf = PB_TCP_OPT(out_p->pkt), optlen = 0;
 				{
 					if (syn) { /* mss */
@@ -1324,11 +1330,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																		&& conn->local_port_be == src_be
 																		&& conn->peer_ip4_be == ip4h.dst_be
 																		&& conn->local_ip4_be == ip4h.src_be) {
-																	if ((sizeof(struct iip_ip4_hdr) + 0 /* ip option size */) < __iip_ntohs(next_hop_mtu_be)) {
+																	if ((sizeof(struct iip_ip4_hdr) + sizeof(struct iip_tcp_hdr) + 32 /* room for some work */) < __iip_ntohs(next_hop_mtu_be)) {
 																		conn->path_mtu = __iip_ntohs(next_hop_mtu_be);
 																		IIP_TEST_CALLBACK_ICMP_ERROR();
 																	} else {
-																		/* ignore too small path mtu specification */
+																		IIP_OPS_DEBUG_PRINTF("ignore too small next hop mtu value %u\n", __iip_ntohs(next_hop_mtu_be));
 																	}
 																}
 															}
@@ -3581,13 +3587,20 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										&& conn->head[2][0] /* having unacked data */
 										&& PB_TCP_PAYLOAD_LEN(p->pkt) /* to allow flags-only transmissions */
 										&& !PB_TCP_HDR_HAS_SYN(p->pkt) && !PB_TCP_HDR_HAS_FIN(p->pkt) /* do not stop syn/fin */) {
-									uint16_t l = conn->mss;
-									if (conn->path_mtu < l + sizeof(struct iip_ip4_hdr)) {
-										__iip_assert(conn->path_mtu > (sizeof(struct iip_ip4_hdr) + 0 /* ip option size */)); /* ensured in the setting phase */
-										l = conn->path_mtu - (sizeof(struct iip_ip4_hdr) + 0 /* ip option size */);
-									}
-									if (PB_TCP_OPTLEN(p->pkt) + PB_TCP_PAYLOAD_LEN(p->pkt) < l)
+									if (conn->mss <= PB_TCP_OPTLEN(p->pkt)
+											|| conn->path_mtu <= (sizeof(struct iip_ip4_hdr) + 0 /* ip option size */) + (PB_TCP_HDR_LEN(p->pkt) << 2)) {
+										IIP_OPS_DEBUG_PRINTF("cannot send packets due to too narrow path (mss %u / path mtu %u)\n", conn->mss, conn->path_mtu);
 										break;
+									} else {
+										uint16_t l = conn->mss - PB_TCP_OPTLEN(p->pkt);
+										{
+											uint16_t _pmtu = conn->path_mtu - (sizeof(struct iip_ip4_hdr) + 0 /* ip option size */) - (PB_TCP_HDR_LEN(p->pkt) << 2);
+											if (_pmtu < l)
+												l = _pmtu;
+										}
+										if (PB_TCP_PAYLOAD_LEN(p->pkt) < l)
+											break;
+									}
 								}
 								/* check if flow/congestion control stops tx */
 								if (PB_TCP_PAYLOAD_LEN(p->pkt)) {
