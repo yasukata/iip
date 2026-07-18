@@ -883,8 +883,8 @@ static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_conn *conn,
 	conn->peer_port_be = peer_port_be;
 	conn->seq_be = conn->iss_be = __iip_htonl(s->tcp.iss);
 	____IIP_OPS_TCP_ISS_OFF();
+	conn->acked_seq = __iip_ntohl(conn->seq_be);
 	conn->ack_seq_be = 0;
-	conn->acked_seq = 0xffff; /* to differentiate from ack number for Dup ACK detection */
 	conn->state = state;
 	IIP_TEST_CALLBACK_TCP_STATE_SET();
 	conn->mss = 536; /* default mss of IPv4 */
@@ -2315,7 +2315,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						__iip_q_for_each_safe(conn->head[0], p, _n, 0) {
 							__iip_dequeue_obj(conn->head[0], p, 0);
 							{ /* validate ack number */
-								uint8_t out_of_order = 0;
+								uint8_t out_of_order = 0, valid_ack = 0;
 								if (!PB_TCP_HDR_HAS_SYN(p->pkt) && !PB_TCP_HDR_HAS_FIN(p->pkt) && !PB_TCP_HDR_HAS_RST(p->pkt)) {
 									/*
 									 * ACK number check:
@@ -2367,6 +2367,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																(void *) conn, conn->dup_ack_received, conn->acked_seq, p->tcp.opt.sack_opt_off,
 																((uint32_t) conn->peer_win << conn->ws),
 																__iip_ntohl(conn->seq_be) + PB_TCP_PAYLOAD_LEN(p->pkt) - conn->acked_seq /* len to be filled on the rx side */);
+														if (PB_TCP_HDR_HAS_ACK(p->pkt))
+															valid_ack = 1; /* valid but same */
 													} else { /* pattern A */
 														/*
 														 *        conn->acked_seq              conn->seq_be
@@ -2403,6 +2405,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														s->monitor.tcp.rx_pkt_keepalive++;
 														IIP_OPS_DEBUG_PRINTF("%p Received Keep-alive %u\n", (void *) conn, __iip_ntohl(PB_TCP(p->pkt)->ack_seq_be));
 														/* we will send a keep-alive ack */
+														if (PB_TCP_HDR_HAS_ACK(p->pkt))
+															valid_ack = 1; /* valid but same */
 													} else {
 														/*
 														 *        conn->acked_seq
@@ -2421,10 +2425,18 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											} else {
 												s->monitor.tcp.rx_pkt_winupdate++;
 												IIP_OPS_DEBUG_PRINTF("%p Received Window Update\n", (void *) conn);
+												if (__iip_ntohl(PB_TCP(p->pkt)->ack_seq_be) == conn->acked_seq) { /* pattern B */
+													if (PB_TCP_HDR_HAS_ACK(p->pkt))
+														valid_ack = 1; /* valid but same */
+												} else { /* pattern A */
+													/* invalid */
+												}
 											}
 										} else { /* packet has the payload */
 											if (__iip_ntohl(PB_TCP(p->pkt)->ack_seq_be) == conn->acked_seq) { /* pattern B */
 												/* this is valid */
+												if (PB_TCP_HDR_HAS_ACK(p->pkt))
+													valid_ack = 1; /* valid but same */
 											} else {
 												IIP_OPS_DEBUG_PRINTF("%p Weird, ack to already acked packet (acked %u pkt-ack %u)\n",
 														(void *) conn, conn->acked_seq, __iip_ntohl(PB_TCP(p->pkt)->ack_seq_be));
@@ -2441,56 +2453,67 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										 *                      C
 										 */
 										/* this is valid */
+										if (PB_TCP_HDR_HAS_ACK(p->pkt))
+											valid_ack = 2; /* advance */
+									}
+								} else {
+									if (PB_TCP_HDR_HAS_ACK(p->pkt)) {
+										if (__iip_ntohl(PB_TCP(p->pkt)->ack_seq_be) == conn->acked_seq)
+											valid_ack = 1; /* valid but same */
+										else if (__iip_ntohl(PB_TCP(p->pkt)->ack_seq_be) - conn->acked_seq <= __iip_ntohl(conn->seq_be) - conn->acked_seq)
+											valid_ack = 2; /* advance */
 									}
 								}
 								if (out_of_order != 1) {
-									if (conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED) {
-										if (!out_of_order && __iip_ntohl(PB_TCP(p->pkt)->ack_seq_be) - conn->sent_seq_when_loss_detected < 2147483648U) {
-											conn->flags &= ~__IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
-											IIP_OPS_DEBUG_PRINTF("%p Peer succeed to recover: ACKed by peer %u\n", (void *) conn, conn->acked_seq);
-											{ /* extend timeout */
-												struct pb *_p, *__n;
-												__iip_q_for_each_safe(conn->head[2], _p, __n, 0) {
-													_p->tcp.rto_ms = (conn->rtt.srtt + 4 * conn->rtt.rttvar) * 200 /* tick is incremented every 200 ms by fast timer */;
-													if (!_p->tcp.rto_ms)
-														_p->tcp.rto_ms = 200U;
-													if (60000U /* 60 sec */ < _p->tcp.rto_ms)
-														_p->tcp.rto_ms = 60000U;
-													_p->ts = now_ms;
-												}
-											}
-										}
-									}
-									conn->dup_ack_received = 0;
-									conn->peer_win = __iip_ntohs(PB_TCP(p->pkt)->win_be);
-									if (p->flags & __IIP_PB_FLAGS_OPT_HAS_TS) {
-										conn->ts = p->tcp.opt.ts[0];
-										if (!(conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED) && PB_TCP_HDR_HAS_ACK(p->pkt)) {
-											uint32_t nticks = s->tcp.pkt_ts - p->tcp.opt.ts[1];
-											if (conn->state == __IIP_TCP_STATE_SYN_SENT || conn->state == __IIP_TCP_STATE_SYN_RECVD) {
-												conn->rtt.srtt = nticks;
-												conn->rtt.rttvar = nticks / 2;
-											} else {
-												uint32_t delta = (nticks < conn->rtt.srtt ? conn->rtt.srtt - nticks : nticks - conn->rtt.srtt);
-												if (nticks < conn->rtt.srtt)
-													conn->rtt.srtt -= delta / 8;
-												else
-													conn->rtt.srtt += delta / 8;
-												{
-													uint32_t d2 = (delta < conn->rtt.rttvar ? conn->rtt.rttvar - delta : delta - conn->rtt.rttvar);
-													if (delta < conn->rtt.rttvar)
-														conn->rtt.rttvar -= d2 / 4;
-													else
-														conn->rtt.rttvar += d2 / 4;
-												}
-											}
-										}
-									}
-									if (PB_TCP_HDR_HAS_ACK(p->pkt))
+									if (valid_ack == 2 /* advance */) {
 										conn->retrans_cnt = 0;
-									conn->ack_seq_be = __iip_htonl(__iip_ntohl(PB_TCP(p->pkt)->seq_be) + PB_TCP_HDR_HAS_SYN(p->pkt) + PB_TCP_HDR_HAS_FIN(p->pkt) + PB_TCP_PAYLOAD_LEN(p->pkt) - p->tcp.dec_tail);
-									if (!out_of_order)
 										conn->acked_seq = __iip_ntohl(PB_TCP(p->pkt)->ack_seq_be);
+										conn->dup_ack_received = 0;
+										if (conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED) {
+											if (__iip_ntohl(PB_TCP(p->pkt)->ack_seq_be) - conn->sent_seq_when_loss_detected < 2147483648U) {
+												conn->flags &= ~__IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
+												IIP_OPS_DEBUG_PRINTF("%p Peer succeed to recover: ACKed by peer %u\n", (void *) conn, conn->acked_seq);
+												{ /* extend timeout */
+													struct pb *_p, *__n;
+													__iip_q_for_each_safe(conn->head[2], _p, __n, 0) {
+														_p->tcp.rto_ms = (conn->rtt.srtt + 4 * conn->rtt.rttvar) * 200 /* tick is incremented every 200 ms by fast timer */;
+														if (!_p->tcp.rto_ms)
+															_p->tcp.rto_ms = 200U;
+														if (60000U /* 60 sec */ < _p->tcp.rto_ms)
+															_p->tcp.rto_ms = 60000U;
+														_p->ts = now_ms;
+													}
+												}
+											}
+										}
+									}
+									if (!out_of_order && valid_ack /* advance or same */) {
+										conn->peer_win = __iip_ntohs(PB_TCP(p->pkt)->win_be);
+										if (p->flags & __IIP_PB_FLAGS_OPT_HAS_TS) {
+											conn->ts = p->tcp.opt.ts[0];
+											if (!(conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED) && PB_TCP_HDR_HAS_ACK(p->pkt)) {
+												uint32_t nticks = s->tcp.pkt_ts - p->tcp.opt.ts[1];
+												if (conn->state == __IIP_TCP_STATE_SYN_SENT || conn->state == __IIP_TCP_STATE_SYN_RECVD) {
+													conn->rtt.srtt = nticks;
+													conn->rtt.rttvar = nticks / 2;
+												} else {
+													uint32_t delta = (nticks < conn->rtt.srtt ? conn->rtt.srtt - nticks : nticks - conn->rtt.srtt);
+													if (nticks < conn->rtt.srtt)
+														conn->rtt.srtt -= delta / 8;
+													else
+														conn->rtt.srtt += delta / 8;
+													{
+														uint32_t d2 = (delta < conn->rtt.rttvar ? conn->rtt.rttvar - delta : delta - conn->rtt.rttvar);
+														if (delta < conn->rtt.rttvar)
+															conn->rtt.rttvar -= d2 / 4;
+														else
+															conn->rtt.rttvar += d2 / 4;
+													}
+												}
+											}
+										}
+									}
+									conn->ack_seq_be = __iip_htonl(__iip_ntohl(PB_TCP(p->pkt)->seq_be) + PB_TCP_HDR_HAS_SYN(p->pkt) + PB_TCP_HDR_HAS_FIN(p->pkt) + PB_TCP_PAYLOAD_LEN(p->pkt) - p->tcp.dec_tail);
 									/*IIP_OPS_DEBUG_PRINTF("tcp-in I src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
 									  (PB_IP4(p->pkt)->src_be >>  0) & 0x0ff,
 									  (PB_IP4(p->pkt)->src_be >>  8) & 0x0ff,
