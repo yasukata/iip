@@ -2465,28 +2465,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									}
 								}
 								if (out_of_order != 1) {
-									if (valid_ack == 2 /* advance */) {
-										conn->retrans_cnt = 0;
-										conn->acked_seq = __iip_ntohl(PB_TCP(p->pkt)->ack_seq_be);
-										conn->dup_ack_received = 0;
-										if (conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED) {
-											if (__iip_ntohl(PB_TCP(p->pkt)->ack_seq_be) - conn->sent_seq_when_loss_detected < 2147483648U) {
-												conn->flags &= ~__IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
-												IIP_OPS_DEBUG_PRINTF("%p Peer succeed to recover: ACKed by peer %u\n", (void *) conn, conn->acked_seq);
-												{ /* extend timeout */
-													struct pb *_p, *__n;
-													__iip_q_for_each_safe(conn->head[2], _p, __n, 0) {
-														_p->tcp.rto_ms = (conn->rtt.srtt + 4 * conn->rtt.rttvar) * 200 /* tick is incremented every 200 ms by fast timer */;
-														if (!_p->tcp.rto_ms)
-															_p->tcp.rto_ms = 200U;
-														if (60000U /* 60 sec */ < _p->tcp.rto_ms)
-															_p->tcp.rto_ms = 60000U;
-														_p->ts = now_ms;
-													}
-												}
-											}
-										}
-									}
 									if (!out_of_order && valid_ack /* advance or same */) {
 										conn->peer_win = __iip_ntohs(PB_TCP(p->pkt)->win_be);
 										if (p->flags & __IIP_PB_FLAGS_OPT_HAS_TS) {
@@ -2508,6 +2486,28 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															conn->rtt.rttvar -= d2 / 4;
 														else
 															conn->rtt.rttvar += d2 / 4;
+													}
+												}
+											}
+										}
+									}
+									if (valid_ack == 2 /* advance */) {
+										conn->retrans_cnt = 0;
+										conn->acked_seq = __iip_ntohl(PB_TCP(p->pkt)->ack_seq_be);
+										conn->dup_ack_received = 0;
+										if (conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED) {
+											if (__iip_ntohl(PB_TCP(p->pkt)->ack_seq_be) - conn->sent_seq_when_loss_detected < 2147483648U) {
+												conn->flags &= ~__IIP_TCP_CONN_FLAGS_PEER_RX_FAILED;
+												IIP_OPS_DEBUG_PRINTF("%p Peer succeed to recover: ACKed by peer %u\n", (void *) conn, conn->acked_seq);
+												{ /* extend timeout */
+													struct pb *_p, *__n;
+													__iip_q_for_each_safe(conn->head[2], _p, __n, 0) {
+														_p->tcp.rto_ms = (conn->rtt.srtt + 4 * conn->rtt.rttvar) * 200 /* tick is incremented every 200 ms by fast timer */;
+														if (!_p->tcp.rto_ms)
+															_p->tcp.rto_ms = 200U;
+														if (60000U /* 60 sec */ < _p->tcp.rto_ms)
+															_p->tcp.rto_ms = 60000U;
+														_p->ts = now_ms;
 													}
 												}
 											}
