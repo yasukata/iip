@@ -44,9 +44,6 @@
 #ifndef IIP_CONF_TCP_MSL_SEC
 #define IIP_CONF_TCP_MSL_SEC		(1) /* maximum segment lifetime, in second : RFC 793 recommends 2 min, but we can choose as we wish */
 #endif
-#ifndef IIP_CONF_TCP_RETRANS_CNT
-#define IIP_CONF_TCP_RETRANS_CNT	(4) /* maximum retransmission count */
-#endif
 #ifndef IIP_CONF_TCP_SSTHRESH_INIT
 #define IIP_CONF_TCP_SSTHRESH_INIT	(256)
 #endif
@@ -484,6 +481,7 @@ struct iip_tcp_conn {
 	uint8_t dup_ack_received;
 	uint32_t time_wait_ts_ms;
 	uint32_t retrans_cnt;
+	uint32_t retrans_r2;
 
 	uint8_t flags;
 #define __IIP_TCP_CONN_FLAGS_NAGLE_DISABLED	(1U << 4) /* TODO: API for this setting is not made yet */
@@ -910,6 +908,7 @@ static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_conn *conn,
 	IIP_TEST_CALLBACK_TCP_STATE_SET();
 	conn->mss = 536; /* default mss of IPv4 */
 	conn->path_mtu = 0xffff;
+	conn->retrans_r2 = 4; /* XXX: time to close for syn has to be longer than 3 minutes */
 	conn->rx_buf_cnt.limit = IIP_CONF_TCP_RX_BUF_CNT;
 	conn->cc.win = IIP_CONF_TCP_WIN_INIT;
 	conn->cc.ssthresh = IIP_CONF_TCP_SSTHRESH_INIT;
@@ -3420,7 +3419,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 					if (!conn->head[3][0]) { /* not in recovery mode */
 						if (conn->head[2][0]) {
 							if (conn->head[2][0]->tcp.rto_ms < now_ms - conn->head[2][0]->ts) { /* timeout and do retransmission */
-								if (conn->retrans_cnt < IIP_CONF_TCP_RETRANS_CNT) {
+								if (conn->retrans_cnt < conn->retrans_r2) {
 									void *cp;
 									if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
 										if (iip_ops_pkt_scatter_gather_chain_get_next(conn->head[2][0]->pkt, opaque)) {
@@ -3464,10 +3463,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										conn->head[2][0]->tcp.rto_ms = 60000U;
 									conn->retrans_cnt++;
 									s->monitor.tcp.tx_pkt_re++;
-#if IIP_CONF_TCP_RETRANS_CNT < 2
-#error "invalid IIP_CONF_TCP_RETRANS_CNT"
-#endif
-									if (conn->retrans_cnt == IIP_CONF_TCP_RETRANS_CNT - 1) {
+									if (conn->retrans_cnt == conn->retrans_r2) {
 										/* ipv4 negative advice */
 										iip_arp_request(s, conn->local_mac, conn->local_ip4_be, conn->gw_ip4_be, opaque);
 										IIP_TEST_CALLBACK_TCP_IP4_NEGATIVE_ADVICE();
@@ -3492,7 +3488,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									__iip_dequeue_obj(s->tcp.conns_ht[(conn->peer_ip4_be + conn->local_port_be + conn->peer_port_be) % IIP_CONF_TCP_CONN_HT_SIZE], conn, 1);
 									__iip_dequeue_obj(s->tcp.conns, conn, 0);
 									__iip_enqueue_obj(s->tcp.closed_conns, conn, 0);
-									IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_CLOSED because of timeout after %u retransmission\n", (void *) conn, IIP_CONF_TCP_RETRANS_CNT);
+									IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_CLOSED because of timeout after %u retransmission\n", (void *) conn, conn->retrans_r2);
 									continue;
 								}
 							}
