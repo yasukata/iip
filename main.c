@@ -3645,10 +3645,81 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											((uint32_t) conn->peer_win << conn->ws),
 											(__iip_ntohl(PB_TCP(p->pkt)->seq_be) + (uint32_t) PB_TCP_PAYLOAD_LEN(p->pkt)) - conn->acked_seq,
 											__iip_ntohl(PB_TCP(p->pkt)->seq_be), (uint32_t) PB_TCP_PAYLOAD_LEN(p->pkt), conn->acked_seq);*/
-									if (((uint32_t) conn->peer_win << conn->ws) < (__iip_ntohl(PB_TCP(p->pkt)->seq_be) + (uint32_t) PB_TCP_PAYLOAD_LEN(p->pkt)) + PB_TCP_HDR_HAS_FIN(p->pkt) - conn->acked_seq /* len to be filled on the rx side */) {
-										/* no space to be sent on the rx side, postpone tx */
-										s->monitor.tcp.fc_stop++;
-										break;
+									{
+										uint32_t space = 0;
+										if (((uint32_t) conn->peer_win << conn->ws) > __iip_ntohl(PB_TCP(p->pkt)->seq_be) - conn->acked_seq)
+											space = ((uint32_t) conn->peer_win << conn->ws) - (__iip_ntohl(PB_TCP(p->pkt)->seq_be) - conn->acked_seq);
+										if (!space) {
+											s->monitor.tcp.fc_stop++;
+											break; /* stop tx */
+										} else if (space < (uint32_t) PB_TCP_PAYLOAD_LEN(p->pkt) + PB_TCP_HDR_HAS_SYN(p->pkt) + PB_TCP_HDR_HAS_FIN(p->pkt)) {
+											void *new_pkt = iip_ops_pkt_alloc(opaque);
+											__iip_assert(new_pkt);
+											{ /* TODO: boundary check */
+												void *__pkt = p->pkt;
+												uint16_t off[2];
+												off[0] = off[1] = 0;
+												{
+													uint16_t l = 0, ll = iip_ops_l2_hdr_len(p->pkt, opaque) + (PB_IP4(p->pkt)->vl & 0x0f) * 4 + PB_TCP_HDR_LEN(p->pkt) * 4 + (space - PB_TCP_HDR_HAS_SYN(p->pkt));
+													while (__pkt && l < ll) {
+														void *__next = __pkt;
+														uint16_t _l = ll - l;
+														if (iip_ops_pkt_get_len(__pkt, opaque) < _l) {
+															_l = iip_ops_pkt_get_len(__pkt, opaque);
+															__next = iip_ops_pkt_scatter_gather_chain_get_next(__pkt, opaque);
+														}
+														__iip_memcpy(&((uint8_t *) iip_ops_pkt_get_data(new_pkt, opaque))[off[0]], &((uint8_t *) iip_ops_pkt_get_data(__pkt, opaque))[off[1]], _l);
+														off[0] += _l;
+														off[1] += _l;
+														l += _l;
+														if (__pkt != __next) {
+															__pkt = __next;
+															off[1] = 0;
+														}
+													}
+													if (l < ll) {
+														IIP_OPS_DEBUG_PRINTF("invalid tx data\n");
+														iip_ops_pkt_free(new_pkt, opaque);
+														break;
+													}
+													iip_ops_pkt_set_len(new_pkt, ll, opaque);
+												}
+											}
+											PB_IP4(new_pkt)->len_be = __iip_htons((PB_IP4(p->pkt)->vl & 0x0f) * 4 + PB_TCP_HDR_LEN(p->pkt) * 4 + space - PB_TCP_HDR_HAS_SYN(p->pkt));
+											PB_IP4(new_pkt)->csum_be = 0;
+											uint8_t *_b[1]; _b[0] = (uint8_t *) PB_IP4(new_pkt);
+											{
+												uint16_t _l[1]; _l[0] = (uint16_t) ((PB_IP4(new_pkt)->vl & 0x0f) * 4);
+												PB_IP4(new_pkt)->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1, 0));
+											}
+											PB_TCP(new_pkt)->flags &= ~(__iip_htons(0x01U /* fin */ | (space == (uint32_t) PB_TCP_PAYLOAD_LEN(p->pkt) + (uint32_t) PB_TCP_HDR_HAS_SYN(p->pkt) ? 0 : 0x08U /* psh */)));
+											PB_TCP(new_pkt)->csum_be = 0;
+											{
+												struct iip_l4_ip4_pseudo_hdr _pseudo;
+												_pseudo.ip4_src_be = conn->local_ip4_be;
+												_pseudo.ip4_dst_be = conn->peer_ip4_be;
+												_pseudo.pad = 0;
+												_pseudo.proto = 6;
+												_pseudo.len_be = __iip_htons(PB_TCP_HDR_LEN(new_pkt) * 4 + space - PB_TCP_HDR_HAS_SYN(p->pkt));
+												{
+													uint8_t *_b[3]; _b[0] = (uint8_t *) &_pseudo; _b[1] = (uint8_t *) PB_TCP(new_pkt); _b[2] = PB_TCP_PAYLOAD(new_pkt);
+													{
+														uint16_t _l[3]; _l[0] = sizeof(_pseudo); _l[1] = (uint16_t) (PB_TCP_HDR_LEN(new_pkt) * 4); _l[2] = space - PB_TCP_HDR_HAS_SYN(p->pkt);
+														PB_TCP(new_pkt)->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 3, 0));
+													}
+												}
+											}
+											{
+												struct pb *new_p = __iip_alloc_pb(s, new_pkt, opaque);
+												__iip_assert(new_p);
+												new_p->debug.tcp.flags.retransmit = p->debug.tcp.flags.retransmit;
+												new_p->prev[0] = NULL;
+												new_p->next[0] = p;
+												p->prev[0] = new_p;
+												queue[0] = new_p;
+												p = new_p;
+											}
+										}
 									}
 								}
 								__iip_dequeue_obj(queue, p, 0);
