@@ -92,6 +92,9 @@
 #ifndef IIP_EX_OPS_TCP_IP_NEGATIVE_ADVICE
 #define IIP_EX_OPS_TCP_IP_NEGATIVE_ADVICE(_s, _handle, _tcp_opaque, _o) do { } while (0)
 #endif
+#ifndef IIP_EX_OPS_TCP_URGENT
+#define IIP_EX_OPS_TCP_URGENT(_s, _handle, _tcp_opaque, _p, _o) do { } while (0)
+#endif
 
 /* test callback */
 
@@ -438,6 +441,7 @@ struct pb {
 #define __IIP_PB_FLAGS_OPT_HAS_TS		(1U << 3)
 #define __IIP_PB_FLAGS_SACKED			(1U << 4)
 #define __IIP_PB_FLAGS_SACK_REPLY_SEND_ALL	(1U << 5)
+#define __IIP_PB_FLAGS_URGENT	(1U << 6)
 	void *orig_pkt; /* for no scatter gather mode */
 
 	uint32_t ts;
@@ -509,8 +513,11 @@ struct iip_tcp_conn {
 	uint32_t time_wait_ts_ms;
 	uint32_t retrans_cnt;
 	uint32_t retrans_r2;
+	uint32_t urgent_ptr;
 
 	uint8_t flags;
+#define __IIP_TCP_CONN_FLAGS_ACK_SENT	(1U << 2)
+#define __IIP_TCP_CONN_FLAGS_URGENT_SET	(1U << 3)
 #define __IIP_TCP_CONN_FLAGS_NAGLE_DISABLED	(1U << 4)
 #define __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED	(1U << 5)
 #define __IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN (1U << 6)
@@ -875,6 +882,9 @@ again:
 		if (1 < frag_cnt)
 			out_p->flags |= __IIP_PB_FLAGS_NEED_ACK_CB_PKT_FREE;
 	}
+
+	if (ack)
+		conn->flags |= __IIP_TCP_CONN_FLAGS_ACK_SENT;
 
 	return 0;
 }
@@ -2229,6 +2239,36 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													}
 													__iip_enqueue_obj(conn->head[0], _p, 0);
 													s->monitor.tcp.rx_pkt++;
+													if (PB_TCP_HDR_HAS_URG(_p->pkt)
+															&& !PB_TCP_HDR_HAS_RST(_p->pkt)) {
+														switch (conn->state) {
+														case __IIP_TCP_STATE_FIN_WAIT1:
+														case __IIP_TCP_STATE_FIN_WAIT2:
+														case __IIP_TCP_STATE_ESTABLISHED:
+														case __IIP_TCP_STATE_CLOSE_WAIT:
+														case __IIP_TCP_STATE_SYN_RECVD:
+															{
+																uint32_t up = __iip_ntohl(PB_TCP(_p->pkt)->seq_be) + __iip_ntohs(PB_TCP(_p->pkt)->urg_p_be);
+																if ((up != conn->seq_next_expected
+																			&& up - conn->seq_next_expected < 2147483648U)
+																		&& (((conn->flags & __IIP_TCP_CONN_FLAGS_URGENT_SET
+																					&& up - conn->urgent_ptr < 2147483648U
+																					&& up != conn->urgent_ptr))
+																			|| !(conn->flags & __IIP_TCP_CONN_FLAGS_URGENT_SET))) {
+																	if (conn->state == __IIP_TCP_STATE_SYN_RECVD)
+																		_p->flags |= __IIP_PB_FLAGS_URGENT;
+																	else {
+																		conn->flags |= __IIP_TCP_CONN_FLAGS_URGENT_SET;
+																		conn->urgent_ptr = up;
+																		IIP_EX_OPS_TCP_URGENT(s, conn, conn->opaque, _p->pkt, opaque);
+																	}
+																}
+															}
+															break;
+														default:
+															break;
+														}
+													}
 													conn->seq_next_expected += PB_TCP_HDR_HAS_SYN(_p->pkt) + PB_TCP_HDR_HAS_FIN(_p->pkt) + PB_TCP_PAYLOAD_LEN(_p->pkt) - _p->tcp.dec_tail - _p->tcp.inc_head;
 													__iip_assert(conn->seq_next_expected == __iip_ntohl(PB_TCP(_p->pkt)->seq_be) + PB_TCP_HDR_HAS_SYN(_p->pkt) + PB_TCP_HDR_HAS_FIN(_p->pkt) + PB_TCP_PAYLOAD_LEN(_p->pkt) - _p->tcp.dec_tail);
 													if (conn->head[4][0]) {
@@ -2594,149 +2634,181 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											IIP_OPS_DEBUG_PRINTF("%p: RST - TCP_STATE_CLOSED\n", (void *) conn);
 										}
 									} else {
-										uint8_t is_connected = 0, is_accepted = 0;
 										uint8_t syn = 0, ack = 0, fin = 0, rst = 0;
 										switch (conn->state) {
-											/* client */
-											case __IIP_TCP_STATE_FIN_WAIT1:
-												if (PB_TCP_HDR_HAS_ACK(p->pkt)) {
-													if (PB_TCP(p->pkt)->ack_seq_be == conn->fin_ack_seq_be) {
-														if (PB_TCP_HDR_HAS_FIN(p->pkt)) {
-															ack = 1;
-															conn->state = __IIP_TCP_STATE_TIME_WAIT;
-															IIP_TEST_CALLBACK_TCP_STATE_SET();
-															conn->time_wait_ts_ms = now_ms;
-															IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT1 - TCP_STATE_TIME_WAIT\n", (void *) conn);
-														} else {
-															conn->state = __IIP_TCP_STATE_FIN_WAIT2;
-															IIP_TEST_CALLBACK_TCP_STATE_SET();
-															IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT1 - TCP_STATE_FIN_WAIT2\n", (void *) conn);
-														}
-													} else if (PB_TCP_HDR_HAS_FIN(p->pkt)) {
-														/*
-														 * this is the case where the peer also sent fin mostly at the same time,
-														 * and especially here is for close initiators sending fin-ack
-														 * rather than than only fin
-														 */
+										/* client */
+										case __IIP_TCP_STATE_FIN_WAIT1:
+											if (PB_TCP_HDR_HAS_ACK(p->pkt)) {
+												if (PB_TCP(p->pkt)->ack_seq_be == conn->fin_ack_seq_be) {
+													if (PB_TCP_HDR_HAS_FIN(p->pkt)) {
 														ack = 1;
-														rst = 1;
 														conn->state = __IIP_TCP_STATE_TIME_WAIT;
 														IIP_TEST_CALLBACK_TCP_STATE_SET();
 														conn->time_wait_ts_ms = now_ms;
 														IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT1 - TCP_STATE_TIME_WAIT\n", (void *) conn);
-													}
-												} else {
-													if (PB_TCP_HDR_HAS_FIN(p->pkt)) {
-														ack = 1;
-														conn->state = __IIP_TCP_STATE_CLOSING;
+													} else {
+														conn->state = __IIP_TCP_STATE_FIN_WAIT2;
 														IIP_TEST_CALLBACK_TCP_STATE_SET();
-														IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT1 - TCP_STATE_CLOSING\n", (void *) conn);
+														IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT1 - TCP_STATE_FIN_WAIT2\n", (void *) conn);
 													}
+												} else if (PB_TCP_HDR_HAS_FIN(p->pkt)) {
+													/*
+													 * this is the case where the peer also sent fin mostly at the same time,
+													 * and especially here is for close initiators sending fin-ack
+													 * rather than than only fin
+													 */
+													ack = 1;
+													rst = 1;
+													conn->state = __IIP_TCP_STATE_TIME_WAIT;
+													IIP_TEST_CALLBACK_TCP_STATE_SET();
+													conn->time_wait_ts_ms = now_ms;
+													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT1 - TCP_STATE_TIME_WAIT\n", (void *) conn);
 												}
-												break;
-											case __IIP_TCP_STATE_FIN_WAIT2:
+											} else {
 												if (PB_TCP_HDR_HAS_FIN(p->pkt)) {
 													ack = 1;
-													conn->state = __IIP_TCP_STATE_TIME_WAIT;
+													conn->state = __IIP_TCP_STATE_CLOSING;
 													IIP_TEST_CALLBACK_TCP_STATE_SET();
-													conn->time_wait_ts_ms = now_ms;
-													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT2 - TCP_STATE_TIME_WAIT\n", (void *) conn);
+													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT1 - TCP_STATE_CLOSING\n", (void *) conn);
 												}
-												break;
-											case __IIP_TCP_STATE_CLOSING:
-												if (PB_TCP_HDR_HAS_ACK(p->pkt)) {
-													conn->state = __IIP_TCP_STATE_TIME_WAIT;
-													IIP_TEST_CALLBACK_TCP_STATE_SET();
-													conn->time_wait_ts_ms = now_ms;
-													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_CLOSING - TCP_STATE_TIME_WAIT\n", (void *) conn);
-												}
-												break;
-											case __IIP_TCP_STATE_TIME_WAIT:
-												/* wait 2 MSL timeout */
-												break;
-											case __IIP_TCP_STATE_SYN_SENT:
-												if (PB_TCP_HDR_HAS_SYN(p->pkt)) {
-													if (PB_TCP_HDR_HAS_ACK(p->pkt)) {
-														ack = 1;
-														conn->state = __IIP_TCP_STATE_ESTABLISHED;
-														IIP_TEST_CALLBACK_TCP_STATE_SET();
-														is_connected = 1;
-														IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_SYN_SENT - TCP_STATE_ESTABLISHED\n", (void *) conn);
-													} else { /* simultaneous open */
-														syn = ack = 1;
-														conn->flags |= __IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN; /* to trigger connect callback when accepted */
-														conn->seq_be = conn->iss_be;
-														conn->state = __IIP_TCP_STATE_SYN_RECVD;
-														IIP_TEST_CALLBACK_TCP_STATE_SET();
-														IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_SYN_SENT - TCP_STATE_SYN_RECVD\n", (void *) conn);
-													}
-												}
-												break;
-												/* server */
-											case __IIP_TCP_STATE_SYN_RECVD:
+											}
+											break;
+										case __IIP_TCP_STATE_FIN_WAIT2:
+											if (PB_TCP_HDR_HAS_FIN(p->pkt)) {
+												ack = 1;
+												conn->state = __IIP_TCP_STATE_TIME_WAIT;
+												IIP_TEST_CALLBACK_TCP_STATE_SET();
+												conn->time_wait_ts_ms = now_ms;
+												IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT2 - TCP_STATE_TIME_WAIT\n", (void *) conn);
+											}
+											break;
+										case __IIP_TCP_STATE_CLOSING:
+											if (PB_TCP_HDR_HAS_ACK(p->pkt)) {
+												conn->state = __IIP_TCP_STATE_TIME_WAIT;
+												IIP_TEST_CALLBACK_TCP_STATE_SET();
+												conn->time_wait_ts_ms = now_ms;
+												IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_CLOSING - TCP_STATE_TIME_WAIT\n", (void *) conn);
+											}
+											break;
+										case __IIP_TCP_STATE_TIME_WAIT:
+											/* wait 2 MSL timeout */
+											break;
+										case __IIP_TCP_STATE_SYN_SENT:
+											if (PB_TCP_HDR_HAS_SYN(p->pkt)) {
 												if (PB_TCP_HDR_HAS_ACK(p->pkt)) {
 													ack = 1;
 													conn->state = __IIP_TCP_STATE_ESTABLISHED;
 													IIP_TEST_CALLBACK_TCP_STATE_SET();
-													is_accepted = 1;
-													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_SYN_RECVD - TCP_STATE_ESTABLISHED\n", (void *) conn);
-												} else if (PB_TCP_HDR_HAS_SYN(p->pkt)) {
+													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_SYN_SENT - TCP_STATE_ESTABLISHED\n", (void *) conn);
+													{
+														conn->flags &= ~__IIP_TCP_CONN_FLAGS_ACK_SENT;
+														conn->opaque = iip_ops_tcp_connected(s, conn, p->pkt, opaque);
+														if (conn->flags & __IIP_TCP_CONN_FLAGS_ACK_SENT)
+															ack = 0;
+													}
+												} else { /* simultaneous open */
 													syn = ack = 1;
+													conn->flags |= __IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN; /* to trigger connect callback when accepted */
 													conn->seq_be = conn->iss_be;
+													conn->state = __IIP_TCP_STATE_SYN_RECVD;
+													IIP_TEST_CALLBACK_TCP_STATE_SET();
+													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_SYN_SENT - TCP_STATE_SYN_RECVD\n", (void *) conn);
+												}
+											}
+											break;
+											/* server */
+										case __IIP_TCP_STATE_SYN_RECVD:
+											if (PB_TCP_HDR_HAS_ACK(p->pkt)) {
+												ack = 1;
+												conn->state = __IIP_TCP_STATE_ESTABLISHED;
+												IIP_TEST_CALLBACK_TCP_STATE_SET();
+												IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_SYN_RECVD - TCP_STATE_ESTABLISHED\n", (void *) conn);
+												if (conn->flags & __IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN) {
+													conn->flags &= ~__IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN;
+													IIP_OPS_DEBUG_PRINTF("connected peer port %u\n", __iip_ntohs(PB_TCP(p->pkt)->src_be));
+													{
+														conn->flags &= ~__IIP_TCP_CONN_FLAGS_ACK_SENT;
+														conn->opaque = iip_ops_tcp_connected(s, conn, p->pkt, opaque);
+														if (conn->flags & __IIP_TCP_CONN_FLAGS_ACK_SENT)
+															ack = 0;
+													}
+												} else {
+													IIP_OPS_DEBUG_PRINTF("accept peer port %u\n", __iip_ntohs(PB_TCP(p->pkt)->src_be));
+													{
+														conn->flags &= ~__IIP_TCP_CONN_FLAGS_ACK_SENT;
+														conn->opaque = iip_ops_tcp_accepted(s, conn, p->pkt, opaque);
+														if (conn->flags & __IIP_TCP_CONN_FLAGS_ACK_SENT)
+															ack = 0;
+													}
+												}
+												if (p->flags & __IIP_PB_FLAGS_URGENT) {
+													uint32_t up = __iip_ntohl(PB_TCP(p->pkt)->seq_be) + __iip_ntohs(PB_TCP(p->pkt)->urg_p_be);
+													if ((conn->flags & __IIP_TCP_CONN_FLAGS_URGENT_SET
+																	&& up - conn->urgent_ptr < 2147483648U
+																	&& up != conn->urgent_ptr)
+															|| !(conn->flags & __IIP_TCP_CONN_FLAGS_URGENT_SET)) {
+														conn->flags |= __IIP_TCP_CONN_FLAGS_URGENT_SET;
+														conn->urgent_ptr = up;
+														IIP_EX_OPS_TCP_URGENT(s, conn, conn->opaque, p->pkt, opaque);
+													}
+													p->flags &= ~__IIP_PB_FLAGS_URGENT;
+												}
+												if (conn->state == __IIP_TCP_STATE_FIN_WAIT1 /* updated by close called in callback */
+														&& PB_TCP_HDR_HAS_FIN(p->pkt)) {
+													conn->state = __IIP_TCP_STATE_CLOSING;
+													IIP_TEST_CALLBACK_TCP_STATE_SET();
+													IIP_OPS_DEBUG_PRINTF("%p: __IIP_TCP_STATE_FIN_WAIT1 - __IIP_TCP_STATE_CLOSING\n", (void *) conn);
 													break;
-												} else
-													break;
-												/* fall through */
-											case __IIP_TCP_STATE_ESTABLISHED:
-												if (PB_TCP_HDR_HAS_FIN(p->pkt)) {
-													ack = 1;
-													conn->state = __IIP_TCP_STATE_CLOSE_WAIT;
-													IIP_TEST_CALLBACK_TCP_STATE_SET();
-													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_ESTABLISHED - TCP_STATE_CLOSE_WAIT\n", (void *) conn);
-												} else if (PB_TCP_HDR_HAS_ACK(p->pkt) && PB_TCP_PAYLOAD_LEN(p->pkt)) {
-													conn->rx_buf_cnt.used++;
-													iip_ops_tcp_payload(s, conn, p->pkt, conn->opaque, p->tcp.inc_head, p->tcp.dec_tail, opaque);
 												}
-												/* fall through */
-											case __IIP_TCP_STATE_CLOSE_WAIT:
-												if (PB_TCP_HDR_HAS_FIN(p->pkt)) {
-													fin = 1;
-													conn->state = __IIP_TCP_STATE_LAST_ACK;
-													IIP_TEST_CALLBACK_TCP_STATE_SET();
-													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_CLOSE_WAIT - TCP_STATE_LAST_ACK\n", (void *) conn);
-												}
+											} else if (PB_TCP_HDR_HAS_SYN(p->pkt)) {
+												syn = ack = 1;
+												conn->seq_be = conn->iss_be;
 												break;
-											case __IIP_TCP_STATE_LAST_ACK:
-												if (PB_TCP_HDR_HAS_ACK(p->pkt) && PB_TCP(p->pkt)->ack_seq_be == conn->fin_ack_seq_be) {
-													conn->state = __IIP_TCP_STATE_CLOSED;
-													IIP_TEST_CALLBACK_TCP_STATE_SET();
-													__iip_dequeue_obj(s->tcp.conns_ht[(conn->peer_ip4_be + conn->local_port_be + conn->peer_port_be) % IIP_CONF_TCP_CONN_HT_SIZE], conn, 1);
-													__iip_dequeue_obj(s->tcp.conns, conn, 0);
-													__iip_enqueue_obj(s->tcp.closed_conns, conn, 0);
-													IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_LAST_ACK - TCP_STATE_CLOSED\n", (void *) conn);
-												}
+											} else
 												break;
-											case __IIP_TCP_STATE_CLOSED:
-												IIP_OPS_DEBUG_PRINTF("%p: got packet although the connection is closed\n", (void *) conn);
-												/* do nothing */
-												break;
-											default:
-												__iip_assert(0);
-												break;
+											/* fall through */
+										case __IIP_TCP_STATE_ESTABLISHED:
+											if (PB_TCP_HDR_HAS_FIN(p->pkt)) {
+												ack = 1;
+												conn->state = __IIP_TCP_STATE_CLOSE_WAIT;
+												IIP_TEST_CALLBACK_TCP_STATE_SET();
+												IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_ESTABLISHED - TCP_STATE_CLOSE_WAIT\n", (void *) conn);
+											} else if (conn->state == __IIP_TCP_STATE_ESTABLISHED /* state can be updated in callback before fall through */
+													&& PB_TCP_HDR_HAS_ACK(p->pkt) && PB_TCP_PAYLOAD_LEN(p->pkt)) {
+												conn->rx_buf_cnt.used++;
+												iip_ops_tcp_payload(s, conn, p->pkt, conn->opaque, p->tcp.inc_head, p->tcp.dec_tail, opaque);
+											}
+											/* fall through */
+										case __IIP_TCP_STATE_CLOSE_WAIT:
+											if (PB_TCP_HDR_HAS_FIN(p->pkt)) {
+												fin = 1;
+												conn->state = __IIP_TCP_STATE_LAST_ACK;
+												IIP_TEST_CALLBACK_TCP_STATE_SET();
+												IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_CLOSE_WAIT - TCP_STATE_LAST_ACK\n", (void *) conn);
+											}
+											break;
+										case __IIP_TCP_STATE_LAST_ACK:
+											if (PB_TCP_HDR_HAS_ACK(p->pkt) && PB_TCP(p->pkt)->ack_seq_be == conn->fin_ack_seq_be) {
+												conn->state = __IIP_TCP_STATE_CLOSED;
+												IIP_TEST_CALLBACK_TCP_STATE_SET();
+												__iip_dequeue_obj(s->tcp.conns_ht[(conn->peer_ip4_be + conn->local_port_be + conn->peer_port_be) % IIP_CONF_TCP_CONN_HT_SIZE], conn, 1);
+												__iip_dequeue_obj(s->tcp.conns, conn, 0);
+												__iip_enqueue_obj(s->tcp.closed_conns, conn, 0);
+												IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_LAST_ACK - TCP_STATE_CLOSED\n", (void *) conn);
+											}
+											break;
+										case __IIP_TCP_STATE_CLOSED:
+											IIP_OPS_DEBUG_PRINTF("%p: got packet although the connection is closed\n", (void *) conn);
+											/* do nothing */
+											break;
+										default:
+											__iip_assert(0);
+											break;
 										}
 										if (syn || ack || fin || rst) {
 											__iip_tcp_push(s, conn, NULL, syn, ack, fin, rst, 0, NULL, opaque);
 											if (fin)
 												conn->fin_ack_seq_be = conn->seq_be;
-										}
-										/* execute callback after establishing the connection */
-										if (is_connected || (is_accepted && (conn->flags & __IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN))) {
-											conn->flags &= ~__IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN;
-											IIP_OPS_DEBUG_PRINTF("connected peer port %u\n", __iip_ntohs(PB_TCP(p->pkt)->src_be));
-											conn->opaque = iip_ops_tcp_connected(s, conn, p->pkt, opaque);
-										} else if (is_accepted) {
-											IIP_OPS_DEBUG_PRINTF("accept peer port %u\n", __iip_ntohs(PB_TCP(p->pkt)->src_be));
-											conn->opaque = iip_ops_tcp_accepted(s, conn, p->pkt, opaque);
 										}
 									}
 								}
