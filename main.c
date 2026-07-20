@@ -65,10 +65,20 @@
 
 /* experimental API */
 
+#ifndef IIP_EX_TCP_SET_RETRANS_R1
+#define IIP_EX_TCP_SET_RETRANS_R1(_s, _handle, _val, _o) \
+	do { \
+		if ((_val) \
+				&& (uint32_t)(_val) < ((struct iip_tcp_conn *) _handle)->retrans_r2) \
+			((struct iip_tcp_conn *) _handle)->retrans_r1 = _val; \
+	} while (0)
+#endif
 #ifndef IIP_EX_TCP_SET_RETRANS_R2
 #define IIP_EX_TCP_SET_RETRANS_R2(_s, _handle, _val, _o) \
 	do { \
-		((struct iip_tcp_conn *) _handle)->retrans_r2 = _val; \
+		if ((_val) \
+			&& (uint32_t)(_val) > ((struct iip_tcp_conn *) _handle)->retrans_r1) \
+			((struct iip_tcp_conn *) _handle)->retrans_r2 = _val; \
 	} while (0)
 #endif
 #ifndef IIP_EX_TCP_SET_DIFFSERV
@@ -512,6 +522,7 @@ struct iip_tcp_conn {
 	uint8_t dup_ack_received;
 	uint32_t time_wait_ts_ms;
 	uint32_t retrans_cnt;
+	uint32_t retrans_r1;
 	uint32_t retrans_r2;
 	uint32_t urgent_ptr;
 
@@ -944,6 +955,7 @@ static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_conn *conn,
 	IIP_TEST_CALLBACK_TCP_STATE_SET();
 	conn->mss = 536; /* default mss of IPv4 */
 	conn->path_mtu = 0xffff;
+	conn->retrans_r1 = 3;
 	conn->retrans_r2 = 4; /* XXX: time to close for syn has to be longer than 3 minutes */
 	conn->rx_buf_cnt.limit = IIP_CONF_TCP_RX_BUF_CNT;
 	conn->cc.win = IIP_CONF_TCP_WIN_INIT;
@@ -3548,7 +3560,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										conn->head[2][0]->tcp.rto_ms = 60000U;
 									conn->retrans_cnt++;
 									s->monitor.tcp.tx_pkt_re++;
-									if (conn->retrans_cnt == conn->retrans_r2) {
+									if (conn->retrans_cnt == conn->retrans_r1) {
 										/* ip negative advice */
 										IIP_EX_OPS_TCP_IP_NEGATIVE_ADVICE(s, conn, conn->opaque, opaque);
 									}
