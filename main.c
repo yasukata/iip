@@ -96,8 +96,8 @@
 		((struct iip_tcp_conn *) _handle)->flags &= ~__IIP_TCP_CONN_FLAGS_NAGLE_DISABLED; \
 	} while (0)
 #endif
-#ifndef IIP_EX_OPS_ICMP_ERROR
-#define IIP_EX_OPS_ICMP_ERROR(_s, _p, _o) do { } while (0)
+#ifndef IIP_EX_OPS_TCP_ICMP_ERROR
+#define IIP_EX_OPS_TCP_ICMP_ERROR(_s, _c, _tcp_opaque, _icmp_type, _icmp_code, _p, _o) do { } while (0)
 #endif
 #ifndef IIP_EX_OPS_TCP_IP_NEGATIVE_ADVICE
 #define IIP_EX_OPS_TCP_IP_NEGATIVE_ADVICE(_s, _handle, _tcp_opaque, _o) do { } while (0)
@@ -1341,6 +1341,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										iip_ops_icmp_reply(s, p->pkt, opaque);
 										break;
 									case 3: /* error */
+									case 11: /* time exceeded */
+									case 12: /* parameter issue */
 										if (sizeof(struct iip_ip4_hdr) < icmp_data_len) {
 											struct iip_ip4_hdr ip4h;
 											__iip_memcpy((uint8_t *) &ip4h, PB_ICMP_DATA(p->pkt), sizeof(struct iip_ip4_hdr));
@@ -1356,48 +1358,67 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												IIP_OPS_DEBUG_PRINTF("icmp hdr error not ip4 hdr\n");
 												break;
 											}
-											switch (PB_ICMP(p->pkt)->code) {
-											case 2:
-											case 3:
-												/* TODO */
-												/* fall through */
-											case 0:
-											case 1:
-											case 5:
-												IIP_EX_OPS_ICMP_ERROR(s, p->pkt, opaque);
-												break;
-											case 4:
-												{
-													uint16_t next_hop_mtu_be;
-													__iip_memcpy(&next_hop_mtu_be, &PB_ICMP(p->pkt)->rest[2], sizeof(next_hop_mtu_be));
-													switch (ip4h.proto) {
-													case 6: /* tcp */
+											{
+												struct iip_tcp_conn *_tcp_conn = NULL;
+												if (!((__iip_ntohs(ip4h.off_be) & (0x1fff /* offset */))) /* skip fragment */
+														&& ip4h.proto == 6) {
+													uint16_t src_be, dst_be;
+													__iip_memcpy(&src_be, &PB_ICMP_DATA(p->pkt)[(ip4h.vl & 0x0f) * 4 + 0], sizeof(src_be));
+													__iip_memcpy(&dst_be, &PB_ICMP_DATA(p->pkt)[(ip4h.vl & 0x0f) * 4 + 2], sizeof(dst_be));
+													{
+														struct iip_tcp_conn *conn, *_conn_n;
+														__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
+															if (conn->peer_port_be == dst_be
+																	&& conn->local_port_be == src_be
+																	&& conn->peer_ip4_be == ip4h.dst_be
+																	&& conn->local_ip4_be == ip4h.src_be) {
+																_tcp_conn = conn;
+																break;
+															}
+														}
+													}
+												}
+												switch (PB_ICMP(p->pkt)->type) {
+												case 3: /* error */
+													switch (PB_ICMP(p->pkt)->code) {
+													case 4:
 														{
-															uint16_t src_be, dst_be;
-															__iip_memcpy(&src_be, &PB_ICMP_DATA(p->pkt)[(ip4h.vl & 0x0f) * 4 + 0], sizeof(src_be));
-															__iip_memcpy(&dst_be, &PB_ICMP_DATA(p->pkt)[(ip4h.vl & 0x0f) * 4 + 2], sizeof(dst_be));
-															{
-																struct iip_tcp_conn *conn, *_conn_n;
-																__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
-																	if (conn->peer_port_be == dst_be
-																			&& conn->local_port_be == src_be
-																			&& conn->peer_ip4_be == ip4h.dst_be
-																			&& conn->local_ip4_be == ip4h.src_be) {
-																		if ((sizeof(struct iip_ip4_hdr) + sizeof(struct iip_tcp_hdr) + 32 /* room for some work */) < __iip_ntohs(next_hop_mtu_be)) {
-																			conn->path_mtu = __iip_ntohs(next_hop_mtu_be);
-																			IIP_TEST_CALLBACK_ICMP_ERROR_PATH_MTU();
-																		} else {
-																			IIP_OPS_DEBUG_PRINTF("ignore too small next hop mtu value %u\n", __iip_ntohs(next_hop_mtu_be));
-																		}
+															uint16_t next_hop_mtu_be;
+															__iip_memcpy(&next_hop_mtu_be, &PB_ICMP(p->pkt)->rest[2], sizeof(next_hop_mtu_be));
+															if (_tcp_conn) {
+																if ((sizeof(struct iip_ip4_hdr) + sizeof(struct iip_tcp_hdr) + 32 /* room for some work */) < __iip_ntohs(next_hop_mtu_be)) {
+																	if (_tcp_conn->path_mtu > __iip_ntohs(next_hop_mtu_be)) {
+																		_tcp_conn->path_mtu = __iip_ntohs(next_hop_mtu_be);
+																		IIP_TEST_CALLBACK_ICMP_ERROR_PATH_MTU();
 																	}
+																} else {
+																	IIP_OPS_DEBUG_PRINTF("ignore too small next hop mtu value %u\n", __iip_ntohs(next_hop_mtu_be));
 																}
 															}
 														}
+													}
+													break;
+												case 11: /* time exceeded */
+													switch (PB_ICMP(p->pkt)->code) {
+													case 0: /* ttl exceeded */
 														break;
-													default:
+													case 1: /* fragment reassembly time exceeded */
 														break;
 													}
+													break;
+												case 12: /* parameter issue */
+													switch (PB_ICMP(p->pkt)->code) {
+													case 0: /* pointer error */
+														break;
+													case 1: /* missing option */
+														break;
+													case 2: /* bad length */
+														break;
+													}
+													break;
 												}
+												if (_tcp_conn)
+													IIP_EX_OPS_TCP_ICMP_ERROR(s, _tcp_conn, _tcp_conn->opaque, PB_ICMP(p->pkt)->type, PB_ICMP(p->pkt)->code, p->pkt, opaque);
 											}
 										}
 										break;
