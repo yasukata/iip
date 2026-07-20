@@ -35,8 +35,8 @@
 #ifndef IIP_CONF_TCP_OPT_SACK_OK
 #define IIP_CONF_TCP_OPT_SACK_OK	(1U)
 #endif
-#ifndef IIP_CONF_TCP_RX_BUF_CNT
-#define IIP_CONF_TCP_RX_BUF_CNT		(512U) /* should be smaller than 735439 (1GB with 1460 mss) : limit by RFC 7323 */
+#ifndef IIP_CONF_TCP_RX_BUF_SIZE
+#define IIP_CONF_TCP_RX_BUF_SIZE		(536870912U) /* 512 MiB (should be smaller than 1GB : limit by RFC 7323) */
 #endif
 #ifndef IIP_CONF_TCP_WIN_INIT
 #define IIP_CONF_TCP_WIN_INIT		(1)
@@ -309,13 +309,8 @@ static uint16_t __iip_netcsum16(uint8_t *__b[], uint16_t __l[], uint16_t __c, ui
 	return (uint16_t)~((uint16_t) __r);
 }
 
-static uint16_t __iip_compute_tcp_win_be(uint32_t num_buf, uint16_t mss, uint8_t ws)
+static uint16_t __iip_compute_tcp_win_be(uint32_t w, uint8_t ws)
 {
-	uint32_t w;
-	if ((0xffffffff / mss) <= num_buf)
-		w = 0xffffffff;
-	else
-		w = num_buf * mss;
 	w >>= ws;
 	if (0xffff <= w)
 		w = 0xffff;
@@ -511,7 +506,6 @@ struct iip_tcp_conn {
 	uint32_t iss_be;
 	uint32_t seq_be;
 	uint32_t ack_seq_be;
-	uint16_t win_be;
 
 	/* management */
 	uint32_t acked_seq;
@@ -534,6 +528,7 @@ struct iip_tcp_conn {
 	uint32_t sws_ts;
 
 	uint8_t flags;
+#define __IIP_TCP_CONN_FLAGS_ACK_PENDING	(1U << 0)
 #define __IIP_TCP_CONN_FLAGS_IN_SWS	(1U << 1)
 #define __IIP_TCP_CONN_FLAGS_ACK_SENT	(1U << 2)
 #define __IIP_TCP_CONN_FLAGS_URGENT_SET	(1U << 3)
@@ -556,9 +551,10 @@ struct iip_tcp_conn {
 
 	uint32_t a_cnt; /* arrival count */
 
-	struct { /* number of packet buffer (not in byte) for rx */
-		uint32_t limit; /* we should have 1GB (735439) as the max : 1GB / 1460 (mss) = 735439.6.. */
+	struct { /* number of bytes for rx */
+		uint32_t limit; /* we should have 1GB (735439) as the max */
 		uint32_t used;
+		uint32_t adv_cnt;
 	} rx_buf_cnt;
 
 	struct {
@@ -804,7 +800,7 @@ again:
 			} else
 				iip_ops_nic_offload_ip4_tx_checksum_mark(out_p->pkt, opaque);
 		}
-		__iip_assert(conn->rx_buf_cnt.limit < (1U << 30) /* 1GB limit : RFC 7323 */ / IIP_CONF_TCP_OPT_MSS);
+		__iip_assert(conn->rx_buf_cnt.limit < (1U << 30) /* 1GB limit : RFC 7323 */);
 		{
 			struct iip_tcp_hdr *tcph = PB_TCP(out_p->pkt);
 			tcph->src_be = conn->local_port_be;
@@ -815,7 +811,7 @@ again:
 			PB_TCP_HDR_SET_LEN(out_p->pkt, (sizeof(struct iip_tcp_hdr) + tcp_opt_len) >> 2);
 			PB_TCP_HDR_SET_FLAGS(out_p->pkt, (syn ? 0x02U : 0) | (ack ? 0x10U : 0) | (rst ? 0x04U : 0) | (fin ? 0x01U : 0)
 					| ((pushed_payload_len + payload_len != total_payload_len) ? (tcp_flags & ~0x08U) /* PSH must be only at the end */ : (_pkt && total_payload_len ? (tcp_flags | 0x08U) : tcp_flags)));
-			tcph->win_be = __iip_compute_tcp_win_be(conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used, IIP_CONF_TCP_OPT_MSS, IIP_CONF_TCP_OPT_WS);
+			tcph->win_be = __iip_compute_tcp_win_be(conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used, IIP_CONF_TCP_OPT_WS);
 			tcph->urg_p_be = 0;
 			tcph->csum_be = 0;
 			{
@@ -902,8 +898,10 @@ again:
 			out_p->flags |= __IIP_PB_FLAGS_NEED_ACK_CB_PKT_FREE;
 	}
 
-	if (ack)
+	if (ack) {
 		conn->flags |= __IIP_TCP_CONN_FLAGS_ACK_SENT;
+		conn->flags &= ~__IIP_TCP_CONN_FLAGS_ACK_PENDING;
+	}
 
 	return 0;
 }
@@ -932,11 +930,29 @@ static uint16_t iip_tcp_close(void *_mem, void *_handle, void *opaque)
 		return 0;
 }
 
-static void iip_tcp_rxbuf_consumed(void *_mem, void *_handle, uint16_t cnt, void *opaque)
+static void iip_tcp_rxbuf_consumed(void *_mem, void *_handle, uint32_t len, void *opaque)
 {
 	struct iip_tcp_conn *conn = (struct iip_tcp_conn *) _handle;
-	__iip_assert(cnt <= conn->rx_buf_cnt.used);
-	conn->rx_buf_cnt.used -= cnt;
+	__iip_assert(conn->rx_buf_cnt.adv_cnt < conn->rx_buf_cnt.used);
+	__iip_assert(len <= conn->rx_buf_cnt.used - conn->rx_buf_cnt.adv_cnt);
+	conn->rx_buf_cnt.adv_cnt += len;
+	{
+		uint32_t l = conn->mss;
+		{
+			uint32_t pml;
+			__iip_assert(conn->path_mtu > sizeof(struct iip_ip4_hdr) + sizeof(struct iip_tcp_hdr));
+			pml = conn->path_mtu - sizeof(struct iip_ip4_hdr) - sizeof(struct iip_tcp_hdr);
+			if (pml < l)
+				l = pml;
+		}
+		if (l > conn->rx_buf_cnt.limit / 2)
+			l = conn->rx_buf_cnt.limit / 2;
+		if (l <= conn->rx_buf_cnt.adv_cnt) {
+			conn->rx_buf_cnt.used -= conn->rx_buf_cnt.adv_cnt;
+			conn->rx_buf_cnt.adv_cnt = 0;
+			conn->flags |= __IIP_TCP_CONN_FLAGS_ACK_PENDING;
+		}
+	}
 	{ /* unused */
 		(void) _mem;
 		(void) opaque;
@@ -965,13 +981,12 @@ static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_conn *conn,
 	conn->path_mtu = 0xffff;
 	conn->retrans_r1 = 3;
 	conn->retrans_r2 = 4; /* XXX: time to close for syn has to be longer than 3 minutes */
-	conn->rx_buf_cnt.limit = IIP_CONF_TCP_RX_BUF_CNT;
+	conn->rx_buf_cnt.limit = IIP_CONF_TCP_RX_BUF_SIZE;
 	conn->cc.win = IIP_CONF_TCP_WIN_INIT;
 	conn->cc.ssthresh = IIP_CONF_TCP_SSTHRESH_INIT;
 	conn->rtt.srtt = 0;
 	conn->rtt.rttvar = 24;
-	__iip_assert(conn->rx_buf_cnt.limit * IIP_CONF_TCP_OPT_MSS < (1U << 30));
-	conn->win_be = __iip_compute_tcp_win_be(conn->rx_buf_cnt.limit, IIP_CONF_TCP_OPT_MSS, IIP_CONF_TCP_OPT_WS);
+	__iip_assert(conn->rx_buf_cnt.limit < (1U << 30));
 	__iip_enqueue_obj(s->tcp.conns, conn, 0);
 	__iip_enqueue_obj(s->tcp.conns_ht[(conn->peer_ip4_be + conn->local_port_be + conn->peer_port_be) % IIP_CONF_TCP_CONN_HT_SIZE], conn, 1);
 	__iip_assert(conn->rx_buf_cnt.used < conn->rx_buf_cnt.limit);
@@ -1684,7 +1699,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											}
 											if (conn->seq_next_expected != SEQ_LE_RAW(_p)) { /* sequence number is different from expected one, but keep in head[4] */
 												conn->do_ack_cnt++;
-												if ((((conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used) * (conn->mss < 536 ? 536 : conn->mss) < SEQ_LE(_p)) /* exceeding advertised window size, so, discard _p */ )
+												if (((conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used < SEQ_LE(_p)) /* exceeding advertised window size, so, discard _p */ )
 														|| (conn->seq_next_expected - SEQ_LE_RAW(_p) < 2147483648U) /* already accepted data */) {
 													IIP_OPS_DEBUG_PRINTF("tcp-in D src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u (window %u diff %u)\n",
 															(PB_IP4(_p->pkt)->src_be >>  0) & 0x0ff,
@@ -1700,7 +1715,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															PB_TCP_HDR_HAS_SYN(_p->pkt), PB_TCP_HDR_HAS_ACK(_p->pkt), PB_TCP_HDR_HAS_FIN(_p->pkt), PB_TCP_HDR_HAS_RST(_p->pkt),
 															__iip_ntohl(PB_TCP(_p->pkt)->seq_be), __iip_ntohl(PB_TCP(_p->pkt)->ack_seq_be),
 															PB_TCP_PAYLOAD_LEN(_p->pkt),
-															(conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used) * IIP_CONF_TCP_OPT_MSS,
+															conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used,
 															__iip_ntohl(PB_TCP(_p->pkt)->seq_be) - conn->seq_next_expected);
 													__iip_free_pb(s, _p, opaque);
 													if (conn->head[4][0]) {
@@ -2822,7 +2837,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_ESTABLISHED - TCP_STATE_CLOSE_WAIT\n", (void *) conn);
 											} else if (conn->state == __IIP_TCP_STATE_ESTABLISHED /* state can be updated in callback before fall through */
 													&& PB_TCP_HDR_HAS_ACK(p->pkt) && PB_TCP_PAYLOAD_LEN(p->pkt)) {
-												conn->rx_buf_cnt.used++;
+												conn->rx_buf_cnt.used += PB_TCP_PAYLOAD_LEN(p->pkt) - p->tcp.inc_head - p->tcp.dec_tail;
 												iip_ops_tcp_payload(s, conn, p->pkt, conn->opaque, p->tcp.inc_head, p->tcp.dec_tail, opaque);
 											}
 											/* fall through */
@@ -3650,6 +3665,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						if ((__iip_ntohl(conn->ack_seq_be) != conn->ack_seq_sent)) /* we got payload, but ack is not pushed by the app */
 							__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, 0, NULL, opaque);
 					}
+					if (conn->flags & __IIP_TCP_CONN_FLAGS_ACK_PENDING)
+						__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, 0, NULL, opaque);
 					if (conn->do_ack_cnt) { /* push ack telling rx misses */
 						struct pb *queue[2] = { 0 };
 						if (conn->sack_ok && conn->head[4][1]) {
