@@ -526,6 +526,10 @@ struct iip_tcp_conn {
 	uint32_t retrans_r2;
 	uint32_t urgent_ptr;
 
+	void *probe_pkt;
+	uint32_t probe_rto_ms;
+	uint32_t probe_ts;
+
 	uint8_t flags;
 #define __IIP_TCP_CONN_FLAGS_ACK_SENT	(1U << 2)
 #define __IIP_TCP_CONN_FLAGS_URGENT_SET	(1U << 3)
@@ -2593,6 +2597,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								if (out_of_order != 1) {
 									if (!out_of_order && valid_ack /* advance or same */) {
 										conn->peer_win = __iip_ntohs(PB_TCP(p->pkt)->win_be);
+										if (conn->peer_win && conn->probe_pkt) {
+											iip_ops_pkt_free(conn->probe_pkt, opaque);
+											conn->probe_pkt = NULL;
+										}
 										if (p->flags & __IIP_PB_FLAGS_OPT_HAS_TS) {
 											conn->ts = p->tcp.opt.ts[0];
 											if (!(conn->flags & __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED) && PB_TCP_HDR_HAS_ACK(p->pkt)) {
@@ -3533,6 +3541,18 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							}
 						}
 					}
+					/* probe timeout check */
+					if (conn->probe_pkt) {
+						if (conn->probe_rto_ms <= now_ms - conn->probe_ts) {
+							void *cp = iip_ops_pkt_clone(conn->probe_pkt, opaque);
+							__iip_assert(cp);
+							iip_ops_l2_push(cp, opaque);
+							conn->probe_rto_ms *= 2;
+							if (conn->probe_rto_ms > 60000U)
+								conn->probe_rto_ms = 60000U;
+							conn->probe_ts = now_ms;
+						}
+					}
 					/* timeout check */
 					if (!conn->head[3][0]) { /* not in recovery mode */
 						if (conn->head[2][0]) {
@@ -3739,7 +3759,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									}
 								}
 								/* check if flow/congestion control stops tx */
-								if (PB_TCP_PAYLOAD_LEN(p->pkt)) {
+								if (PB_TCP_PAYLOAD_LEN(p->pkt) || PB_TCP_HDR_HAS_FIN(p->pkt)) {
 									/* congestion control */
 									if ((uint32_t) conn->cc.win * PB_TCP_PAYLOAD_LEN(p->pkt) < (uint32_t)((__iip_ntohl(PB_TCP(p->pkt)->seq_be) - conn->acked_seq) + PB_TCP_PAYLOAD_LEN(p->pkt))) {
 										s->monitor.tcp.cc_stop++;
@@ -3754,10 +3774,9 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										uint32_t space = 0;
 										if (((uint32_t) conn->peer_win << conn->ws) > __iip_ntohl(PB_TCP(p->pkt)->seq_be) - conn->acked_seq)
 											space = ((uint32_t) conn->peer_win << conn->ws) - (__iip_ntohl(PB_TCP(p->pkt)->seq_be) - conn->acked_seq);
-										if (!space) {
-											s->monitor.tcp.fc_stop++;
-											break; /* stop tx */
-										} else if (space < (uint32_t) PB_TCP_PAYLOAD_LEN(p->pkt) + PB_TCP_HDR_HAS_SYN(p->pkt) + PB_TCP_HDR_HAS_FIN(p->pkt)) {
+										if (space < (uint32_t) PB_TCP_PAYLOAD_LEN(p->pkt) + PB_TCP_HDR_HAS_SYN(p->pkt) + PB_TCP_HDR_HAS_FIN(p->pkt)
+												&& (space
+													|| (!space && !conn->probe_pkt && PB_TCP_PAYLOAD_LEN(p->pkt)))) {
 											void *new_pkt = iip_ops_pkt_alloc(opaque);
 											__iip_assert(new_pkt);
 											{ /* TODO: boundary check */
@@ -3765,7 +3784,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												uint16_t off[2];
 												off[0] = off[1] = 0;
 												{
-													uint16_t l = 0, ll = iip_ops_l2_hdr_len(p->pkt, opaque) + (PB_IP4(p->pkt)->vl & 0x0f) * 4 + PB_TCP_HDR_LEN(p->pkt) * 4 + (space - PB_TCP_HDR_HAS_SYN(p->pkt));
+													uint16_t l = 0, ll = iip_ops_l2_hdr_len(p->pkt, opaque) + (PB_IP4(p->pkt)->vl & 0x0f) * 4 + PB_TCP_HDR_LEN(p->pkt) * 4 + (space ? space - PB_TCP_HDR_HAS_SYN(p->pkt) : 1);
 													while (__pkt && l < ll) {
 														void *__next = __pkt;
 														uint16_t _l = ll - l;
@@ -3790,7 +3809,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													iip_ops_pkt_set_len(new_pkt, ll, opaque);
 												}
 											}
-											PB_IP4(new_pkt)->len_be = __iip_htons((PB_IP4(p->pkt)->vl & 0x0f) * 4 + PB_TCP_HDR_LEN(p->pkt) * 4 + space - PB_TCP_HDR_HAS_SYN(p->pkt));
+											PB_IP4(new_pkt)->len_be = __iip_htons((PB_IP4(p->pkt)->vl & 0x0f) * 4 + PB_TCP_HDR_LEN(p->pkt) * 4 + (space ? space - PB_TCP_HDR_HAS_SYN(p->pkt) : 1));
 											PB_IP4(new_pkt)->csum_be = 0;
 											uint8_t *_b[1]; _b[0] = (uint8_t *) PB_IP4(new_pkt);
 											{
@@ -3805,16 +3824,16 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												_pseudo.ip4_dst_be = conn->peer_ip4_be;
 												_pseudo.pad = 0;
 												_pseudo.proto = 6;
-												_pseudo.len_be = __iip_htons(PB_TCP_HDR_LEN(new_pkt) * 4 + space - PB_TCP_HDR_HAS_SYN(p->pkt));
+												_pseudo.len_be = __iip_htons(PB_TCP_HDR_LEN(new_pkt) * 4 + (space ? space - PB_TCP_HDR_HAS_SYN(p->pkt) : 1));
 												{
 													uint8_t *_b[3]; _b[0] = (uint8_t *) &_pseudo; _b[1] = (uint8_t *) PB_TCP(new_pkt); _b[2] = PB_TCP_PAYLOAD(new_pkt);
 													{
-														uint16_t _l[3]; _l[0] = sizeof(_pseudo); _l[1] = (uint16_t) (PB_TCP_HDR_LEN(new_pkt) * 4); _l[2] = space - PB_TCP_HDR_HAS_SYN(p->pkt);
+														uint16_t _l[3]; _l[0] = sizeof(_pseudo); _l[1] = (uint16_t) (PB_TCP_HDR_LEN(new_pkt) * 4); _l[2] = (space ? space - PB_TCP_HDR_HAS_SYN(p->pkt) : 1);
 														PB_TCP(new_pkt)->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 3, 0));
 													}
 												}
 											}
-											{
+											if (space) {
 												struct pb *new_p = __iip_alloc_pb(s, new_pkt, opaque);
 												__iip_assert(new_p);
 												new_p->debug.tcp.flags.retransmit = p->debug.tcp.flags.retransmit;
@@ -3823,7 +3842,20 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												p->prev[0] = new_p;
 												queue[0] = new_p;
 												p = new_p;
+											} else {
+												__iip_assert(!conn->probe_pkt);
+												conn->probe_pkt = new_pkt;
+												conn->probe_rto_ms = (conn->rtt.srtt + 4 * conn->rtt.rttvar) * 200;
+												if (!conn->probe_rto_ms)
+													conn->probe_rto_ms = 200U;
+												if (60000U /* 60 sec */ < conn->probe_rto_ms)
+													conn->probe_rto_ms = 60000U;
+												conn->probe_ts = now_ms;
 											}
+										}
+										if (!space) {
+											s->monitor.tcp.fc_stop++;
+											break;
 										}
 									}
 								}
@@ -3890,6 +3922,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							__iip_free_pb(s, p, opaque);
 						}
 					}
+				}
+				if (conn->probe_pkt) {
+					iip_ops_pkt_free(conn->probe_pkt, opaque);
+					conn->probe_pkt = NULL;
 				}
 				__iip_dequeue_obj(s->tcp.closed_conns, conn, 0);
 				__iip_memset(conn, 0, sizeof(struct iip_tcp_conn));
