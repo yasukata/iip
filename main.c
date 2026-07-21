@@ -96,6 +96,19 @@
 		((struct iip_tcp_conn *) _handle)->flags &= ~__IIP_TCP_CONN_FLAGS_NAGLE_DISABLED; \
 	} while (0)
 #endif
+#ifndef IIP_EX_TCP_SET_KEEPALIVE
+#define IIP_EX_TCP_SET_KEEPALIVE(_s, _handle, _interval_ms, _o) \
+	do { \
+		((struct iip_tcp_conn *) _handle)->keepalive_interval_ms = _interval_ms; \
+		if (_interval_ms) { \
+			uint32_t t[3]; \
+			iip_ops_util_now_ns(t, _o); \
+			((struct iip_tcp_conn *) _handle)->keepalive_ts = (t[1] * 1000UL + t[2] / 1000000UL); \
+			((struct iip_tcp_conn *) _handle)->flags |= __IIP_TCP_CONN_FLAGS_KEEPALIVE_ENABLED; \
+		} else \
+			((struct iip_tcp_conn *) _handle)->flags &= ~__IIP_TCP_CONN_FLAGS_KEEPALIVE_ENABLED; \
+	} while (0)
+#endif
 #ifndef IIP_EX_OPS_TCP_ICMP_ERROR
 #define IIP_EX_OPS_TCP_ICMP_ERROR(_s, _c, _tcp_opaque, _icmp_type, _icmp_code, _p, _o) do { } while (0)
 #endif
@@ -527,7 +540,7 @@ struct iip_tcp_conn {
 
 	uint32_t sws_ts;
 
-	uint8_t flags;
+	uint16_t flags;
 #define __IIP_TCP_CONN_FLAGS_ACK_PENDING	(1U << 0)
 #define __IIP_TCP_CONN_FLAGS_IN_SWS	(1U << 1)
 #define __IIP_TCP_CONN_FLAGS_ACK_SENT	(1U << 2)
@@ -536,6 +549,10 @@ struct iip_tcp_conn {
 #define __IIP_TCP_CONN_FLAGS_PEER_RX_FAILED	(1U << 5)
 #define __IIP_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN (1U << 6)
 #define __IIP_TCP_CONN_FLAGS_SKIP_TCP_CLOSE_CALLBACK (1U << 7)
+#define __IIP_TCP_CONN_FLAGS_KEEPALIVE_ENABLED (1U << 8)
+
+	uint32_t keepalive_interval_ms;
+	uint32_t keepalive_ts;
 
 	uint32_t do_ack_cnt;
 	uint32_t sent_seq_when_loss_detected;
@@ -986,6 +1003,7 @@ static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_conn *conn,
 	conn->cc.ssthresh = IIP_CONF_TCP_SSTHRESH_INIT;
 	conn->rtt.srtt = 0;
 	conn->rtt.rttvar = 24;
+	conn->keepalive_interval_ms = 7200000U;
 	__iip_assert(conn->rx_buf_cnt.limit < (1U << 30));
 	__iip_enqueue_obj(s->tcp.conns, conn, 0);
 	__iip_enqueue_obj(s->tcp.conns_ht[(conn->peer_ip4_be + conn->local_port_be + conn->peer_port_be) % IIP_CONF_TCP_CONN_HT_SIZE], conn, 1);
@@ -1138,6 +1156,29 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 			{ /* close connections */
 				struct iip_tcp_conn *conn, *_conn_n;
 				__iip_q_for_each_safe(s->tcp.conns, conn, _conn_n, 0) {
+					if (conn->flags & __IIP_TCP_CONN_FLAGS_KEEPALIVE_ENABLED
+							&& conn->keepalive_interval_ms
+							&& conn->keepalive_interval_ms < now_ms - conn->keepalive_ts
+							&& !conn->head[1][0]
+							&& !conn->head[2][0] && !conn->head[3][0] && !conn->probe_pkt
+							&& conn->state == __IIP_TCP_STATE_ESTABLISHED) {
+						{ /* CLONE */
+							struct iip_tcp_conn _conn;
+							__iip_memcpy(&_conn, conn, sizeof(_conn));
+							_conn.seq_be = __iip_htonl(__iip_ntohl(conn->seq_be) - 1);
+							__iip_tcp_push(s, &_conn, NULL, 0, 1, 0, 0, 0, NULL, opaque);
+							{
+								struct pb *out_p = _conn.head[1][1];
+								__iip_dequeue_obj(_conn.head[1], out_p, 0);
+								{
+									void *clone_pkt = iip_ops_pkt_clone(out_p->pkt, opaque);
+									iip_ops_l2_push(clone_pkt, opaque);
+								}
+								__iip_free_pb(s, out_p, opaque);
+							}
+						}
+						conn->keepalive_ts = now_ms;
+					}
 					switch (conn->state) {
 					case __IIP_TCP_STATE_TIME_WAIT:
 						if (IIP_CONF_TCP_MSL_SEC * 1000U * 2 < now_ms - conn->time_wait_ts_ms) {
@@ -2832,6 +2873,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												break;
 											/* fall through */
 										case __IIP_TCP_STATE_ESTABLISHED:
+											conn->keepalive_ts = now_ms;
 											if (PB_TCP_HDR_HAS_FIN(p->pkt)) {
 												ack = 1;
 												conn->state = __IIP_TCP_STATE_CLOSE_WAIT;
