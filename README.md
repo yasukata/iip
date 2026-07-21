@@ -435,13 +435,13 @@ Please visit an example application page at [https://github.com/yasukata/bench-i
     5. a pointer to an opaque object
   - send a TCP payload, pointed by ```pkt```, over a TCP connection associated with ```handle```.
   - note: ```tcp_flags``` can be used for setting application-specific flags such as urgent.
-- static void iip_tcp_rxbuf_consumed(void *context, void *handle, uint16_t cnt, void *opaque)
+- static void iip_tcp_rxbuf_consumed(void *context, void *handle, uint32_t len, void *opaque)
   - arguments
     1. a pointer to a context object
     2. a pointer to iip's internal TCP connection representation structure
-    3. the number of consumed received tcp packets
+    3. the number of consumed bytes of tcp packets
     4. a pointer to an opaque object
-  - tells iip that ```cnt``` of packets are consumed by the application.
+  - tells iip that ```len``` of bytes are consumed by the application.
   - note: this information is used for flow control.
 - static uint16_t iip_udp_send(void *context, uint8_t local_mac[], uint32_t local_ip4_be, uint16_t local_port_be, uint8_t peer_mac[], uint32_t peer_ip4_be, uint16_t peer_port_be, void *pkt, void *opaque)
   - arguments
