@@ -940,8 +940,8 @@ static void iip_tcp_rxbuf_consumed(void *_mem, void *_handle, uint32_t len, void
 		uint32_t l = conn->mss;
 		{
 			uint32_t pml;
-			__iip_assert(conn->path_mtu > sizeof(struct iip_ip4_hdr) + sizeof(struct iip_tcp_hdr));
-			pml = conn->path_mtu - sizeof(struct iip_ip4_hdr) - sizeof(struct iip_tcp_hdr);
+			__iip_assert(conn->path_mtu > sizeof(struct iip_ip4_hdr) + sizeof(struct iip_tcp_hdr) + (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0));
+			pml = conn->path_mtu - sizeof(struct iip_ip4_hdr) - sizeof(struct iip_tcp_hdr) - (IIP_CONF_TCP_TIMESTAMP_ENABLE ? 12 : 0);
 			if (pml < l)
 				l = pml;
 		}
