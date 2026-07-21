@@ -1697,9 +1697,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													__iip_assert(conn->seq_next_expected == SEQ_LE_RAW(_p));
 												}
 											}
+											if (conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used < SEQ_RE(_p)) /* decrement tail if the packet exceeds the advertised window */
+												_p->tcp.dec_tail += SEQ_RE(_p) - (conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used);
 											if (conn->seq_next_expected != SEQ_LE_RAW(_p)) { /* sequence number is different from expected one, but keep in head[4] */
 												conn->do_ack_cnt++;
-												if (((conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used < SEQ_LE(_p)) /* exceeding advertised window size, so, discard _p */ )
+												if (((conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used <= SEQ_LE(_p)) /* exceeding advertised window size, so, discard _p */ )
 														|| (conn->seq_next_expected - SEQ_LE_RAW(_p) < 2147483648U) /* already accepted data */) {
 													IIP_OPS_DEBUG_PRINTF("tcp-in D src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u (window %u diff %u)\n",
 															(PB_IP4(_p->pkt)->src_be >>  0) & 0x0ff,
