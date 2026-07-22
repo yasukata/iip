@@ -18,6 +18,9 @@ iip is an integratable TCP/IP stack implementation aiming to allow for easy inte
 ### simulation
 - [iip-ns](https://github.com/yasukata/iip-ns): a helper for running iip on the ns-3 simulator (Linux).
 
+### test
+- [ai-test-iip](https://github.com/yasukata/ai-test-iip): a fully AI-generated test suite for iip.
+
 ## getting started
 
 Please visit an example application page at [https://github.com/yasukata/bench-iip](https://github.com/yasukata/bench-iip) for testing iip. 
