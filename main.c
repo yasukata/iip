@@ -703,17 +703,17 @@ static struct pb *__iip_clone_pb(struct workspace *s, struct pb *orig, void *opa
 
 static uint32_t iip_workspace_size(void)
 {
-	return sizeof(struct workspace);
+	return __iip_round_up(sizeof(struct workspace), 8);
 }
 
 static uint32_t iip_pb_size(void)
 {
-	return sizeof(struct pb);
+	return __iip_round_up(sizeof(struct pb), 8);
 }
 
 static uint32_t iip_tcp_conn_size(void)
 {
-	return sizeof(struct iip_tcp_conn);
+	return __iip_round_up(sizeof(struct iip_tcp_conn), 8);
 }
 
 static void iip_add_pb(void *_mem, void *_p)
