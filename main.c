@@ -648,11 +648,14 @@ struct workspace {
 
 /* pb allocator */
 
-static void __iip_free_pb(struct workspace *s, struct pb *p, void *opaque)
+static void ____iip_free_pb(struct workspace *s, struct pb *p, uint8_t is_frag, void *opaque)
 {
+	if (p->ip4_frag.next)
+		____iip_free_pb(s, p->ip4_frag.next, 1, opaque);
 	if (p->flags & __IIP_PB_FLAGS_NEED_ACK_CB_PKT_FREE)
 		iip_ops_pkt_free(p->ack_cb_pkt, opaque);
-	iip_ops_pkt_free(p->pkt, opaque);
+	if (!is_frag)
+		iip_ops_pkt_free(p->pkt, opaque);
 	if (p->orig_pkt)
 		iip_ops_pkt_free(p->orig_pkt, opaque);
 	__iip_memset(p, 0, sizeof(struct pb));
@@ -670,6 +673,11 @@ static void __iip_free_pb(struct workspace *s, struct pb *p, void *opaque)
 	__iip_enqueue_obj_top(s->pool.p, p, 0);
 #undef __iip_enqueue_obj_top
 	s->pool.p_cnt++;
+}
+
+static void __iip_free_pb(struct workspace *s, struct pb *p, void *opaque)
+{
+	____iip_free_pb(s, p, 0, opaque);
 }
 
 static struct pb *__iip_alloc_pb(struct workspace *s, void *pkt, void *opaque)
@@ -1147,7 +1155,12 @@ static uint16_t iip_udp_send(void *_mem,
 	do { \
 		struct pb *__p = (____p); \
 		for ((____l) = 0; (____l) < (____ll) && __p; __p = __p->ip4_frag.next) { \
-			uint16_t _l = PB_IP4_TOTAL_LEN(__p) - PB_IP4_HDR_LEN(__p); \
+			uint16_t _l; \
+			{ \
+				struct iip_ip4_hdr ____ip4h; \
+				__iip_memcpy(&____ip4h, (uint8_t *) iip_ops_pkt_get_data(__p->pkt, opaque) + iip_ops_l2_hdr_len(__p->pkt, opaque), sizeof(____ip4h)); \
+				_l = __iip_ntohs(____ip4h.len_be) - PB_IP4_HDR_LEN(__p); \
+			} \
 			if (_l > (____ll) - (____l)) \
 				_l = (____ll) - (____l); \
 			__iip_memcpy(&((uint8_t *)(____ptr))[____l], iip_ops_pkt_get_data(__p->pkt, opaque) + iip_ops_l2_hdr_len(__p->pkt, opaque) + PB_IP4_HDR_LEN(__p), _l); \
@@ -1240,14 +1253,14 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 				__iip_q_for_each_safe(s->queue.ip4_rx_fragment, __p, ___n, 0) {
 					if (60000U <= now_ms - __p->ts) {
 						__iip_dequeue_obj(s->queue.ip4_rx_fragment, __p, 0);
-						{
-							struct pb *_x = __p;
-							while (_x) {
-								struct pb *__x = _x->ip4_frag.next;
-								__iip_free_pb(s, _x, opaque);
-								_x = __x;
+						{ /* build scatter gather chain so that all will be released */
+							struct pb *__f = __p->ip4_frag.next;
+							while (__f) {
+								iip_ops_pkt_scatter_gather_chain_append(__p->pkt, __f->pkt, opaque);
+								__f = __f->ip4_frag.next;
 							}
 						}
+						__iip_free_pb(s, __p, opaque);
 					}
 				}
 			}
@@ -1448,7 +1461,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									IIP_OPS_DEBUG_PRINTF("ip4 invalid frag length\n");
 									break;
 								}
-								if ((uint32_t) PB_IP4_TOTAL_LEN(p) + (__iip_ntohs(PB_IP4(p)->off_be) & 0x1fff) > (uint32_t) 0xffff - PB_IP4_HDR_LEN(p)) {
+								if ((uint32_t) (__iip_ntohs(PB_IP4(p)->off_be) & 0x1fffU) * 8 + PB_IP4_TOTAL_LEN(p) - PB_IP4_HDR_LEN(p) > (uint32_t) 0xffff - sizeof(struct iip_ip4_hdr) /* XXX: recheck is necessary using the header of the head fragment */) {
 									IIP_OPS_DEBUG_PRINTF("ip4 frag exceeds the 64KiB size limit\n");
 									break;
 								}
@@ -1498,8 +1511,12 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																		s->queue.ip4_rx_fragment[1] = p;
 																	if (__p->prev[0])
 																		__p->prev[0]->next[0] = p;
+																	p->prev[0] = __p->prev[0];
+																	__p->prev[0] = NULL;
 																	if (__p->next[0])
 																		__p->next[0]->prev[0] = p;
+																	p->next[0] = __p->next[0];
+																	__p->next[0] = NULL;
 																}
 																{ /* update timestamp */
 																	struct pb *_head = (_x == __p ? p : __p);
@@ -1507,42 +1524,50 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																}
 																queue_added = 1;
 																{ /* check if all fragments are received */
-																	uint16_t _o = 0;
+																	uint16_t _o = 0, _chain_cnt = 0;
 																	struct pb *_f = (_x == __p ? p : __p);
 																	while (_f) {
+																		if (++_chain_cnt == IIP_CONF_IP4_MAX_FRAG + 1) { /* too many frags */
+																				queue_added = 2;
+																				break;
+																		}
 																		if (!(__iip_ntohs(PB_IP4(_f)->off_be) & 0x2000)) { /* no more flag */
 																			if (_f->ip4_frag.next) /* no more flag packet has next */
 																				queue_added = 2;
 																			else {
 																				/* all is completed */
 																				struct pb *_head = (_x == __p ? p : __p);
-																				PB_IP4(_head)->len_be = __iip_htons(off + PB_IP4_TOTAL_LEN(_f));
-																				PB_IP4(_head)->off_be = 0;
-																				PB_IP4(_head)->csum_be = 0;
-																				{
-																					uint8_t *_b[1]; _b[0] = (uint8_t *) PB_IP4(_head);
+																				if (0xffff < (uint32_t)(PB_IP4(_head)->vl & 0x0f) * 4 + (__iip_ntohs(PB_IP4(_f)->off_be) & 0x1fff) * 8 + __iip_ntohs(PB_IP4(_f)->len_be) - ((PB_IP4(_f)->vl & 0x0f) * 4)) /* exceed 64 KiB limit */
+																					queue_added = 2;
+																				else {
+																					PB_IP4(_head)->len_be = __iip_htons((PB_IP4(_head)->vl & 0x0f) * 4 + (__iip_ntohs(PB_IP4(_f)->off_be) & 0x1fff) * 8 + __iip_ntohs(PB_IP4(_f)->len_be) - ((PB_IP4(_f)->vl & 0x0f) * 4));
+																					PB_IP4(_head)->off_be = 0;
+																					PB_IP4(_head)->csum_be = 0;
 																					{
-																						uint16_t _l[1]; _l[0] = (uint16_t) (PB_IP4_HDR_LEN(_head));
-																						PB_IP4(_head)->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1, 0));
+																						uint8_t *_b[1]; _b[0] = (uint8_t *) PB_IP4(_head);
+																						{
+																							uint16_t _l[1]; _l[0] = (uint16_t) (PB_IP4_HDR_LEN(_head));
+																							PB_IP4(_head)->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1, 0));
+																						}
 																					}
-																				}
-																				__iip_dequeue_obj(s->queue.ip4_rx_fragment, _head, 0);
-																				__iip_enqueue_obj(ip4_rx, _head, 0);
-																				{ /* build scatter gather chain */
-																					struct pb *__f = _head->ip4_frag.next;
-																					while (__f) {
-																						iip_ops_pkt_scatter_gather_chain_append(_head->pkt, __f->pkt, opaque);
-																						__f = __f->ip4_frag.next;
+																					__iip_dequeue_obj(s->queue.ip4_rx_fragment, _head, 0);
+																					__iip_enqueue_obj(ip4_rx, _head, 0);
+																					{ /* build scatter gather chain */
+																						struct pb *__f = _head->ip4_frag.next;
+																						while (__f) {
+																							iip_ops_pkt_scatter_gather_chain_append(_head->pkt, __f->pkt, opaque);
+																							__f = __f->ip4_frag.next;
+																						}
 																					}
+																					queue_added = 3;
 																				}
-																				queue_added = 3;
 																			}
 																			break;
 																		} else {
 																			if (!_f->ip4_frag.next) { /* _f has more flag, but there is no next yet */
 																				break;
 																			} else {
-																				if (_o + PB_IP4_TOTAL_LEN(_f) - (PB_IP4_HDR_LEN(_f)) > __iip_ntohs(PB_IP4(_f->ip4_frag.next)->off_be) * 8) {
+																				if (_o + PB_IP4_TOTAL_LEN(_f) - (PB_IP4_HDR_LEN(_f)) > (__iip_ntohs(PB_IP4(_f->ip4_frag.next)->off_be) & 0x1fff) * 8) {
 																					/*
 																					 * overlap
 																					 * _o
@@ -1552,7 +1577,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																					IIP_OPS_DEBUG_PRINTF("this must not happen because of prior checks\n");
 																					__iip_assert(0);
 																					break;
-																				} else if (_o + PB_IP4_TOTAL_LEN(_f) - (PB_IP4_HDR_LEN(_f)) < __iip_ntohs(PB_IP4(_f->ip4_frag.next)->off_be) * 8) {
+																				} else if (_o + PB_IP4_TOTAL_LEN(_f) - (PB_IP4_HDR_LEN(_f)) < (__iip_ntohs(PB_IP4(_f->ip4_frag.next)->off_be) & 0x1fff) * 8) {
 																					/*
 																					 * there is a gap to the next fragment
 																					 * _o
@@ -1570,7 +1595,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																				}
 																			}
 																		}
-																		off += PB_IP4_TOTAL_LEN(_f) - PB_IP4_HDR_LEN(_f);
+																		_o += PB_IP4_TOTAL_LEN(_f) - PB_IP4_HDR_LEN(_f);
 																		_f = _f->ip4_frag.next;
 																	}
 																}
@@ -1624,18 +1649,18 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											struct pb *__p, *___n;
 											__iip_q_for_each_safe(s->queue.ip4_rx_fragment, __p, ___n, 0) {
 												if (PB_IP4(p)->src_be == PB_IP4(__p)->src_be
-														&& PB_IP4(p)->src_be == PB_IP4(__p)->dst_be
+														&& PB_IP4(p)->dst_be == PB_IP4(__p)->dst_be
 														&& PB_IP4(p)->id_be == PB_IP4(__p)->id_be
 														&& PB_IP4(p)->proto == PB_IP4(__p)->proto) {
 													__iip_dequeue_obj(s->queue.ip4_rx_fragment, __p, 0);
-													{
-														struct pb *_x = __p;
-														while (_x) {
-															struct pb *__x = _x->ip4_frag.next;
-															__iip_free_pb(s, _x, opaque);
-															_x = __x;
+													{ /* build scatter gather chain so that all will be released */
+														struct pb *__f = __p->ip4_frag.next;
+														while (__f) {
+															iip_ops_pkt_scatter_gather_chain_append(__p->pkt, __f->pkt, opaque);
+															__f = __f->ip4_frag.next;
 														}
 													}
+													__iip_free_pb(s, __p, opaque);
 													break;
 												}
 											}
@@ -1768,13 +1793,28 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							}
 							/* l4_hdr is cached in pb */
 							{
-								uint8_t *_b[2]; _b[0] = (uint8_t *) PB_ICMP(p); _b[1] = iip_ops_pkt_get_data(p->pkt, opaque) + iip_ops_l2_hdr_len(p->pkt, opaque) + PB_IP4_HDR_LEN(p) + sizeof(struct iip_icmp_hdr);
-								uint16_t _l[2]; _l[0] = sizeof(struct iip_icmp_hdr); _l[1] = (uint16_t) PB_IP4_TOTAL_LEN(p) - PB_IP4_HDR_LEN(p) - sizeof(struct iip_icmp_hdr);
+								uint8_t *_b[1 + IIP_CONF_IP4_MAX_FRAG]; _b[0] = (uint8_t *) PB_ICMP(p);
+								uint16_t _l[1 + IIP_CONF_IP4_MAX_FRAG]; _l[0] = sizeof(struct iip_icmp_hdr);
 								{
-									uint16_t csum = __iip_ntohs(PB_ICMP(p)->csum_be);
-									if (csum != __iip_netcsum16(_b, _l, 2, csum)) {
-										IIP_OPS_DEBUG_PRINTF("icmp hdr invalid csum\n");
-										break;
+									uint16_t i = 0;
+									struct pb *_x = p;
+									while (_x) {
+										__iip_assert(i < IIP_CONF_IP4_MAX_FRAG); /* because of prior check */
+										_b[1 + i] = (uint8_t *) iip_ops_pkt_get_data(_x->pkt, opaque) + iip_ops_l2_hdr_len(_x->pkt, opaque) + PB_IP4_HDR_LEN(_x) + (_x == p ? sizeof(struct iip_icmp_hdr) : 0);
+										{
+											struct iip_ip4_hdr __ip4h;
+											__iip_memcpy(&__ip4h, (uint8_t *) iip_ops_pkt_get_data(_x->pkt, opaque) + iip_ops_l2_hdr_len(_x->pkt, opaque), sizeof(__ip4h));
+											_l[1 + i] = __iip_ntohs(__ip4h.len_be) - PB_IP4_HDR_LEN(_x) - (_x == p ? sizeof(struct iip_icmp_hdr) : 0);
+										}
+										_x = _x->ip4_frag.next;
+										i++;
+									}
+									{
+										uint16_t csum = __iip_ntohs(PB_ICMP(p)->csum_be);
+										if (csum != __iip_netcsum16(_b, _l, 1 + i, csum)) {
+											IIP_OPS_DEBUG_PRINTF("icmp hdr invalid csum\n");
+											break;
+										}
 									}
 								}
 							}
@@ -1908,8 +1948,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													icmph.code = 0;
 													icmph.csum_be = 0;
 													__iip_memcpy(icmph.rest, PB_ICMP(p)->rest, sizeof(icmph.rest));
-													/* TODO: boundary check */
-													__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h) + sizeof(icmph), PB_ICMP_DATA(p), icmp_data_len);
 													{ /* icmp csum */
 														uint8_t *_b[1 + IIP_CONF_IP4_MAX_FRAG]; _b[0] = (uint8_t *) &icmph;
 														uint16_t _l[1 + IIP_CONF_IP4_MAX_FRAG]; _l[0] = sizeof(struct iip_icmp_hdr);
@@ -1917,14 +1955,22 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															uint16_t i = 0;
 															struct pb *_x = p;
 															while (_x) {
+																__iip_assert(i < IIP_CONF_IP4_MAX_FRAG); /* because of prior check */
 																_b[1 + i] = (uint8_t *) iip_ops_pkt_get_data(_x->pkt, opaque) + iip_ops_l2_hdr_len(_x->pkt, opaque) + PB_IP4_HDR_LEN(_x) + (_x == p ? sizeof(struct iip_icmp_hdr) : 0);
-																_l[1 + i] = PB_IP4_TOTAL_LEN(_x) - PB_IP4_HDR_LEN(_x) - (_x == p ? sizeof(struct iip_icmp_hdr) : 0);
+																{
+																	struct iip_ip4_hdr __ip4h;
+																	__iip_memcpy(&__ip4h, (uint8_t *) iip_ops_pkt_get_data(_x->pkt, opaque) + iip_ops_l2_hdr_len(_x->pkt, opaque), sizeof(__ip4h));
+																	_l[1 + i] = __iip_ntohs(__ip4h.len_be) - PB_IP4_HDR_LEN(_x) - (_x == p ? sizeof(struct iip_icmp_hdr) : 0);
+																}
 																_x = _x->ip4_frag.next;
 																i++;
 															}
 															icmph.csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1 + i, 0));
 														}
 													}
+													/* TODO: boundary check */
+													if (!p->ip4_frag.next /* TODO: fragmented payload */)
+														__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h) + sizeof(icmph), PB_ICMP_DATA(p), icmp_data_len);
 													__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &ip4h, sizeof(ip4h));
 													__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h), &icmph, sizeof(icmph));
 													/* TODO: large data */
@@ -1988,8 +2034,13 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										uint16_t i = 0;
 										struct pb *_x = p;
 										while (_x) {
+											__iip_assert(i < IIP_CONF_IP4_MAX_FRAG); /* because of prior check */
 											_b[2 + i] = (uint8_t *) iip_ops_pkt_get_data(_x->pkt, opaque) + iip_ops_l2_hdr_len(_x->pkt, opaque) + PB_IP4_HDR_LEN(_x) + (_x == p ? PB_TCP_HDR_LEN(_x) : 0);
-											_l[2 + i] = PB_IP4_TOTAL_LEN(_x) - PB_IP4_HDR_LEN(_x) - (_x == p ? PB_TCP_HDR_LEN(_x) : 0);
+											{
+												struct iip_ip4_hdr __ip4h;
+												__iip_memcpy(&__ip4h, (uint8_t *) iip_ops_pkt_get_data(_x->pkt, opaque) + iip_ops_l2_hdr_len(_x->pkt, opaque), sizeof(__ip4h));
+												_l[2 + i] = __iip_ntohs(__ip4h.len_be) - PB_IP4_HDR_LEN(_x) - (_x == p ? PB_TCP_HDR_LEN(_x) : 0);
+											}
 											_x = _x->ip4_frag.next;
 											i++;
 										}
@@ -2909,8 +2960,13 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										uint16_t i = 0;
 										struct pb *_x = p;
 										while (_x) {
+											__iip_assert(i < IIP_CONF_IP4_MAX_FRAG); /* because of prior check */
 											_b[2 + i] = (uint8_t *) iip_ops_pkt_get_data(_x->pkt, opaque) + iip_ops_l2_hdr_len(_x->pkt, opaque) + PB_IP4_HDR_LEN(_x) + (_x == p ? sizeof(struct iip_udp_hdr) : 0);
-											_l[2 + i] = PB_IP4_TOTAL_LEN(_x) - PB_IP4_HDR_LEN(_x) - (_x == p ? sizeof(struct iip_udp_hdr) : 0);
+											{
+												struct iip_ip4_hdr __ip4h;
+												__iip_memcpy(&__ip4h, (uint8_t *) iip_ops_pkt_get_data(_x->pkt, opaque) + iip_ops_l2_hdr_len(_x->pkt, opaque), sizeof(__ip4h));
+												_l[2 + i] = __iip_ntohs(__ip4h.len_be) - PB_IP4_HDR_LEN(_x) - (_x == p ? sizeof(struct iip_udp_hdr) : 0);
+											}
 											_x = _x->ip4_frag.next;
 											i++;
 										}
