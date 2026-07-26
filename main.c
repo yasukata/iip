@@ -2002,6 +2002,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									break;
 								}
 							}
+							if ((uint32_t) PB_TCP_HDR_LEN(p) < sizeof(struct iip_tcp_hdr)) {
+								IIP_OPS_DEBUG_PRINTF("tcp hdr size %u\n", PB_TCP_HDR_LEN(p));
+								break;
+							}
 							if (PB_IP4_TOTAL_LEN(p) - PB_IP4_HDR_LEN(p) < PB_TCP_HDR_LEN(p)) {
 								IIP_OPS_DEBUG_PRINTF("tcp hdr invalid len (%u %u)\n", PB_IP4_TOTAL_LEN(p) - PB_IP4_HDR_LEN(p), PB_TCP_HDR_LEN(p));
 								break;
@@ -2054,7 +2058,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 									}
 								}
 							}
-							__iip_assert(PB_TCP_HDR_LEN(p) != 0);
 							{ /* invalid source ip address */
 								if (__iip_ntohl(PB_IP4(p)->src_be) == 0xffffffff) /* limited broadcast */
 									break;
