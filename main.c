@@ -2085,6 +2085,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								if (conn && conn->state == __IIP_TCP_STATE_CLOSED)
 									break; /* do not transmit rst packets*/
 								if (PB_TCP_HDR_HAS_SYN(p)) {
+									if (PB_TCP_HDR_HAS_FIN(p) && !PB_TCP_HDR_HAS_RST(p))
+										break; /* invalid, do nothing */
 									if (conn) {
 										if (conn->state == __IIP_TCP_STATE_SYN_SENT
 												&& PB_TCP_HDR_HAS_RST(p)
