@@ -2082,13 +2082,18 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										}
 									}
 								}
+								if (conn && conn->state == __IIP_TCP_STATE_CLOSED)
+									break; /* do not transmit rst packets*/
 								if (PB_TCP_HDR_HAS_SYN(p)) {
-									if (conn) { /* connect */
-										if (!PB_TCP_HDR_HAS_ACK(p)) {
-											if (conn->state != __IIP_TCP_STATE_SYN_SENT) /* simultaneous open */
-												conn = NULL; /* invalid, just ignore */
+									if (conn) {
+										if (conn->state == __IIP_TCP_STATE_SYN_SENT
+												&& PB_TCP_HDR_HAS_RST(p)
+												&& !PB_TCP_HDR_HAS_ACK(p)) {
+											break;
 										}
 									} else { /* accept */
+										if (PB_TCP_HDR_HAS_RST(p)) /* do nothing */
+											break;
 										if (iip_ops_tcp_accept(s, p->pkt, opaque)) {
 											if (PB_TCP_HDR_HAS_ACK(p)) {
 												IIP_OPS_DEBUG_PRINTF("WARNING: got syn-ack for non-existing connection, maybe RSS sterring would be wrong\n");
