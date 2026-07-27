@@ -2264,7 +2264,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														__iip_dequeue_obj(conn->head[4], _p, 0);
 														continue;
 													}
-												} else if (conn->sack_ok) { /* range of seq is fine, does not exceed advertised window size */
+												} else { /* range of seq is fine, does not exceed advertised window size */
 													if (p == _p) {
 														IIP_OPS_DEBUG_PRINTF("tcp-in O src-ip %u.%u.%u.%u dst-ip %u.%u.%u.%u src-port %u dst-port %u syn %u ack %u fin %u rst %u seq %u ack %u len %u\n",
 																(PB_IP4(_p)->src_be >>  0) & 0x0ff,
@@ -2773,10 +2773,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														}
 													}
 													/* IIP_OPS_DEBUG_PRINTF("out-of-order: %u %u\n", __iip_ntohl(PB_TCP(_p)->seq_be), conn->seq_next_expected); */
-												} else {
-													__iip_assert(p == _p);
-													__iip_free_pb(s, _p, opaque);
-													_p = NULL; /* for easier assertion */
 												}
 												/*
 												 * _p is not pushed to head[0], therefore,
@@ -3385,7 +3381,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												conn->rx_buf_cnt.used += PB_TCP_PAYLOAD_LEN(p) - p->tcp.inc_head - p->tcp.dec_tail;
 												iip_ops_tcp_payload(s, conn, p->pkt, conn->opaque, p->tcp.inc_head, p->tcp.dec_tail, opaque);
 											}
-											/* fall through */
+											break;
 										case __IIP_TCP_STATE_CLOSE_WAIT:
 											if (PB_TCP_HDR_HAS_FIN(p)) {
 												fin = 1;
