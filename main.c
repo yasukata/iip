@@ -1474,6 +1474,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													&& PB_IP4(p)->dst_be == PB_IP4(__p)->dst_be
 													&& PB_IP4(p)->id_be == PB_IP4(__p)->id_be
 													&& PB_IP4(p)->proto == PB_IP4(__p)->proto) {
+												struct pb *_complete_check_head = NULL;
 												uint16_t len = PB_IP4_TOTAL_LEN(p) - PB_IP4_HDR_LEN(p);
 												uint16_t off = (__iip_ntohs(PB_IP4(p)->off_be) & 0x1fff) * 8;
 												{
@@ -1523,82 +1524,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																	_head->ts = now_ms;
 																}
 																queue_added = 1;
-																{ /* check if all fragments are received */
-																	uint16_t _o = 0, _chain_cnt = 0;
-																	struct pb *_f = (_x == __p ? p : __p);
-																	while (_f) {
-																		if (++_chain_cnt == IIP_CONF_IP4_MAX_FRAG + 1) { /* too many frags */
-																				queue_added = 2;
-																				break;
-																		}
-																		if (!(__iip_ntohs(PB_IP4(_f)->off_be) & 0x2000)) { /* no more flag */
-																			if (_f->ip4_frag.next) /* no more flag packet has next */
-																				queue_added = 2;
-																			else {
-																				/* all is completed */
-																				struct pb *_head = (_x == __p ? p : __p);
-																				if (0xffff < (uint32_t)(PB_IP4(_head)->vl & 0x0f) * 4 + (__iip_ntohs(PB_IP4(_f)->off_be) & 0x1fff) * 8 + __iip_ntohs(PB_IP4(_f)->len_be) - ((PB_IP4(_f)->vl & 0x0f) * 4)) /* exceed 64 KiB limit */
-																					queue_added = 2;
-																				else {
-																					PB_IP4(_head)->len_be = __iip_htons((PB_IP4(_head)->vl & 0x0f) * 4 + (__iip_ntohs(PB_IP4(_f)->off_be) & 0x1fff) * 8 + __iip_ntohs(PB_IP4(_f)->len_be) - ((PB_IP4(_f)->vl & 0x0f) * 4));
-																					PB_IP4(_head)->off_be = 0;
-																					PB_IP4(_head)->csum_be = 0;
-																					{
-																						uint8_t *_b[1]; _b[0] = (uint8_t *) PB_IP4(_head);
-																						{
-																							uint16_t _l[1]; _l[0] = (uint16_t) (PB_IP4_HDR_LEN(_head));
-																							PB_IP4(_head)->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1, 0));
-																						}
-																					}
-																					__iip_dequeue_obj(s->queue.ip4_rx_fragment, _head, 0);
-																					__iip_enqueue_obj(ip4_rx, _head, 0);
-																					{ /* build scatter gather chain */
-																						struct pb *__f = _head->ip4_frag.next;
-																						while (__f) {
-																							iip_ops_pkt_scatter_gather_chain_append(_head->pkt, __f->pkt, opaque);
-																							__f = __f->ip4_frag.next;
-																						}
-																					}
-																					queue_added = 3;
-																				}
-																			}
-																			break;
-																		} else {
-																			if (!_f->ip4_frag.next) { /* _f has more flag, but there is no next yet */
-																				break;
-																			} else {
-																				if (_o + PB_IP4_TOTAL_LEN(_f) - (PB_IP4_HDR_LEN(_f)) > (__iip_ntohs(PB_IP4(_f->ip4_frag.next)->off_be) & 0x1fff) * 8) {
-																					/*
-																					 * overlap
-																					 * _o
-																					 *  |---len----|
-																					 *           |-------|
-																					 */
-																					IIP_OPS_DEBUG_PRINTF("this must not happen because of prior checks\n");
-																					__iip_assert(0);
-																					break;
-																				} else if (_o + PB_IP4_TOTAL_LEN(_f) - (PB_IP4_HDR_LEN(_f)) < (__iip_ntohs(PB_IP4(_f->ip4_frag.next)->off_be) & 0x1fff) * 8) {
-																					/*
-																					 * there is a gap to the next fragment
-																					 * _o
-																					 *  |---len----|
-																					 *               |-------|
-																					 */
-																					break;
-																				} else {
-																					/*
-																					 * continue the check
-																					 * _o
-																					 *  |---len----|
-																					 *             |-------|
-																					 */
-																				}
-																			}
-																		}
-																		_o += PB_IP4_TOTAL_LEN(_f) - PB_IP4_HDR_LEN(_f);
-																		_f = _f->ip4_frag.next;
-																	}
-																}
+																_complete_check_head = (_x == __p ? p : __p);
+																break;
 															} else { /* overlap, discard */
 																/*
 																 * off
@@ -1609,7 +1536,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																queue_added = 2;
 															}
 														} else {
-															if (off >= x_off + x_len) { /* check next */
+															if (off >= x_off + x_len) {
 																/*
 																 *          off
 																 *           |---len----|
@@ -1618,6 +1545,22 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																 *                   |------|
 																 *                         |------|
 																 */
+																if (_x->ip4_frag.next) {
+																	/* check in the next round */
+																} else { /* add this to the end */
+																	/*
+																	 *          off
+																	 *           |---len----|
+																	 *  x_off
+																	 *   |-------|
+																	 */
+																	_x->ip4_frag.next = p;
+																	p->ip4_frag.prev = _x;
+																	__p->ts = now_ms;
+																	queue_added = 1;
+																	_complete_check_head = __p;
+																	break;
+																}
 															} else { /* overlap, discard */
 																/*
 																 *       off
@@ -1628,8 +1571,84 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																queue_added = 2;
 															}
 														}
+														_x = _x->ip4_frag.next;
 													}
-													_x = _x->ip4_frag.next;
+												}
+												if (_complete_check_head) { /* check if all fragments are received */
+													uint16_t _o = 0, _chain_cnt = 0;
+													struct pb *_f = _complete_check_head;
+													while (_f) {
+														if (++_chain_cnt == IIP_CONF_IP4_MAX_FRAG + 1) { /* too many frags */
+															queue_added = 2;
+															break;
+														}
+														if (!(__iip_ntohs(PB_IP4(_f)->off_be) & 0x2000)) { /* no more flag */
+															if (_f->ip4_frag.next) /* no more flag packet has next */
+																queue_added = 2;
+															else {
+																/* all is completed */
+																struct pb *_head = _complete_check_head;
+																if (0xffff < (uint32_t)(PB_IP4(_head)->vl & 0x0f) * 4 + (__iip_ntohs(PB_IP4(_f)->off_be) & 0x1fff) * 8 + __iip_ntohs(PB_IP4(_f)->len_be) - ((PB_IP4(_f)->vl & 0x0f) * 4)) /* exceed 64 KiB limit */
+																	queue_added = 2;
+																else {
+																	PB_IP4(_head)->len_be = __iip_htons((PB_IP4(_head)->vl & 0x0f) * 4 + (__iip_ntohs(PB_IP4(_f)->off_be) & 0x1fff) * 8 + __iip_ntohs(PB_IP4(_f)->len_be) - ((PB_IP4(_f)->vl & 0x0f) * 4));
+																	PB_IP4(_head)->off_be = 0;
+																	PB_IP4(_head)->csum_be = 0;
+																	{
+																		uint8_t *_b[1]; _b[0] = (uint8_t *) PB_IP4(_head);
+																		{
+																			uint16_t _l[1]; _l[0] = (uint16_t) (PB_IP4_HDR_LEN(_head));
+																			PB_IP4(_head)->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1, 0));
+																		}
+																	}
+																	__iip_dequeue_obj(s->queue.ip4_rx_fragment, _head, 0);
+																	__iip_enqueue_obj(ip4_rx, _head, 0);
+																	{ /* build scatter gather chain */
+																		struct pb *__f = _head->ip4_frag.next;
+																		while (__f) {
+																			iip_ops_pkt_scatter_gather_chain_append(_head->pkt, __f->pkt, opaque);
+																			__f = __f->ip4_frag.next;
+																		}
+																	}
+																	queue_added = 3;
+																}
+															}
+															break;
+														} else {
+															if (!_f->ip4_frag.next) { /* _f has more flag, but there is no next yet */
+																break;
+															} else {
+																if (_o + PB_IP4_TOTAL_LEN(_f) - (PB_IP4_HDR_LEN(_f)) > (__iip_ntohs(PB_IP4(_f->ip4_frag.next)->off_be) & 0x1fff) * 8) {
+																	/*
+																	 * overlap
+																	 * _o
+																	 *  |---len----|
+																	 *           |-------|
+																	 */
+																	IIP_OPS_DEBUG_PRINTF("this must not happen because of prior checks\n");
+																	__iip_assert(0);
+																	break;
+																} else if (_o + PB_IP4_TOTAL_LEN(_f) - (PB_IP4_HDR_LEN(_f)) < (__iip_ntohs(PB_IP4(_f->ip4_frag.next)->off_be) & 0x1fff) * 8) {
+																	/*
+																	 * there is a gap to the next fragment
+																	 * _o
+																	 *  |---len----|
+																	 *               |-------|
+																	 */
+																	break;
+																} else {
+																	/*
+																	 * continue the check
+																	 * _o
+																	 *  |---len----|
+																	 *             |-------|
+																	 */
+																}
+															}
+														}
+														_o += PB_IP4_TOTAL_LEN(_f) - PB_IP4_HDR_LEN(_f);
+														_f = _f->ip4_frag.next;
+													}
 												}
 											}
 										}
