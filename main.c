@@ -4453,7 +4453,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													_pseudo.proto = 6;
 													_pseudo.len_be = __iip_htons(PB_TCP_HDR_LEN(p) + (space ? space - PB_TCP_HDR_HAS_SYN(p) : 1));
 													{
-														uint8_t *_b[3]; _b[0] = (uint8_t *) &_pseudo; _b[1] = (uint8_t *) n_tcph; _b[2] = iip_ops_pkt_get_data(p->pkt, opaque) + iip_ops_l2_hdr_len(p->pkt, opaque) + PB_IP4_HDR_LEN(p) + PB_TCP_HDR_LEN(p);
+														uint8_t *_b[3]; _b[0] = (uint8_t *) &_pseudo; _b[1] = (uint8_t *) n_tcph; _b[2] = (uint8_t *) iip_ops_pkt_get_data(p->pkt, opaque) + iip_ops_l2_hdr_len(p->pkt, opaque) + PB_IP4_HDR_LEN(p) + PB_TCP_HDR_LEN(p);
 														{
 															uint16_t _l[3]; _l[0] = sizeof(_pseudo); _l[1] = (uint16_t) PB_TCP_HDR_LEN(p); _l[2] = (space ? space - PB_TCP_HDR_HAS_SYN(p) : 1);
 															n_tcph->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 3, 0));
