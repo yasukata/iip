@@ -782,31 +782,43 @@ static void iip_arp_request(void *_mem,
 			    uint8_t local_mac[],
 			    uint32_t local_ip4_be,
 			    uint32_t target_ip4_be,
-			    void *opaque)
+					void *opaque)
 {
-	void *out_pkt = iip_ops_pkt_alloc(opaque);
-	__iip_assert(out_pkt);
-	{
-		uint8_t bc_mac[IIP_CONF_L2ADDR_LEN_MAX];
-		iip_ops_l2_broadcast_addr(bc_mac, opaque);
-		iip_ops_l2_hdr_craft(out_pkt, local_mac, bc_mac, __iip_htons(0x0806), opaque);
+	{ /* TODO: error notification */
+		if (iip_ops_arp_lhw(opaque) != iip_ops_l2_addr_len(opaque))
+			return;
+		if (iip_ops_arp_lhw(opaque) != 6)
+			return;
+		if (iip_ops_arp_lproto(opaque) != 4)
+			return;
 	}
 	{
-		uint8_t _arph[sizeof(struct iip_arp_hdr) + 20];
-		struct iip_arp_hdr *arph = (struct iip_arp_hdr *) _arph;
-		arph->hw_be = __iip_htons(0x0001);
-		arph->proto_be = __iip_htons(0x0800);
-		arph->lhw = iip_ops_arp_lhw(opaque);
-		arph->lproto = iip_ops_arp_lproto(opaque);
-		arph->op_be = __iip_htons(0x0001);
-		__iip_memcpy(&_arph[sizeof(struct iip_arp_hdr)], local_mac, arph->lhw); /* hw sender */
-		__iip_memcpy(&_arph[sizeof(struct iip_arp_hdr) + arph->lhw], (uint8_t *) &local_ip4_be, arph->lproto); /* ip sender */
-		__iip_memset(&_arph[sizeof(struct iip_arp_hdr) + arph->lhw + arph->lproto], 0, arph->lhw); /* hw target */
-		__iip_memcpy(&_arph[sizeof(struct iip_arp_hdr) + arph->lhw + arph->lproto + arph->lhw], (uint8_t *) &target_ip4_be, arph->lproto); /* ip target */
-		__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), _arph, sizeof(struct iip_arp_hdr) + arph->lhw * 2 + arph->lproto * 2);
-		iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(struct iip_arp_hdr) + arph->lhw * 2 + arph->lproto * 2, opaque);
+		void *out_pkt = iip_ops_pkt_alloc(opaque);
+		__iip_assert(out_pkt);
+		{
+			uint8_t bc_mac[IIP_CONF_L2ADDR_LEN_MAX];
+			iip_ops_l2_broadcast_addr(bc_mac, opaque);
+			iip_ops_l2_hdr_craft(out_pkt, local_mac, bc_mac, __iip_htons(0x0806), opaque);
+		}
+		{
+			struct iip_arp_hdr arph;
+			arph.hw_be = __iip_htons(0x0001);
+			arph.proto_be = __iip_htons(0x0800);
+			arph.lhw = iip_ops_arp_lhw(opaque);
+			arph.lproto = iip_ops_arp_lproto(opaque);
+			arph.op_be = __iip_htons(0x0001);
+			__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &arph, sizeof(arph));
+			{ /* TODO: boundary check */
+				uint8_t *d = (uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(arph);
+				__iip_memcpy(&d[0], local_mac, arph.lhw); /* hw sender */
+				__iip_memcpy(&d[arph.lhw], (uint8_t *) &local_ip4_be, arph.lproto); /* ip sender */
+				__iip_memset(&d[arph.lhw + arph.lproto], 0, arph.lhw); /* hw target */
+				__iip_memcpy(&d[arph.lhw + arph.lproto + arph.lhw], (uint8_t *) &target_ip4_be, arph.lproto); /* ip target */
+			}
+			iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(struct iip_arp_hdr) + arph.lhw * 2 + arph.lproto * 2, opaque);
+		}
+		iip_ops_l2_push(out_pkt, opaque);
 	}
-	iip_ops_l2_push(out_pkt, opaque);
 	{ /* unused */
 		(void) _mem;
 	}
@@ -1763,7 +1775,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								IIP_OPS_DEBUG_PRINTF("arp hdr invalid length field line:%u\n", __LINE__);
 								break;
 						}
-						__iip_assert(sizeof(p->l4_hdr) >= sizeof(struct iip_arp_hdr) + 2 * PB_ARP(p)->lhw + 2 * PB_ARP(p)->lproto);
+						if (sizeof(p->l4_hdr) < sizeof(struct iip_arp_hdr) + 2 * PB_ARP(p)->lhw + 2 * PB_ARP(p)->lproto) {
+							IIP_OPS_DEBUG_PRINTF("arp tmp buffer size is insufficient for handling incoming packet\n");
+							break;
+						}
 						__iip_memcpy(p->l4_hdr, iip_ops_pkt_get_data(pkt[i], opaque) + iip_ops_l2_hdr_len(pkt[i], opaque), sizeof(struct iip_arp_hdr) + 2 * PB_ARP(p)->lhw + 2 * PB_ARP(p)->lproto);
 						/* l4_hdr is cached in pb */
 						{
@@ -1775,34 +1790,44 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								case 0x0001: /* ethernet */
 									switch (__iip_ntohs(PB_ARP(p)->proto_be)) {
 									case 0x0800: /* ipv4 */
-										if (PB_ARP(p)->lhw != 6) {
+										{ /* TODO: error notification */
+											if (iip_ops_arp_lhw(opaque) != iip_ops_l2_addr_len(opaque))
+												break;
+											if (iip_ops_arp_lhw(opaque) != 6)
+												break;
+											if (iip_ops_arp_lproto(opaque) != 4)
+												break;
+										}
+										if (PB_ARP(p)->lhw != iip_ops_l2_addr_len(opaque)) {
 											IIP_OPS_DEBUG_PRINTF("unknown hardawre addr size %u\n", PB_ARP(p)->lhw);
 											break;
 										}
-										if (PB_ARP(p)->lproto != 4) {
+										if (PB_ARP(p)->lproto != iip_ops_arp_lproto(opaque)) {
 											IIP_OPS_DEBUG_PRINTF("unknown ip addr size %u\n", PB_ARP(p)->lproto);
 											break;
 										}
 										switch (__iip_ntohs(PB_ARP(p)->op_be)) {
 										case 0x0001: /* request */
-											if (ip4_be == *((uint32_t *) PB_ARP_IP_TARGET(p))) { /* arp response */
+											if (__iip_ntohl(ip4_be) == __may_unaligned_read_hl(PB_ARP_IP_TARGET(p))) { /* arp response */
 												void *out_pkt = iip_ops_pkt_alloc(opaque);
 												__iip_assert(out_pkt);
 												iip_ops_l2_hdr_craft(out_pkt, mac, PB_ARP_HW_SENDER(p), __iip_htons(0x0806), opaque);
 												{
-													uint8_t _arph[sizeof(struct iip_arp_hdr) + 20];
-													struct iip_arp_hdr *arph = (struct iip_arp_hdr *) _arph;
-													arph->hw_be = __iip_htons(0x0001);
-													arph->proto_be = __iip_htons(0x0800);
-													arph->lhw = iip_ops_arp_lhw(opaque);
-													arph->lproto = iip_ops_arp_lproto(opaque);
-													arph->op_be = __iip_htons(0x0002);
-													__iip_memcpy(&_arph[sizeof(struct iip_arp_hdr)], mac, arph->lhw); /* hw sender */
-													__iip_memcpy(&_arph[sizeof(struct iip_arp_hdr) + arph->lhw], PB_ARP_IP_TARGET(p), arph->lproto); /* ip sender */
-													__iip_memcpy(&_arph[sizeof(struct iip_arp_hdr) + arph->lhw + arph->lproto], PB_ARP_HW_SENDER(p), arph->lhw); /* hw target */
-													__iip_memcpy(&_arph[sizeof(struct iip_arp_hdr) + arph->lhw + arph->lproto + arph->lhw], PB_ARP_IP_SENDER(p), arph->lproto); /* ip target */
-													__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), _arph, sizeof(struct iip_arp_hdr) + arph->lhw * 2 + arph->lproto * 2);
-													iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(struct iip_arp_hdr) + arph->lhw * 2 + arph->lproto * 2, opaque);
+													struct iip_arp_hdr arph;
+													arph.hw_be = __iip_htons(0x0001);
+													arph.proto_be = __iip_htons(0x0800);
+													arph.lhw = iip_ops_arp_lhw(opaque);
+													arph.lproto = iip_ops_arp_lproto(opaque);
+													arph.op_be = __iip_htons(0x0002);
+													__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &arph, sizeof(arph));
+													{ /* TODO: boundary check */
+														uint8_t *d = (uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(arph);
+														__iip_memcpy(&d[0], mac, arph.lhw); /* hw sender */
+														__iip_memcpy(&d[arph.lhw], PB_ARP_IP_TARGET(p), arph.lproto); /* ip sender */
+														__iip_memcpy(&d[arph.lhw + arph.lproto], PB_ARP_HW_SENDER(p), arph.lhw); /* hw target */
+														__iip_memcpy(&d[arph.lhw + arph.lproto + arph.lhw], PB_ARP_IP_SENDER(p), arph.lproto); /* ip target */
+													}
+													iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(arph) + arph.lhw * 2 + arph.lproto * 2, opaque);
 												}
 												iip_ops_l2_push(out_pkt, opaque);
 											}
