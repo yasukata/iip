@@ -143,6 +143,12 @@ static int __iip_ex_ops_tcp_fastopen_check(uint32_t ip_s, uint32_t ip_d, const u
 #ifndef IIP_EX_OPS_TCP_STATE_CLOSE_WAIT
 #define IIP_EX_OPS_TCP_STATE_CLOSE_WAIT(_mem, _conn, _opaque) do { iip_tcp_close(_mem, _conn, _opaque); } while (0)
 #endif
+#ifndef IIP_EX_OPS_NO_PB
+#define IIP_EX_OPS_NO_PB() do { __iip_assert(0); } while (0)
+#endif
+#ifndef IIP_EX_OPS_NO_TCP_CONN
+#define IIP_EX_OPS_NO_TCP_CONN() do { __iip_assert(0); } while (0)
+#endif
 
 /* test callback */
 
@@ -710,8 +716,12 @@ static void __iip_free_pb(struct workspace *s, struct pb *p, void *opaque)
 
 static struct pb *__iip_alloc_pb(struct workspace *s, void *pkt, void *opaque)
 {
-	struct pb *p = s->pool.p[0];
-	__iip_assert(p);
+	struct pb *p = NULL;
+	do {
+		p = s->pool.p[0];
+		if (!p)
+			IIP_EX_OPS_NO_PB();
+	} while (!p);
 	__iip_assert(pkt);
 	__iip_dequeue_obj(s->pool.p, p, 0);
 	p->pkt = pkt;
@@ -722,8 +732,12 @@ static struct pb *__iip_alloc_pb(struct workspace *s, void *pkt, void *opaque)
 
 static struct pb *__iip_clone_pb(struct workspace *s, struct pb *orig, void *opaque)
 {
-	struct pb *p = s->pool.p[0];
-	__iip_assert(p);
+	struct pb *p = NULL;
+	do {
+		p = s->pool.p[0];
+		if (!p)
+			IIP_EX_OPS_NO_PB();
+	} while (!p);
 	__iip_dequeue_obj(s->pool.p, p, 0);
 	__iip_memcpy(p->l3_hdr, orig->l3_hdr, sizeof(p->l3_hdr));
 	__iip_memcpy(p->l4_hdr, orig->l4_hdr, sizeof(p->l4_hdr));
@@ -1124,8 +1138,12 @@ static uint16_t __iip_tcp_fast_open(void *_mem,
 	}
 	{
 		struct workspace *s = (struct workspace *) _mem;
-		struct iip_tcp_conn *conn = s->pool.conn[0];
-		__iip_assert(conn);
+		struct iip_tcp_conn *conn = NULL;
+		do {
+			conn = s->pool.conn[0];
+			if (!conn)
+				IIP_EX_OPS_NO_TCP_CONN();
+		} while (!conn);
 		__iip_dequeue_obj(s->pool.conn, conn, 0);
 		__iip_tcp_conn_init(s, conn, local_mac, local_ip4_be, local_port_be, peer_mac, peer_ip4_be, peer_port_be, __IIP_TCP_STATE_SYN_SENT, opaque);
 		conn->fastopen_cookie.len = tfo_cookie_len;
@@ -2201,8 +2219,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											if (PB_TCP_HDR_HAS_ACK(p)) {
 												IIP_OPS_DEBUG_PRINTF("WARNING: got syn-ack for non-existing connection, maybe RSS sterring would be wrong\n");
 											} else { /* got a new connection request, so allocate conn obj */
-												conn = s->pool.conn[0];
-												__iip_assert(conn);
+												do {
+													conn = s->pool.conn[0];
+													if (!conn)
+														IIP_EX_OPS_NO_TCP_CONN();
+												} while (!conn);
 												__iip_dequeue_obj(s->pool.conn, conn, 0);
 												__iip_tcp_conn_init(s, conn,
 														iip_ops_l2_hdr_dst_ptr(p->pkt, opaque), PB_IP4(p)->dst_be, PB_TCP(p)->dst_be,
