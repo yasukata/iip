@@ -2309,6 +2309,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											}
 											if (conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used < SEQ_RE(_p)) /* decrement tail if the packet exceeds the advertised window */
 												_p->tcp.dec_tail += SEQ_RE(_p) - (conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used);
+											if (PB_TCP_HDR_HAS_SYN(_p) && PB_TCP_HDR_HAS_ACK(_p)
+													&& conn->state == __IIP_TCP_STATE_ESTABLISHED
+													&& __iip_ntohl(PB_TCP(_p)->ack_seq_be) == __iip_ntohl(conn->iss_be) + 1)
+												conn->flags |= __IIP_TCP_CONN_FLAGS_ACK_PENDING; /* ack to syn/ack retransmitted by peer */
 											if (conn->seq_next_expected != SEQ_LE_RAW(_p)) { /* sequence number is different from expected one, but keep in head[4] */
 												conn->do_ack_cnt++;
 												if (((conn->rx_buf_cnt.limit - conn->rx_buf_cnt.used <= SEQ_LE(_p)) /* exceeding advertised window size, so, discard _p */ )
@@ -4345,8 +4349,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						if ((__iip_ntohl(conn->ack_seq_be) != conn->ack_seq_sent)) /* we got payload, but ack is not pushed by the app */
 							__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, 0, NULL, 0, opaque);
 					}
-					if (conn->flags & __IIP_TCP_CONN_FLAGS_ACK_PENDING)
-						__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, 0, NULL, 0, opaque);
 					if (conn->do_ack_cnt) { /* push ack telling rx misses */
 						struct pb *queue[2] = { 0 };
 						if (conn->sack_ok && conn->head[4][1]) {
@@ -4436,6 +4438,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 						}
 						conn->do_ack_cnt = 0;
 					}
+					if (conn->flags & __IIP_TCP_CONN_FLAGS_ACK_PENDING)
+						__iip_tcp_push(s, conn, NULL, 0, 1, 0, 0, 0, NULL, 0, opaque);
 					{ /* if retransmission queue is empty, packets from normal queue are sent */
 						struct pb **queue = (conn->head[3][0] ? conn->head[3] : conn->head[1]);
 						{ /* either retransmission or normal queue */
