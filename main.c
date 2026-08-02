@@ -140,6 +140,9 @@ static int __iip_ex_ops_tcp_fastopen_check(uint32_t ip_s, uint32_t ip_d, const u
 #ifndef IIP_EX_OPS_TCP_FASTOPEN_REQUEST
 #define IIP_EX_OPS_TCP_FASTOPEN_REQUEST(_ip_s, _ip_d, _b, _l) do { *(_l) = 0; } while (0)
 #endif
+#ifndef IIP_EX_OPS_TCP_STATE_CLOSE_WAIT
+#define IIP_EX_OPS_TCP_STATE_CLOSE_WAIT(_mem, _conn, _opaque) do { iip_tcp_close(_mem, _conn, _opaque); } while (0)
+#endif
 
 /* test callback */
 
@@ -992,7 +995,8 @@ again:
 static uint16_t iip_tcp_send(void *_mem, void *_handle, void *pkt, uint16_t tcp_flags, void *opaque)
 {
 	struct iip_tcp_conn *conn = (struct iip_tcp_conn *) _handle;
-	if (conn->state != __IIP_TCP_STATE_ESTABLISHED)
+	if (conn->state != __IIP_TCP_STATE_ESTABLISHED
+			&& conn->state != __IIP_TCP_STATE_CLOSE_WAIT)
 		return 0;
 	return __iip_tcp_push((struct workspace *) _mem, conn, pkt, 0, 1, 0, 0, tcp_flags, NULL, 0, opaque);
 }
@@ -1000,10 +1004,17 @@ static uint16_t iip_tcp_send(void *_mem, void *_handle, void *pkt, uint16_t tcp_
 static uint16_t iip_tcp_close(void *_mem, void *_handle, void *opaque)
 {
 	struct iip_tcp_conn *conn = (struct iip_tcp_conn *) _handle;
-	if (conn->state == __IIP_TCP_STATE_ESTABLISHED) {
-		conn->state = __IIP_TCP_STATE_FIN_WAIT1;
-		IIP_TEST_CALLBACK_TCP_STATE_SET();
-		IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT1\n", (void *) conn);
+	if (conn->state == __IIP_TCP_STATE_ESTABLISHED
+			|| conn->state == __IIP_TCP_STATE_CLOSE_WAIT) {
+		if (conn->state == __IIP_TCP_STATE_ESTABLISHED) {
+			conn->state = __IIP_TCP_STATE_FIN_WAIT1;
+			IIP_TEST_CALLBACK_TCP_STATE_SET();
+			IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_FIN_WAIT1\n", (void *) conn);
+		} else {
+			conn->state = __IIP_TCP_STATE_LAST_ACK;
+			IIP_TEST_CALLBACK_TCP_STATE_SET();
+			IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_CLOSE_WAIT - TCP_STATE_LAST_ACK\n", (void *) conn);
+		}
 		{
 			uint16_t ret = __iip_tcp_push((struct workspace *) _mem, conn, NULL, 0, 1, 1, 0, 0, NULL, 0, opaque);
 			conn->fin_ack_seq_be = conn->seq_be;
@@ -3514,24 +3525,23 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											/* fall through */
 										case __IIP_TCP_STATE_ESTABLISHED:
 											conn->keepalive_ts = now_ms;
+											if (conn->state == __IIP_TCP_STATE_ESTABLISHED /* state can be updated in callback before fall through */
+													&& PB_TCP_HDR_HAS_ACK(p) && PB_TCP_PAYLOAD_LEN(p)) {
+												conn->rx_buf_cnt.used += PB_TCP_PAYLOAD_LEN(p) - p->tcp.inc_head - p->tcp.dec_tail;
+												iip_ops_tcp_payload(s, conn, p->pkt, conn->opaque, p->tcp.inc_head, p->tcp.dec_tail, opaque);
+											}
 											if (PB_TCP_HDR_HAS_FIN(p)) {
 												ack = 1;
 												conn->state = __IIP_TCP_STATE_CLOSE_WAIT;
 												IIP_TEST_CALLBACK_TCP_STATE_SET();
 												IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_ESTABLISHED - TCP_STATE_CLOSE_WAIT\n", (void *) conn);
-											} else if (conn->state == __IIP_TCP_STATE_ESTABLISHED /* state can be updated in callback before fall through */
-													&& PB_TCP_HDR_HAS_ACK(p) && PB_TCP_PAYLOAD_LEN(p)) {
-												conn->rx_buf_cnt.used += PB_TCP_PAYLOAD_LEN(p) - p->tcp.inc_head - p->tcp.dec_tail;
-												iip_ops_tcp_payload(s, conn, p->pkt, conn->opaque, p->tcp.inc_head, p->tcp.dec_tail, opaque);
+												conn->flags &= ~__IIP_TCP_CONN_FLAGS_ACK_SENT;
+												IIP_EX_OPS_TCP_STATE_CLOSE_WAIT(s, conn, opaque);
+												if (conn->flags & __IIP_TCP_CONN_FLAGS_ACK_SENT)
+													ack = 0;
 											}
 											break;
 										case __IIP_TCP_STATE_CLOSE_WAIT:
-											if (PB_TCP_HDR_HAS_FIN(p)) {
-												fin = 1;
-												conn->state = __IIP_TCP_STATE_LAST_ACK;
-												IIP_TEST_CALLBACK_TCP_STATE_SET();
-												IIP_OPS_DEBUG_PRINTF("%p: TCP_STATE_CLOSE_WAIT - TCP_STATE_LAST_ACK\n", (void *) conn);
-											}
 											break;
 										case __IIP_TCP_STATE_LAST_ACK:
 											if (PB_TCP_HDR_HAS_ACK(p) && PB_TCP(p)->ack_seq_be == conn->fin_ack_seq_be) {
