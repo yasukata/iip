@@ -149,6 +149,17 @@ static int __iip_ex_ops_tcp_fastopen_check(uint32_t ip_s, uint32_t ip_d, const u
 #ifndef IIP_EX_OPS_NO_TCP_CONN
 #define IIP_EX_OPS_NO_TCP_CONN() do { __iip_assert(0); } while (0)
 #endif
+#ifndef IIP_EX_OPS_PKT_GET_CAPACITY
+static uint16_t iip_ex_ops_pkt_get_capacity(void *pkt, void *opaque)
+{
+	return 1514; /* 14-byte l2 header and 1500-byte payload, without ethernet fcs */
+	{ /* unused */
+		(void) pkt;
+		(void) opaque;
+	}
+}
+#define IIP_EX_OPS_PKT_GET_CAPACITY(_p, _o) iip_ex_ops_pkt_get_capacity(_p, _o)
+#endif
 
 /* test callback */
 
@@ -809,6 +820,11 @@ static void iip_arp_request(void *_mem,
 	{
 		void *out_pkt = iip_ops_pkt_alloc(opaque);
 		__iip_assert(out_pkt);
+		if (IIP_EX_OPS_PKT_GET_CAPACITY(out_pkt, opaque) < iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(struct iip_arp_hdr) + 20) {
+			iip_ops_pkt_free(out_pkt, opaque);
+			IIP_OPS_DEBUG_PRINTF("packet buffer capacity is too small for an arp packet\n");
+			return;
+		}
 		{
 			uint8_t bc_mac[IIP_CONF_L2ADDR_LEN_MAX];
 			iip_ops_l2_broadcast_addr(bc_mac, opaque);
@@ -822,7 +838,7 @@ static void iip_arp_request(void *_mem,
 			arph.lproto = iip_ops_arp_lproto(opaque);
 			arph.op_be = __iip_htons(0x0001);
 			__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &arph, sizeof(arph));
-			{ /* TODO: boundary check */
+			{
 				uint8_t *d = (uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(arph);
 				__iip_memcpy(&d[0], local_mac, arph.lhw); /* hw sender */
 				__iip_memcpy(&d[arph.lhw], (uint8_t *) &local_ip4_be, arph.lproto); /* ip sender */
@@ -851,6 +867,8 @@ static uint16_t __iip_tcp_push(struct workspace *s,
 	uint32_t dst_ip4_be = conn->peer_ip4_be;
 	uint8_t ip4_opt[40] = { 0 };
 	uint16_t ip4_opt_len = 0;
+	struct iip_tcp_conn _cached_conn;
+	__iip_memcpy(&_cached_conn, conn, sizeof(_cached_conn));
 	IIP_EX_OPS_TCP_CRAFT_IP4_OPT(s, conn, conn->opaque, _pkt, &dst_ip4_be, ip4_opt, &ip4_opt_len, opaque);
 	__iip_assert(ip4_opt_len <= sizeof(ip4_opt));
 	__iip_assert(ip4_opt_len % 4 == 0);
@@ -865,6 +883,25 @@ again:
 	frag_cnt++;
 	pkt = _pkt;
 	out_p = __iip_alloc_pb(s, iip_ops_pkt_alloc(opaque), opaque);
+	if (IIP_EX_OPS_PKT_GET_CAPACITY(out_p->pkt, opaque) < iip_ops_l2_hdr_len(out_p->pkt, opaque) + sizeof(struct iip_ip4_hdr) + ip4_opt_len + sizeof(struct iip_tcp_hdr) + tcp_opt_len) {
+		__iip_free_pb(s, out_p, opaque);
+		iip_ops_pkt_free(_pkt, opaque);
+		{
+			struct pb *_e = conn->head[1][1];
+			{
+				uint16_t i;
+				for (i = 0; i < frag_cnt - 1; i++) {
+					struct pb *_p = _e->prev[0];
+					__iip_dequeue_obj(conn->head[1], _e, 0);
+					__iip_free_pb(s, _e, opaque);
+					_e = _p;
+				}
+			}
+		}
+		__iip_memcpy(conn, &_cached_conn, sizeof(_cached_conn));
+		IIP_OPS_DEBUG_PRINTF("packet buffer capacity is too small for a tcp packet\n");
+		return 0xffff;
+	}
 	{
 		if (!iip_ops_nic_feature_offload_tcp_tx_tso(opaque)
 				&& total_payload_len) {
@@ -987,6 +1024,27 @@ again:
 		if (pkt) iip_ops_pkt_scatter_gather_chain_append(out_p->pkt, pkt, opaque);
 		iip_ops_pkt_set_len(out_p->pkt, iip_ops_l2_hdr_len(out_p->pkt, opaque) + PB_IP4_HDR_LEN(out_p) + PB_TCP_HDR_LEN(out_p), opaque);
 	} else {
+		if (IIP_EX_OPS_PKT_GET_CAPACITY(out_p->pkt, opaque) < iip_ops_l2_hdr_len(out_p->pkt, opaque) + PB_IP4_HDR_LEN(out_p) + PB_TCP_HDR_LEN(out_p) + payload_len) {
+			__iip_free_pb(s, out_p, opaque);
+			iip_ops_pkt_free(_pkt, opaque);
+			if (pkt && pkt != _pkt)
+				iip_ops_pkt_free(pkt, opaque);
+			{
+				struct pb *_e = conn->head[1][1];
+				{
+					uint16_t i;
+					for (i = 0; i < frag_cnt - 1; i++) {
+						struct pb *_p = _e->prev[0];
+						__iip_dequeue_obj(conn->head[1], _e, 0);
+						__iip_free_pb(s, _e, opaque);
+						_e = _p;
+					}
+				}
+			}
+			__iip_memcpy(conn, &_cached_conn, sizeof(_cached_conn));
+			IIP_OPS_DEBUG_PRINTF("packet buffer capacity is too small for a tcp packet\n");
+			return 0xffff;
+		}
 		if (pkt) __iip_memcpy(iip_ops_pkt_get_data(out_p->pkt, opaque) + iip_ops_l2_hdr_len(out_p->pkt, opaque) + PB_IP4_HDR_LEN(out_p) + PB_TCP_HDR_LEN(out_p), iip_ops_pkt_get_data(pkt, opaque), payload_len);
 		iip_ops_pkt_set_len(out_p->pkt, iip_ops_l2_hdr_len(out_p->pkt, opaque) + PB_IP4_HDR_LEN(out_p) + PB_TCP_HDR_LEN(out_p) + payload_len, opaque);
 		if (pkt) out_p->orig_pkt = pkt;
@@ -1150,7 +1208,17 @@ static uint16_t __iip_tcp_fast_open(void *_mem,
 		conn->peer_win = 0xffff; /* to avoid stopped by flow control */
 		__iip_memcpy(conn->fastopen_cookie.buf, tfo_cookie_buf, tfo_cookie_len);
 		/* TODO: to allow for diffserv setting for the first syn, changes to this API is necessary */
-		return __iip_tcp_push(s, conn, pkt, 1, 0, 0, 0, 0, NULL, (pkt && conn->fastopen_cookie.len ? 1 : 0), opaque);
+		{
+			uint16_t r = __iip_tcp_push(s, conn, pkt, 1, 0, 0, 0, 0, NULL, (pkt && conn->fastopen_cookie.len ? 1 : 0), opaque);
+			if (r) {
+				conn->flags |= __IIP_TCP_CONN_FLAGS_SKIP_TCP_CLOSE_CALLBACK;
+				conn->state = __IIP_TCP_STATE_CLOSED;
+				__iip_dequeue_obj(s->tcp.conns_ht[(conn->peer_ip4_be + conn->local_port_be + conn->peer_port_be) % IIP_CONF_TCP_CONN_HT_SIZE], conn, 1);
+				__iip_dequeue_obj(s->tcp.conns, conn, 0);
+				__iip_enqueue_obj(s->tcp.closed_conns, conn, 0);
+			}
+			return r;
+		}
 	}
 }
 
@@ -1170,6 +1238,12 @@ static uint16_t iip_udp_send(void *_mem,
 	void *out_pkt = iip_ops_pkt_alloc(opaque);
 	uint16_t payload_len = (pkt ? iip_ops_pkt_get_len(pkt, opaque) : 0);
 	__iip_assert(out_pkt);
+	if (IIP_EX_OPS_PKT_GET_CAPACITY(out_pkt, opaque) < iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(struct iip_ip4_hdr) + sizeof(struct iip_udp_hdr)) {
+		iip_ops_pkt_free(out_pkt, opaque);
+		iip_ops_pkt_free(pkt, opaque);
+		IIP_OPS_DEBUG_PRINTF("packet buffer capacity is too small for a udp packet\n");
+		return 0xffff;
+	}
 	iip_ops_l2_hdr_craft(out_pkt, local_mac, peer_mac, __iip_htons(0x0800), opaque);
 	{
 		struct iip_ip4_hdr ip4h = { 0 };
@@ -1219,6 +1293,12 @@ static uint16_t iip_udp_send(void *_mem,
 				if (pkt) iip_ops_pkt_scatter_gather_chain_append(out_pkt, pkt, opaque);
 				iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + (ip4h.vl & 0x0f) * 4 + sizeof(struct iip_udp_hdr), opaque);
 			} else {
+				if (IIP_EX_OPS_PKT_GET_CAPACITY(out_pkt, opaque) < iip_ops_l2_hdr_len(out_pkt, opaque) + (ip4h.vl & 0x0f) * 4 + sizeof(struct iip_udp_hdr) + payload_len) {
+					iip_ops_pkt_free(out_pkt, opaque);
+					iip_ops_pkt_free(pkt, opaque);
+					IIP_OPS_DEBUG_PRINTF("packet buffer capacity is too small for a udp packet\n");
+					return 0xffff;
+				}
 				if (pkt) __iip_memcpy(&((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque))[iip_ops_l2_hdr_len(out_pkt, opaque) + (ip4h.vl & 0x0f) * 4 + sizeof(struct iip_udp_hdr)], iip_ops_pkt_get_data(pkt, opaque), payload_len);
 				iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + (ip4h.vl & 0x0f) * 4 + __iip_ntohs(udph.len_be), opaque);
 				if (pkt) iip_ops_pkt_free(pkt, opaque);
@@ -1497,6 +1577,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										if (!skip) {
 											void *out_pkt = iip_ops_pkt_alloc(opaque);
 											__iip_assert(out_pkt);
+											if (IIP_EX_OPS_PKT_GET_CAPACITY(out_pkt, opaque) < iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(struct iip_ip4_hdr) + sizeof(struct iip_icmp_hdr) + PB_IP4_HDR_LEN(p) + 8) {
+												iip_ops_pkt_free(out_pkt, opaque);
+												IIP_OPS_DEBUG_PRINTF("packet buffer capacity is too small for an icmp packet\n");
+												break;
+											}
 											iip_ops_l2_hdr_craft(out_pkt, iip_ops_l2_hdr_dst_ptr(p->pkt, opaque), iip_ops_l2_hdr_src_ptr(p->pkt, opaque), __iip_htons(0x0800), opaque);
 											{
 												struct iip_ip4_hdr ip4h = { 0 };
@@ -1829,6 +1914,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 											if (__iip_ntohl(ip4_be) == __may_unaligned_read_hl(PB_ARP_IP_TARGET(p))) { /* arp response */
 												void *out_pkt = iip_ops_pkt_alloc(opaque);
 												__iip_assert(out_pkt);
+												if (IIP_EX_OPS_PKT_GET_CAPACITY(out_pkt, opaque) < iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(struct iip_arp_hdr) + 20) {
+													iip_ops_pkt_free(out_pkt, opaque);
+													IIP_OPS_DEBUG_PRINTF("packet buffer capacity is too small for an arp packet\n");
+													break;
+												}
 												iip_ops_l2_hdr_craft(out_pkt, mac, PB_ARP_HW_SENDER(p), __iip_htons(0x0806), opaque);
 												{
 													struct iip_arp_hdr arph;
@@ -2040,6 +2130,11 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 										{
 											void *out_pkt = iip_ops_pkt_alloc(opaque);
 											__iip_assert(out_pkt);
+											if (IIP_EX_OPS_PKT_GET_CAPACITY(out_pkt, opaque) < iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(struct iip_ip4_hdr) + sizeof(struct iip_icmp_hdr) + icmp_data_len) {
+												iip_ops_pkt_free(out_pkt, opaque);
+												IIP_OPS_DEBUG_PRINTF("packet buffer capacity is too small for an icmp packet\n");
+												break;
+											}
 											iip_ops_l2_hdr_craft(out_pkt, iip_ops_l2_hdr_dst_ptr(p->pkt, opaque), iip_ops_l2_hdr_src_ptr(p->pkt, opaque), __iip_htons(0x0800), opaque);
 											{
 												struct iip_ip4_hdr ip4h = { 0 };
@@ -2087,7 +2182,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 															icmph.csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1 + i, 0));
 														}
 													}
-													/* TODO: boundary check */
 													if (!p->ip4_frag.next /* TODO: fragmented payload */)
 														__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h) + sizeof(icmph), PB_ICMP_DATA(p), icmp_data_len);
 													__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &ip4h, sizeof(ip4h));
@@ -4576,7 +4670,12 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 												|| (!space && !conn->probe_pkt && PB_TCP_PAYLOAD_LEN(p)))) {
 										void *new_pkt = iip_ops_pkt_alloc(opaque);
 										__iip_assert(new_pkt);
-										{ /* TODO: boundary check */
+										if (IIP_EX_OPS_PKT_GET_CAPACITY(new_pkt, opaque) < iip_ops_l2_hdr_len(p->pkt, opaque) + PB_IP4_HDR_LEN(p) + PB_TCP_HDR_LEN(p) + (space ? space - PB_TCP_HDR_HAS_SYN(p) : 1)) {
+											iip_ops_pkt_free(new_pkt, opaque);
+											IIP_OPS_DEBUG_PRINTF("packet buffer capacity is too small for a tcp packet\n");
+											break;
+										}
+										{
 											void *__pkt = p->pkt;
 											uint16_t off[2];
 											off[0] = off[1] = 0;
