@@ -837,7 +837,7 @@ static void iip_arp_request(void *_mem,
 			arph.lhw = iip_ops_arp_lhw(opaque);
 			arph.lproto = iip_ops_arp_lproto(opaque);
 			arph.op_be = __iip_htons(0x0001);
-			__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &arph, sizeof(arph));
+			__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &arph, sizeof(arph));
 			{
 				uint8_t *d = (uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(arph);
 				__iip_memcpy(&d[0], local_mac, arph.lhw); /* hw sender */
@@ -1015,8 +1015,8 @@ again:
 				}
 			} else
 				iip_ops_nic_offload_tcp_tx_checksum_mark(out_p->pkt, opaque); /* relies on the value of tcp hdr len on packet buf */
-			__iip_memcpy(iip_ops_pkt_get_data(out_p->pkt, opaque) + iip_ops_l2_hdr_len(out_p->pkt, opaque), PB_IP4(out_p), PB_IP4_HDR_LEN(out_p));
-			__iip_memcpy(iip_ops_pkt_get_data(out_p->pkt, opaque) + iip_ops_l2_hdr_len(out_p->pkt, opaque) + PB_IP4_HDR_LEN(out_p), PB_TCP(out_p), PB_TCP_HDR_LEN(out_p));
+			__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_p->pkt, opaque) + iip_ops_l2_hdr_len(out_p->pkt, opaque), PB_IP4(out_p), PB_IP4_HDR_LEN(out_p));
+			__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_p->pkt, opaque) + iip_ops_l2_hdr_len(out_p->pkt, opaque) + PB_IP4_HDR_LEN(out_p), PB_TCP(out_p), PB_TCP_HDR_LEN(out_p));
 		}
 	}
 
@@ -1045,7 +1045,7 @@ again:
 			IIP_OPS_DEBUG_PRINTF("packet buffer capacity is too small for a tcp packet\n");
 			return 0xffff;
 		}
-		if (pkt) __iip_memcpy(iip_ops_pkt_get_data(out_p->pkt, opaque) + iip_ops_l2_hdr_len(out_p->pkt, opaque) + PB_IP4_HDR_LEN(out_p) + PB_TCP_HDR_LEN(out_p), iip_ops_pkt_get_data(pkt, opaque), payload_len);
+		if (pkt) __iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_p->pkt, opaque) + iip_ops_l2_hdr_len(out_p->pkt, opaque) + PB_IP4_HDR_LEN(out_p) + PB_TCP_HDR_LEN(out_p), iip_ops_pkt_get_data(pkt, opaque), payload_len);
 		iip_ops_pkt_set_len(out_p->pkt, iip_ops_l2_hdr_len(out_p->pkt, opaque) + PB_IP4_HDR_LEN(out_p) + PB_TCP_HDR_LEN(out_p) + payload_len, opaque);
 		if (pkt) out_p->orig_pkt = pkt;
 	}
@@ -1142,7 +1142,7 @@ static void __iip_tcp_conn_init(struct workspace *s, struct iip_tcp_conn *conn,
 				uint8_t peer_mac[], uint32_t peer_ip4_be, uint16_t peer_port_be,
 				uint8_t state, void *opaque)
 {
-	__iip_memset(conn, 0, sizeof(*conn));
+	__iip_memset(conn, 0, sizeof(struct iip_tcp_conn));
 	__iip_memcpy(conn->local_mac, local_mac, sizeof(conn->local_mac));
 	conn->local_ip4_be = local_ip4_be;
 	conn->local_port_be = local_port_be;
@@ -1287,8 +1287,8 @@ static uint16_t iip_udp_send(void *_mem,
 				}
 			} else
 				iip_ops_nic_offload_udp_tx_checksum_mark(out_pkt, opaque);
-			__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &ip4h, sizeof(ip4h));
-			__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h), &udph, sizeof(udph));
+			__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &ip4h, sizeof(ip4h));
+			__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h), &udph, sizeof(udph));
 			if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
 				if (pkt) iip_ops_pkt_scatter_gather_chain_append(out_pkt, pkt, opaque);
 				iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + (ip4h.vl & 0x0f) * 4 + sizeof(struct iip_udp_hdr), opaque);
@@ -1330,7 +1330,7 @@ static uint16_t iip_udp_send(void *_mem,
 			} \
 			if (_l > (____ll) - (____l)) \
 				_l = (____ll) - (____l); \
-			__iip_memcpy(&((uint8_t *)(____ptr))[____l], iip_ops_pkt_get_data(__p->pkt, opaque) + iip_ops_l2_hdr_len(__p->pkt, opaque) + PB_IP4_HDR_LEN(__p), _l); \
+			__iip_memcpy(&((uint8_t *)(____ptr))[____l], (uint8_t *) iip_ops_pkt_get_data(__p->pkt, opaque) + iip_ops_l2_hdr_len(__p->pkt, opaque) + PB_IP4_HDR_LEN(__p), _l); \
 			(____l) += _l; \
 		} \
 	} while (0)
@@ -1468,12 +1468,12 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								IIP_OPS_DEBUG_PRINTF("ip4 hdr is not in the packet (pkt size %u / %lu)\n", iip_ops_pkt_get_len(pkt[i], opaque), iip_ops_l2_hdr_len(pkt[i], opaque) + sizeof(struct iip_ip4_hdr));
 								break;
 							}
-							__iip_memcpy(p->l3_hdr, iip_ops_pkt_get_data(pkt[i], opaque) + iip_ops_l2_hdr_len(pkt[i], opaque), sizeof(struct iip_ip4_hdr));
+							__iip_memcpy(p->l3_hdr, (uint8_t *) iip_ops_pkt_get_data(pkt[i], opaque) + iip_ops_l2_hdr_len(pkt[i], opaque), sizeof(struct iip_ip4_hdr));
 							if (iip_ops_pkt_get_len(pkt[i], opaque) < iip_ops_l2_hdr_len(pkt[i], opaque) + PB_IP4_HDR_LEN(p)) {
 								IIP_OPS_DEBUG_PRINTF("ip4 hdr invalid length (%u / %u)\n", PB_IP4_HDR_LEN(p), iip_ops_l2_hdr_len(pkt[i], opaque) + PB_IP4_HDR_LEN(p));
 								break;
 							}
-							__iip_memcpy(p->l3_hdr, iip_ops_pkt_get_data(pkt[i], opaque) + iip_ops_l2_hdr_len(pkt[i], opaque), PB_IP4_HDR_LEN(p));
+							__iip_memcpy(p->l3_hdr, (uint8_t *) iip_ops_pkt_get_data(pkt[i], opaque) + iip_ops_l2_hdr_len(pkt[i], opaque), PB_IP4_HDR_LEN(p));
 							/* l3_hdr is cached in pb */
 							if (iip_ops_pkt_get_len(pkt[i], opaque) < iip_ops_l2_hdr_len(pkt[i], opaque) + PB_IP4_TOTAL_LEN(p)) {
 								IIP_OPS_DEBUG_PRINTF("ip4 hdr invalid data length (%u / %u)\n", iip_ops_pkt_get_len(pkt[i], opaque), iip_ops_l2_hdr_len(pkt[i], opaque) + PB_IP4_TOTAL_LEN(p));
@@ -1615,10 +1615,10 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														icmph.csum_be = __iip_htons(__iip_netcsum16(_b, _l, 3, 0));
 													}
 													/* TODO: boundary check */
-													__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &ip4h, sizeof(ip4h));
-													__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h), &icmph, sizeof(icmph));
-													__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h) + sizeof(icmph), PB_IP4(p), PB_IP4_HDR_LEN(p));
-													__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h) + sizeof(icmph) + PB_IP4_HDR_LEN(p), _icmph, 8);
+													__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &ip4h, sizeof(ip4h));
+													__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h), &icmph, sizeof(icmph));
+													__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h) + sizeof(icmph), PB_IP4(p), PB_IP4_HDR_LEN(p));
+													__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h) + sizeof(icmph) + PB_IP4_HDR_LEN(p), _icmph, 8);
 												}
 												iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + __iip_ntohs(ip4h.len_be), opaque);
 												iip_ops_l2_push(out_pkt, opaque);
@@ -1873,7 +1873,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 								IIP_OPS_DEBUG_PRINTF("arp hdr is not in the pkt (%u / %lu)\n", iip_ops_pkt_get_len(pkt[i], opaque), iip_ops_l2_hdr_len(pkt[i], opaque) + sizeof(struct iip_arp_hdr));
 								break;
 						}
-						__iip_memcpy(p->l4_hdr, iip_ops_pkt_get_data(pkt[i], opaque) + iip_ops_l2_hdr_len(pkt[i], opaque), sizeof(struct iip_arp_hdr));
+						__iip_memcpy(p->l4_hdr, (uint8_t *) iip_ops_pkt_get_data(pkt[i], opaque) + iip_ops_l2_hdr_len(pkt[i], opaque), sizeof(struct iip_arp_hdr));
 						if (iip_ops_pkt_get_len(pkt[i], opaque) < iip_ops_l2_hdr_len(pkt[i], opaque) + sizeof(struct iip_arp_hdr) + 2 * PB_ARP(p)->lhw + 2 * PB_ARP(p)->lproto) {
 								IIP_OPS_DEBUG_PRINTF("arp hdr invalid length field line:%u\n", __LINE__);
 								break;
@@ -1882,7 +1882,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 							IIP_OPS_DEBUG_PRINTF("arp tmp buffer size is insufficient for handling incoming packet\n");
 							break;
 						}
-						__iip_memcpy(p->l4_hdr, iip_ops_pkt_get_data(pkt[i], opaque) + iip_ops_l2_hdr_len(pkt[i], opaque), sizeof(struct iip_arp_hdr) + 2 * PB_ARP(p)->lhw + 2 * PB_ARP(p)->lproto);
+						__iip_memcpy(p->l4_hdr, (uint8_t *) iip_ops_pkt_get_data(pkt[i], opaque) + iip_ops_l2_hdr_len(pkt[i], opaque), sizeof(struct iip_arp_hdr) + 2 * PB_ARP(p)->lhw + 2 * PB_ARP(p)->lproto);
 						/* l4_hdr is cached in pb */
 						{
 							uint8_t bc_mac[IIP_CONF_L2ADDR_LEN_MAX];
@@ -1927,7 +1927,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													arph.lhw = iip_ops_arp_lhw(opaque);
 													arph.lproto = iip_ops_arp_lproto(opaque);
 													arph.op_be = __iip_htons(0x0002);
-													__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &arph, sizeof(arph));
+													__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &arph, sizeof(arph));
 													{ /* TODO: boundary check */
 														uint8_t *d = (uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(arph);
 														__iip_memcpy(&d[0], mac, arph.lhw); /* hw sender */
@@ -2183,12 +2183,12 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														}
 													}
 													if (!p->ip4_frag.next /* TODO: fragmented payload */)
-														__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h) + sizeof(icmph), PB_ICMP_DATA(p), icmp_data_len);
-													__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &ip4h, sizeof(ip4h));
-													__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h), &icmph, sizeof(icmph));
+														__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h) + sizeof(icmph), PB_ICMP_DATA(p), icmp_data_len);
+													__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &ip4h, sizeof(ip4h));
+													__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h), &icmph, sizeof(icmph));
 													/* TODO: large data */
-													__iip_memcpy(iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h) + sizeof(icmph),
-															iip_ops_pkt_get_data(p->pkt, opaque) + iip_ops_l2_hdr_len(p->pkt, opaque) + sizeof(ip4h) + sizeof(icmph), icmp_data_len);
+													__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h) + sizeof(icmph),
+															(uint8_t *) iip_ops_pkt_get_data(p->pkt, opaque) + iip_ops_l2_hdr_len(p->pkt, opaque) + sizeof(ip4h) + sizeof(icmph), icmp_data_len);
 												}
 												iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + __iip_htons(PB_IP4(p)->len_be), opaque);
 												iip_ops_l2_push(out_pkt, opaque);
@@ -3573,7 +3573,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 																}
 															}
 														}
-														__iip_memcpy(iip_ops_pkt_get_data(conn->head[2][0]->pkt, opaque) + iip_ops_l2_hdr_len(conn->head[2][0]->pkt, opaque) + PB_IP4_HDR_LEN(conn->head[2][0]), PB_TCP(conn->head[2][0]), PB_TCP_HDR_LEN(conn->head[2][0]));
+														__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(conn->head[2][0]->pkt, opaque) + iip_ops_l2_hdr_len(conn->head[2][0]->pkt, opaque) + PB_IP4_HDR_LEN(conn->head[2][0]), PB_TCP(conn->head[2][0]), PB_TCP_HDR_LEN(conn->head[2][0]));
 														{
 															struct pb *cb = __iip_clone_pb(s, conn->head[2][0], opaque);
 															__iip_assert(cb);
@@ -4737,8 +4737,8 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														}
 													}
 												}
-												__iip_memcpy(iip_ops_pkt_get_data(new_pkt, opaque) + iip_ops_l2_hdr_len(new_pkt, opaque), n_ip4h, PB_IP4_HDR_LEN(p));
-												__iip_memcpy(iip_ops_pkt_get_data(new_pkt, opaque) + iip_ops_l2_hdr_len(new_pkt, opaque) + PB_IP4_HDR_LEN(p), n_tcph, PB_TCP_HDR_LEN(p));
+												__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(new_pkt, opaque) + iip_ops_l2_hdr_len(new_pkt, opaque), n_ip4h, PB_IP4_HDR_LEN(p));
+												__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(new_pkt, opaque) + iip_ops_l2_hdr_len(new_pkt, opaque) + PB_IP4_HDR_LEN(p), n_tcph, PB_TCP_HDR_LEN(p));
 											}
 										}
 										if (space) {
