@@ -1614,7 +1614,6 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 														uint16_t _l[3]; _l[0] = sizeof(struct iip_icmp_hdr); _l[1] = PB_IP4_HDR_LEN(p); _l[2] = 8;
 														icmph.csum_be = __iip_htons(__iip_netcsum16(_b, _l, 3, 0));
 													}
-													/* TODO: boundary check */
 													__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &ip4h, sizeof(ip4h));
 													__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h), &icmph, sizeof(icmph));
 													__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h) + sizeof(icmph), PB_IP4(p), PB_IP4_HDR_LEN(p));
@@ -1928,7 +1927,7 @@ static uint16_t iip_run(void *_mem, uint8_t mac[], uint32_t ip4_be, void *pkt[],
 													arph.lproto = iip_ops_arp_lproto(opaque);
 													arph.op_be = __iip_htons(0x0002);
 													__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &arph, sizeof(arph));
-													{ /* TODO: boundary check */
+													{
 														uint8_t *d = (uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(arph);
 														__iip_memcpy(&d[0], mac, arph.lhw); /* hw sender */
 														__iip_memcpy(&d[arph.lhw], PB_ARP_IP_TARGET(p), arph.lproto); /* ip sender */
