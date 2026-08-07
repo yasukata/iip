@@ -938,7 +938,9 @@ again:
 					uint16_t _l[1]; _l[0] = (uint16_t) ((ip4h->vl & 0x0f) * 4);
 					ip4h->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1, 0));
 				}
-			} else
+			}
+			__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_p->pkt, opaque) + iip_ops_l2_hdr_len(out_p->pkt, opaque), PB_IP4(out_p), PB_IP4_HDR_LEN(out_p));
+			if (iip_ops_nic_feature_offload_ip4_tx_checksum(opaque))
 				iip_ops_nic_offload_ip4_tx_checksum_mark(out_p->pkt, opaque);
 		}
 		__iip_assert(conn->rx_buf_cnt.limit < (1U << 30) /* 1GB limit : RFC 7323 */);
@@ -1013,10 +1015,10 @@ again:
 						tcph->csum_be = __iip_htons(__iip_netcsum16(_b, _l, 3, 0));
 					}
 				}
-			} else
-				iip_ops_nic_offload_tcp_tx_checksum_mark(out_p->pkt, opaque); /* relies on the value of tcp hdr len on packet buf */
-			__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_p->pkt, opaque) + iip_ops_l2_hdr_len(out_p->pkt, opaque), PB_IP4(out_p), PB_IP4_HDR_LEN(out_p));
+			}
 			__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_p->pkt, opaque) + iip_ops_l2_hdr_len(out_p->pkt, opaque) + PB_IP4_HDR_LEN(out_p), PB_TCP(out_p), PB_TCP_HDR_LEN(out_p));
+			if (iip_ops_nic_feature_offload_tcp_tx_checksum(opaque))
+				iip_ops_nic_offload_tcp_tx_checksum_mark(out_p->pkt, opaque); /* relies on the value of tcp hdr len on packet buf */
 		}
 	}
 
@@ -1263,7 +1265,9 @@ static uint16_t iip_udp_send(void *_mem,
 				uint16_t _l[1]; _l[0] = (uint16_t) ((ip4h.vl & 0x0f) * 4);
 				ip4h.csum_be = __iip_htons(__iip_netcsum16(_b, _l, 1, 0));
 			}
-		} else
+		}
+		__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &ip4h, sizeof(ip4h));
+		if (iip_ops_nic_feature_offload_ip4_tx_checksum(opaque))
 			iip_ops_nic_offload_ip4_tx_checksum_mark(out_pkt, opaque);
 		{
 			struct iip_udp_hdr udph = { 0 };
@@ -1285,10 +1289,10 @@ static uint16_t iip_udp_send(void *_mem,
 						udph.csum_be = __iip_htons(__iip_netcsum16(_b, _l, 3, 0));
 					}
 				}
-			} else
-				iip_ops_nic_offload_udp_tx_checksum_mark(out_pkt, opaque);
-			__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque), &ip4h, sizeof(ip4h));
+			}
 			__iip_memcpy((uint8_t *) iip_ops_pkt_get_data(out_pkt, opaque) + iip_ops_l2_hdr_len(out_pkt, opaque) + sizeof(ip4h), &udph, sizeof(udph));
+			if (iip_ops_nic_feature_offload_udp_tx_checksum(opaque))
+				iip_ops_nic_offload_udp_tx_checksum_mark(out_pkt, opaque);
 			if (iip_ops_nic_feature_offload_tx_scatter_gather(opaque)) {
 				if (pkt) iip_ops_pkt_scatter_gather_chain_append(out_pkt, pkt, opaque);
 				iip_ops_pkt_set_len(out_pkt, iip_ops_l2_hdr_len(out_pkt, opaque) + (ip4h.vl & 0x0f) * 4 + sizeof(struct iip_udp_hdr), opaque);
