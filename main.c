@@ -3221,6 +3221,9 @@ static enum iip_rc ii_tcp_conn_update_info(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 		ii_tcp_conn_update_rto(w, conn_id, false);
 	II_TCP_CONN(conn_id).ack_seq = II_PB(pb_id).tcp.seq + (ii_tcp_hdr_has_syn(w, pb_id) ? 1 : 0) + (ii_tcp_hdr_has_fin(w, pb_id) ? 1 : 0) + II_PB(pb_id).tcp.payload_len - II_PB(pb_id).tcp.dec_tail;
 	return IIP_ERR_OK;
+	{ /* unused */
+		(void) opaque;
+	}
 }
 
 /*@
@@ -5958,6 +5961,9 @@ static enum iip_rc ii_ipv4_rx_csum_check(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQ
 		}
 	}
 	return IIP_ERR_OK;
+	{ /* unused */
+		(void) w;
+	}
 }
 
 /*@
@@ -6191,6 +6197,9 @@ static enum iip_rc ii_arp_input__ipv4_reply(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_O
 		if (iip_ret_int)
 			return IIP_ERR_FATAL_USR;
 		return IIP_ERR_OK;
+	}
+	{ /* unused */
+		(void) w;
 	}
 }
 
@@ -6592,6 +6601,7 @@ static int iip_run(IIP_MEM_P w, IIP_PKT_P pkt[], IIP_PKT_CNT_T cnt, uint32_t *ne
 		(void) ii_extract_tcp_ack_seq_be;
 		(void) ii_extract_tcp_seq_be;
 		(void) ii_pb_ring_pop;
+		(void) iip_udp_ipv4_ethernet_send_copy;
 	}
 }
 
