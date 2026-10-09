@@ -6219,6 +6219,8 @@ static enum iip_rc ii_ipv4_frag_push__check_complete(IIP_PKT_P part_pkt[II_CONF_
 			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 		}
 		if (off != ii_extract_ipv4_off(ii_call_pkt_get_data(part_pkt[i], opaque) + II_ETH_HDR_LEN)) { /* not contiguous */
+			if (off > ii_extract_ipv4_off(ii_call_pkt_get_data(part_pkt[i], opaque) + II_ETH_HDR_LEN))
+				return IIP_ERR_INVALID_RX; /* overlap */
 			if (cnt == II_CONF_IPV4_FRAG_CNT_MAX)
 				return IIP_ERR_INVALID_RX; /* incomplete and no extra space, so discard all */
 			else
