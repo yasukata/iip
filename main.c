@@ -162,10 +162,12 @@ struct ii_##_obj_name##__ring { \
  */ \
 static enum iip_rc ii_##_obj_name##_ring_validation(struct ii_##_obj_name##__ring *ring) \
 { \
-	if (ring->head >= sizeof(ring->slot) / sizeof(ring->slot[0])) \
+	if (ring->head >= sizeof(ring->slot) / sizeof(ring->slot[0])) { \
 		return IIP_ERR_FATAL_SYS; \
-	if (ring->tail >= sizeof(ring->slot) / sizeof(ring->slot[0])) \
+	} \
+	if (ring->tail >= sizeof(ring->slot) / sizeof(ring->slot[0])) { \
 		return IIP_ERR_FATAL_SYS; \
+	} \
 	return IIP_ERR_OK; \
 } \
 /*@ \
@@ -200,12 +202,15 @@ static uint16_t ii_##_obj_name##_ring_num_usable(struct ii_##_obj_name##__ring *
  */ \
 static enum iip_rc ii_##_obj_name##_ring_push(struct ii_##_obj_name##__ring *ring, _type _obj_id) \
 { \
-	if (ring->tail >= sizeof(ring->slot) / sizeof(ring->slot[0])) \
+	if (ring->tail >= sizeof(ring->slot) / sizeof(ring->slot[0])) { \
 		return IIP_ERR_FATAL_SYS; \
-	if (ring->head >= sizeof(ring->slot) / sizeof(ring->slot[0])) \
+	} \
+	if (ring->head >= sizeof(ring->slot) / sizeof(ring->slot[0])) { \
 		return IIP_ERR_FATAL_SYS; \
-	if (!ii_##_obj_name##_ring_num_usable(ring)) \
+	} \
+	if (!ii_##_obj_name##_ring_num_usable(ring)) { \
 		return IIP_ERR_FATAL_MEM; \
+	} \
 	{ \
 		uint16_t next = ring->head + 1; \
 		if (next == sizeof(ring->slot) / sizeof(ring->slot[0])) \
@@ -221,14 +226,18 @@ static enum iip_rc ii_##_obj_name##_ring_push(struct ii_##_obj_name##__ring *rin
  */ \
 static enum iip_rc ii_##_obj_name##_ring_insert(struct ii_##_obj_name##__ring *ring, _type _obj_id, uint16_t idx) \
 { \
-	if (idx >= sizeof(ring->slot) / sizeof(ring->slot[0])) \
+	if (idx >= sizeof(ring->slot) / sizeof(ring->slot[0])) { \
 		return IIP_ERR_FATAL_SYS; \
-	if (ring->tail >= sizeof(ring->slot) / sizeof(ring->slot[0])) \
+	} \
+	if (ring->tail >= sizeof(ring->slot) / sizeof(ring->slot[0])) { \
 		return IIP_ERR_FATAL_SYS; \
-	if (ring->head >= sizeof(ring->slot) / sizeof(ring->slot[0])) \
+	} \
+	if (ring->head >= sizeof(ring->slot) / sizeof(ring->slot[0])) { \
 		return IIP_ERR_FATAL_SYS; \
-	if (!ii_##_obj_name##_ring_num_usable(ring)) \
+	} \
+	if (!ii_##_obj_name##_ring_num_usable(ring)) { \
 		return IIP_ERR_FATAL_MEM; \
+	} \
 	{ \
 		IIP_PKT_CNT_T cnt = (idx <= ring->head ? (uint16_t) (ring->head - idx) : sizeof(ring->slot) / sizeof(ring->slot[0]) + ring->head - idx); \
 		{ \
@@ -264,12 +273,15 @@ static enum iip_rc ii_##_obj_name##_ring_insert(struct ii_##_obj_name##__ring *r
  */ \
 static enum iip_rc ii_##_obj_name##_ring_pop(struct ii_##_obj_name##__ring *ring, _type *_obj_id) \
 { \
-		if (ring->tail >= sizeof(ring->slot) / sizeof(ring->slot[0])) \
+	if (ring->tail >= sizeof(ring->slot) / sizeof(ring->slot[0])) { \
 		return IIP_ERR_FATAL_SYS; \
-	if (ring->head >= sizeof(ring->slot) / sizeof(ring->slot[0])) \
+	} \
+	if (ring->head >= sizeof(ring->slot) / sizeof(ring->slot[0])) { \
 		return IIP_ERR_FATAL_SYS; \
-	if (ring->head == ring->tail) \
+	} \
+	if (ring->head == ring->tail) { \
 		return IIP_ERR_FATAL_SYS; \
+	} \
 	{ \
 		uint16_t prev = (ring->head ? (uint16_t) (ring->head - 1) : sizeof(ring->slot) / sizeof(ring->slot[0]) - 1); \
 		*_obj_id = ring->slot[prev]; \
@@ -288,12 +300,15 @@ static enum iip_rc ii_##_obj_name##_ring_pop(struct ii_##_obj_name##__ring *ring
  */ \
 static enum iip_rc ii_##_obj_name##_ring_pull(struct ii_##_obj_name##__ring *ring, _type *_obj_id) \
 { \
-		if (ring->tail >= sizeof(ring->slot) / sizeof(ring->slot[0])) \
+	if (ring->tail >= sizeof(ring->slot) / sizeof(ring->slot[0])) { \
 		return IIP_ERR_FATAL_SYS; \
-	if (ring->head >= sizeof(ring->slot) / sizeof(ring->slot[0])) \
+	} \
+	if (ring->head >= sizeof(ring->slot) / sizeof(ring->slot[0])) { \
 		return IIP_ERR_FATAL_SYS; \
-	if (ring->head == ring->tail) \
+	} \
+	if (ring->head == ring->tail) { \
 		return IIP_ERR_FATAL_SYS; \
+	} \
 	{ \
 		uint16_t next = (ring->tail == sizeof(ring->slot) / sizeof(ring->slot[0]) - 1 ? 0 : ring->tail + 1); \
 		*_obj_id = ring->slot[ring->tail]; \
@@ -315,12 +330,15 @@ struct ii_##_obj_name##__pool { \
  */ \
 static enum iip_rc ii_free_##_obj_name(struct ii_##_obj_name##__pool *pool, uint32_t _obj_id) \
 { \
-	if (pool->used_cnt > sizeof(pool->queue) / sizeof(pool->queue[0])) \
+	if (pool->used_cnt > sizeof(pool->queue) / sizeof(pool->queue[0])) { \
 		return IIP_ERR_FATAL_SYS; \
-	if (pool->used_cnt == 0) \
+	} \
+	if (pool->used_cnt == 0) { \
 		return IIP_ERR_FATAL_SYS; \
-	if (_obj_id >= sizeof(pool->queue) / sizeof(pool->queue[0])) \
+	} \
+	if (_obj_id >= sizeof(pool->queue) / sizeof(pool->queue[0])) { \
 		return IIP_ERR_FATAL_SYS; \
+	} \
 	pool->used_cnt = pool->used_cnt - 1; \
 	pool->queue[pool->used_cnt] = _obj_id; \
 	return IIP_ERR_OK; \
@@ -335,10 +353,12 @@ static enum iip_rc ii_free_##_obj_name(struct ii_##_obj_name##__pool *pool, uint
 */ \
 static enum iip_rc ii_alloc_##_obj_name(struct ii_##_obj_name##__pool *pool, uint32_t *_obj_id) \
 { \
-	if (pool->used_cnt > sizeof(pool->queue) / sizeof(pool->queue[0])) \
+	if (pool->used_cnt > sizeof(pool->queue) / sizeof(pool->queue[0])) { \
 		return IIP_ERR_FATAL_SYS; \
-	if (pool->used_cnt == sizeof(pool->queue) / sizeof(pool->queue[0])) \
+	} \
+	if (pool->used_cnt == sizeof(pool->queue) / sizeof(pool->queue[0])) { \
 		return IIP_ERR_FATAL_MEM; \
+	} \
 	*_obj_id = pool->queue[pool->used_cnt]; \
 	pool->used_cnt = pool->used_cnt + 1; \
 	if (*_obj_id >= sizeof(pool->queue) / sizeof(pool->queue[0])) { \
@@ -464,6 +484,22 @@ static int iip_arp_ethernet_request(IIP_MEM_P w, uint8_t local_mac[II_ETH_ADDR_L
 
 #ifndef SKIP_IIP_IMPLEMENTATION
 
+#ifndef IIP_OPS_DEBUG_PRINTF
+#define IIP_OPS_DEBUG_PRINTF() do { } while (0)
+#endif
+#ifndef IIP_OPS_ERROR_FATAL_SYS
+#define IIP_OPS_ERROR_FATAL_SYS() do { } while (0)
+#endif
+#ifndef IIP_OPS_ERROR_FATAL_USR
+#define IIP_OPS_ERROR_FATAL_USR() do { } while (0)
+#endif
+#ifndef IIP_OPS_ERROR_FATAL_SUB
+#define IIP_OPS_ERROR_FATAL_SUB() do { } while (0)
+#endif
+#ifndef IIP_OPS_ERROR_FATAL_MEM
+#define IIP_OPS_ERROR_FATAL_MEM() do { } while (0)
+#endif
+
 #ifndef IIP_OPS_PKT_VALID
 #define IIP_OPS_PKT_VALID() do { iip_ret_bool = true; } while (0)
 #endif
@@ -569,6 +605,9 @@ static int iip_arp_ethernet_request(IIP_MEM_P w, uint8_t local_mac[II_ETH_ADDR_L
 #endif
 #ifndef II_HOOK_TX_IPV4_ETHERNET
 #define II_HOOK_TX_IPV4_ETHERNET() do { (void) opaque; } while (0)
+#endif
+#ifndef II_HOOK_TX_IPV4_ETHERNET_ZERO_COPY
+#define II_HOOK_TX_IPV4_ETHERNET_ZERO_COPY() do { (void) opaque; } while (0)
 #endif
 
 /*@ logic integer f_ntohs{L}(integer x) = (uint16_t)(((uint32_t) x % 256) * 256) | (((uint32_t) x / 256) % 256); */
@@ -874,12 +913,15 @@ static bool ii_seq_ordered(uint32_t a, uint32_t b)
  */
 static enum iip_rc ii_extent_queue_remove(struct ii_extent_queue *eq, uint8_t idx)
 {
-	if (!eq->cnt)
-		return IIP_ERR_FATAL_SYS;
-	if (eq->cnt > II_CONF_EXTENT_QUEUE_SIZE)
-		return IIP_ERR_FATAL_SYS;
-	if (idx >= eq->cnt)
-		return IIP_ERR_FATAL_SYS;
+	if (!eq->cnt) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (eq->cnt > II_CONF_EXTENT_QUEUE_SIZE) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (idx >= eq->cnt) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		if (eq->cnt > 1) {
 			uint8_t i;
@@ -902,12 +944,15 @@ static enum iip_rc ii_extent_queue_remove(struct ii_extent_queue *eq, uint8_t id
  */
 static enum iip_rc ii_extent_queue_insert(struct ii_extent_queue *eq, uint8_t idx, uint32_t v, uint16_t l)
 {
-	if (eq->cnt > II_CONF_EXTENT_QUEUE_SIZE)
-		return IIP_ERR_FATAL_SYS;
-	if (eq->cnt == II_CONF_EXTENT_QUEUE_SIZE)
-		return IIP_ERR_FATAL_MEM;
-	if (idx > eq->cnt)
-		return IIP_ERR_FATAL_SYS;
+	if (eq->cnt > II_CONF_EXTENT_QUEUE_SIZE) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (eq->cnt == II_CONF_EXTENT_QUEUE_SIZE) {
+		IIP_OPS_ERROR_FATAL_MEM(); return IIP_ERR_FATAL_MEM;
+	}
+	if (idx > eq->cnt) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		if (eq->cnt > 0 && idx != eq->cnt) {
 			uint8_t i = eq->cnt - 1;
@@ -936,8 +981,9 @@ static enum iip_rc ii_extent_queue_insert(struct ii_extent_queue *eq, uint8_t id
  */
 static enum iip_rc ii_extent_queue_add(struct ii_extent_queue *eq, uint32_t val, uint32_t len)
 {
-	if (eq->cnt > II_CONF_EXTENT_QUEUE_SIZE)
-		return IIP_ERR_FATAL_SYS;
+	if (eq->cnt > II_CONF_EXTENT_QUEUE_SIZE) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (eq->cnt == II_CONF_EXTENT_QUEUE_SIZE)
 		return IIP_ERR_BUF_FULL;
 	{
@@ -951,8 +997,9 @@ static enum iip_rc ii_extent_queue_add(struct ii_extent_queue *eq, uint32_t val,
 		 */
 		do {
 			uint8_t i, continue_loop = 0, cnt = eq->cnt;
-			if (cnt > II_CONF_EXTENT_QUEUE_SIZE)
-				return IIP_ERR_FATAL_SYS;
+			if (cnt > II_CONF_EXTENT_QUEUE_SIZE) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 			/*@
 				loop invariant 0 <= loop_cnt <= max_loop;
 				loop invariant 0 <= i <= cnt <= II_CONF_EXTENT_QUEUE_SIZE;
@@ -991,8 +1038,9 @@ static enum iip_rc ii_extent_queue_add(struct ii_extent_queue *eq, uint32_t val,
 						 *      |---- eq->l ---|
 						 *
 						 */
-						if (ii_extent_queue_remove(eq, i) != IIP_ERR_OK)
-							return IIP_ERR_FATAL_SYS;
+						if (ii_extent_queue_remove(eq, i) != IIP_ERR_OK) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
 						continue_loop = 1;
 						continue;
 					}
@@ -1014,8 +1062,9 @@ static enum iip_rc ii_extent_queue_add(struct ii_extent_queue *eq, uint32_t val,
 						 *                     |---- eq->l --
 						 *
 						 */
-						if (ii_extent_queue_insert(eq, i, v, l) != IIP_ERR_OK)
-							return IIP_ERR_FATAL_SYS;
+						if (ii_extent_queue_insert(eq, i, v, l) != IIP_ERR_OK) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
 						break;
 					} else {
 						if (ii_seq_ordered(v + l, eq->extent[i].v + eq->extent[i].l)) {
@@ -1039,8 +1088,9 @@ static enum iip_rc ii_extent_queue_add(struct ii_extent_queue *eq, uint32_t val,
 							 *            |-- eq->l --|
 							 *
 							 */
-							if (ii_extent_queue_remove(eq, i) != IIP_ERR_OK)
-								return IIP_ERR_FATAL_SYS;
+							if (ii_extent_queue_remove(eq, i) != IIP_ERR_OK) {
+								IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+							}
 							continue_loop = 1;
 							break;
 						}
@@ -1075,16 +1125,18 @@ static enum iip_rc ii_extent_queue_add(struct ii_extent_queue *eq, uint32_t val,
 						 */
 						l = v + l - eq->extent[i].v;
 						v = eq->extent[i].v;
-						if (ii_extent_queue_remove(eq, i) != IIP_ERR_OK)
-							return IIP_ERR_FATAL_SYS;
+						if (ii_extent_queue_remove(eq, i) != IIP_ERR_OK) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
 						continue_loop = 1;
 						break;
 					}
 				}
 			}
 			if (i == eq->cnt) {
-				if (ii_extent_queue_insert(eq, i, v, l) != IIP_ERR_OK)
-					return IIP_ERR_FATAL_SYS;
+				if (ii_extent_queue_insert(eq, i, v, l) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				break;
 			}
 			if (!continue_loop)
@@ -1101,8 +1153,9 @@ static enum iip_rc ii_extent_queue_add(struct ii_extent_queue *eq, uint32_t val,
  */
 static enum iip_rc ii_extent_queue_shrink(struct ii_extent_queue *eq, uint32_t to)
 {
-	if (eq->cnt > II_CONF_EXTENT_QUEUE_SIZE)
-		return IIP_ERR_FATAL_SYS;
+	if (eq->cnt > II_CONF_EXTENT_QUEUE_SIZE) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint8_t max_loop = eq->cnt, loop_cnt = 0;
 		/*@
@@ -1112,8 +1165,9 @@ static enum iip_rc ii_extent_queue_shrink(struct ii_extent_queue *eq, uint32_t t
 		 */
 		do {
 			uint8_t i, cnt = eq->cnt;
-			if (cnt > II_CONF_EXTENT_QUEUE_SIZE)
-				return IIP_ERR_FATAL_SYS;
+			if (cnt > II_CONF_EXTENT_QUEUE_SIZE) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}	
 			/*@
 				loop invariant 0 <= loop_cnt <= max_loop;
 				loop invariant 0 <= i <= cnt <= II_CONF_EXTENT_QUEUE_SIZE;
@@ -1194,11 +1248,14 @@ static enum iip_rc ii_free_pkts(IIP_PKT_P *pkts, IIP_PKT_CNT_T cnt, IIP_OPAQUE_P
  */
 static enum iip_rc ii_free_pb_and_pkt(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (II_PB(pb_id).cnt && II_PB(pb_id).cnt <= II_CONF_IPV4_FRAG_CNT_MAX)
 		ii_free_pkts(II_PB(pb_id).part_pkt, II_PB(pb_id).cnt, opaque);
-	ii_free_pb(&w->pbs, pb_id);
+	if (ii_free_pb(&w->pbs, pb_id) != IIP_ERR_OK) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	return IIP_ERR_OK;
 }
 
@@ -1530,10 +1587,12 @@ static void ii_extract_ethernet_dst(uint8_t addr[II_ETH_ADDR_LEN], uint8_t *buf)
  */
 static enum iip_rc ii_pb_ipv4_payload_len(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LEN_T *payload_len, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (w->pbs.array[pb_id].cnt > II_CONF_IPV4_FRAG_CNT_MAX)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (w->pbs.array[pb_id].cnt > II_CONF_IPV4_FRAG_CNT_MAX) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint16_t len = 0;
 		{
@@ -1544,10 +1603,12 @@ static enum iip_rc ii_pb_ipv4_payload_len(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LE
 				loop variant cnt - i;
 			 */
 			for (i = 0; i < cnt; i++) {
-				if (!ii_call_pkt_valid(w->pbs.array[pb_id].part_pkt[i], opaque))
-					return IIP_ERR_FATAL_SYS;
-				if (ii_extract_ipv4_tot_len(ii_call_pkt_get_data(w->pbs.array[pb_id].part_pkt[i], opaque) + II_ETH_HDR_LEN) < ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(w->pbs.array[pb_id].part_pkt[i], opaque) + II_ETH_HDR_LEN))
-					return IIP_ERR_FATAL_SYS;
+				if (!ii_call_pkt_valid(w->pbs.array[pb_id].part_pkt[i], opaque)) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+				if (ii_extract_ipv4_tot_len(ii_call_pkt_get_data(w->pbs.array[pb_id].part_pkt[i], opaque) + II_ETH_HDR_LEN) < ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(w->pbs.array[pb_id].part_pkt[i], opaque) + II_ETH_HDR_LEN)) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				len += ii_extract_ipv4_payload_len(ii_call_pkt_get_data(w->pbs.array[pb_id].part_pkt[i], opaque) + II_ETH_HDR_LEN);
 			}
 			*payload_len = len;
@@ -1567,10 +1628,12 @@ static enum iip_rc ii_pb_ipv4_payload_len(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LE
  */
 static enum iip_rc ii_pb_payload_copy(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LEN_T skip, uint8_t *buf, IIP_PKT_LEN_T buf_len, IIP_PKT_LEN_T *copied_len, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (w->pbs.array[pb_id].cnt > II_CONF_IPV4_FRAG_CNT_MAX)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (w->pbs.array[pb_id].cnt > II_CONF_IPV4_FRAG_CNT_MAX) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		IIP_PKT_LEN_T len = 0;
 		{
@@ -1583,9 +1646,9 @@ static enum iip_rc ii_pb_payload_copy(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LEN_T 
 				loop variant cnt - i;
 			 */
 			for (i = 0, s = 0; i < cnt; i++) {
-				if (!ii_call_pkt_valid(w->pbs.array[pb_id].part_pkt[i], opaque))
-					return IIP_ERR_FATAL_USR;
-				else {
+				if (!ii_call_pkt_valid(w->pbs.array[pb_id].part_pkt[i], opaque)) {
+					IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+				} else {
 					IIP_PKT_LEN_T off = skip - s, payload_len = ii_call_pkt_get_len(w->pbs.array[pb_id].part_pkt[i], opaque);
 					if (payload_len < off) {
 						s += payload_len;
@@ -1601,8 +1664,9 @@ static enum iip_rc ii_pb_payload_copy(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LEN_T 
 							loop variant cp_len - j;
 						 */
 						for (j = 0; j < cp_len && len < buf_len; j++) {
-							if (ii_call_pkt_get_capacity(w->pbs.array[pb_id].part_pkt[i], opaque) <= j + off)
-								return IIP_ERR_FATAL_SYS;
+							if (ii_call_pkt_get_capacity(w->pbs.array[pb_id].part_pkt[i], opaque) <= j + off) {
+								IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+							}
 							buf[len++] = ii_call_pkt_get_data(w->pbs.array[pb_id].part_pkt[i], opaque)[j + off];
 						}
 					}
@@ -1672,8 +1736,9 @@ static enum iip_rc ii_iov_total_len(uint16_t *buf_len, IIP_PKT_CNT_T cnt, IIP_PK
 			loop variant cnt - i;
 		 */
 		for (i = 0; i < cnt; i++) {
-			if ((uint32_t) len + buf_len[i] > 0xffff)
-				return IIP_ERR_FATAL_SYS;
+			if ((uint32_t) len + buf_len[i] > 0xffff) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 			len += buf_len[i];
 		}
 	}
@@ -1689,14 +1754,17 @@ static enum iip_rc ii_iov_total_len(uint16_t *buf_len, IIP_PKT_CNT_T cnt, IIP_PK
  */
 static enum iip_rc ii_ipv4_l4_input__csum_with_pseudo(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint16_t buf_len;
-		if (ii_pb_ipv4_payload_len(w, pb_id, &buf_len, opaque) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
+		if (ii_pb_ipv4_payload_len(w, pb_id, &buf_len, opaque) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		{
 			uint8_t pseudo_hdr_ipv4[12];
 			ii_write_uint32(pseudo_hdr_ipv4 + 0, ii_extract_ipv4_src_be(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN));
@@ -1709,8 +1777,9 @@ static enum iip_rc ii_ipv4_l4_input__csum_with_pseudo(IIP_MEM_P w, II_PB_P pb_id
 				uint16_t len[1 + II_CONF_IPV4_FRAG_CNT_MAX];
 				buf_ptr[0] = pseudo_hdr_ipv4;
 				len[0] = sizeof(pseudo_hdr_ipv4);
-				if (II_PB(pb_id).cnt > II_CONF_IPV4_FRAG_CNT_MAX)
-					return IIP_ERR_FATAL_SYS;
+				if (II_PB(pb_id).cnt > II_CONF_IPV4_FRAG_CNT_MAX) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				{
 					IIP_PKT_CNT_T i, cnt = II_PB(pb_id).cnt;
 					/*@
@@ -1727,14 +1796,18 @@ static enum iip_rc ii_ipv4_l4_input__csum_with_pseudo(IIP_MEM_P w, II_PB_P pb_id
 						loop variant cnt - i;
 					 */
 					for (i = 0; i < cnt; i++) {
-						if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[i], opaque))
-							return IIP_ERR_FATAL_SYS;
-						if (ii_call_pkt_get_len(II_PB(pb_id).part_pkt[i], opaque) < II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[i], opaque) + II_ETH_HDR_LEN))
-							return IIP_ERR_FATAL_SYS;
-						if (ii_extract_ipv4_tot_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[i], opaque) + II_ETH_HDR_LEN) < ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[i], opaque) + II_ETH_HDR_LEN))
-							return IIP_ERR_FATAL_SYS;
-						if (ii_extract_ipv4_payload_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[i], opaque) + II_ETH_HDR_LEN) > ii_call_pkt_get_capacity(II_PB(pb_id).part_pkt[i], opaque) - II_ETH_HDR_LEN - ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[i], opaque) + II_ETH_HDR_LEN))
-							return IIP_ERR_FATAL_SYS;
+						if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[i], opaque)) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
+						if (ii_call_pkt_get_len(II_PB(pb_id).part_pkt[i], opaque) < II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[i], opaque) + II_ETH_HDR_LEN)) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
+						if (ii_extract_ipv4_tot_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[i], opaque) + II_ETH_HDR_LEN) < ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[i], opaque) + II_ETH_HDR_LEN)) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
+						if (ii_extract_ipv4_payload_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[i], opaque) + II_ETH_HDR_LEN) > ii_call_pkt_get_capacity(II_PB(pb_id).part_pkt[i], opaque) - II_ETH_HDR_LEN - ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[i], opaque) + II_ETH_HDR_LEN)) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
 						buf_ptr[1 + i] = ii_call_pkt_get_data(II_PB(pb_id).part_pkt[i], opaque) + II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[i], opaque) + II_ETH_HDR_LEN);
 						len[1 + i] = ii_extract_ipv4_payload_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[i], opaque) + II_ETH_HDR_LEN);
 					}
@@ -1760,15 +1833,18 @@ static enum iip_rc ii_ipv4_l4_input__csum_with_pseudo(IIP_MEM_P w, II_PB_P pb_id
  */
 static enum iip_rc ii_ipv4_tx_csum(IIP_PKT_P tx_pkt, IIP_PKT_LEN_T off, IIP_PKT_LEN_T len, IIP_OPAQUE_P opaque)
 {
-	if (!ii_call_pkt_valid(tx_pkt, opaque))
-		return IIP_ERR_FATAL_SYS;
+	if (!ii_call_pkt_valid(tx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		IIP_OPS_IPV4_TX_CHECKSUM();
 	}
-	if (off + len > ii_call_pkt_get_capacity(tx_pkt, opaque))
-		return IIP_ERR_FATAL_SYS;
-	if (off + 12 > ii_call_pkt_get_capacity(tx_pkt, opaque))
-		return IIP_ERR_FATAL_SYS;
+	if (off + len > ii_call_pkt_get_capacity(tx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (off + 12 > ii_call_pkt_get_capacity(tx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint8_t *buf = ii_call_pkt_get_data(tx_pkt, opaque) + off;
 		{
@@ -1892,7 +1968,7 @@ static enum iip_rc ipv4_send_ethernet__prepare_tx_pkts(
 {
 	*tx_pkt_cnt = 0;
 	{
-		uint16_t pkt_cnt = 0, xmit_len = 0;
+		IIP_PKT_CNT_T pkt_cnt = 0, xmit_len = 0;
 		uint8_t is_err = 0;
 		/*@
 			loop invariant 0 <= pkt_cnt <= II_CONF_IPV4_FRAG_CNT_MAX;
@@ -1925,8 +2001,10 @@ static enum iip_rc ipv4_send_ethernet__prepare_tx_pkts(
 			II_HOOK_TX_IPV4_ETHERNET();
 			{
 				uint16_t tx_bytes;
-				if (ii_call_pkt_get_capacity(tx_pkt, opaque) < (II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL))
-					return IIP_ERR_FATAL_SYS;
+				if (ii_call_pkt_get_capacity(tx_pkt, opaque) < (II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL)) {
+					is_err = 1;
+					break;
+				}
 				tx_bytes = ii_call_pkt_get_capacity(tx_pkt, opaque) - (II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL);
 				if (tx_bytes > total_len - xmit_len)
 					tx_bytes = total_len - xmit_len;
@@ -1945,18 +2023,29 @@ static enum iip_rc ipv4_send_ethernet__prepare_tx_pkts(
 						xmit_len + tx_bytes == total_len ? 0 : 0x20 /* more flag */,
 						64, proto,
 						src_ipv4_be, dst_ipv4_be);
-				if (ii_ipv4_tx_csum(tx_pkt, II_ETH_HDR_LEN, II_IPV4_HDR_LEN_MINIMAL, opaque) != IIP_ERR_OK)
-					return IIP_ERR_FATAL_SYS;
+				if (ii_ipv4_tx_csum(tx_pkt, II_ETH_HDR_LEN, II_IPV4_HDR_LEN_MINIMAL, opaque) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				tx_len[pkt_cnt - 1] = tx_bytes;
 				xmit_len += tx_bytes;
 			}
 		}
 		*tx_pkt_cnt = pkt_cnt;
-		if (xmit_len < total_len)
-			return IIP_ERR_FATAL_SUB;
-		if (is_err)
-			return IIP_ERR_FATAL_SUB;
-		else
+		if (xmit_len < total_len || is_err) {
+			IIP_PKT_CNT_T i;
+			/*@
+				loop invariant 0 <= pkt_cnt <= II_CONF_IPV4_FRAG_CNT_MAX;
+				loop invariant 0 <= i <= pkt_cnt;
+				loop assigns i, *opaque;
+				loop variant pkt_cnt - i;
+			 */
+			for (i = 0; i < pkt_cnt; i++) {
+				if (ii_call_pkt_free(tx_pkts[i], opaque)) {
+					IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+				}
+			}
+			IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+		} else
 			return IIP_ERR_OK;
 	}
 }
@@ -1981,17 +2070,18 @@ static enum iip_rc ipv4_send_ethernet__xmit_tx_pkts(IIP_PKT_P tx_pkts[II_CONF_IP
 		loop variant tx_pkt_cnt - i;
 	 */
 	for (i = 0; i < tx_pkt_cnt; i++) {
-		if (!ii_call_pkt_valid(tx_pkts[i], opaque))
-			return IIP_ERR_FATAL_SYS;
+		if (!ii_call_pkt_valid(tx_pkts[i], opaque)) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		if (ii_call_pkt_set_len(tx_pkts[i], II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + tx_len[i], opaque))
 			break;
 		if (ii_call_ethernet_push(tx_pkts[i], opaque))
 			break;
 	}
 	*xmitted_cnt = i;
-	if (i != tx_pkt_cnt)
-		return IIP_ERR_FATAL_SUB;
-	else
+	if (i != tx_pkt_cnt) {
+		IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+	} else
 		return IIP_ERR_OK;
 }
 
@@ -2004,12 +2094,15 @@ static enum iip_rc ipv4_send_ethernet__cancel_tx_pkts(
 		IIP_PKT_P tx_pkts[II_CONF_IPV4_FRAG_CNT_MAX],
 		uint16_t from_idx, uint16_t to_idx, IIP_OPAQUE_P opaque)
 {
-	if (from_idx > II_CONF_IPV4_FRAG_CNT_MAX)
-		return IIP_ERR_FATAL_SYS;
-	if (to_idx > II_CONF_IPV4_FRAG_CNT_MAX)
-		return IIP_ERR_FATAL_SYS;
-	if (from_idx >= to_idx)
-		return IIP_ERR_FATAL_SYS;
+	if (from_idx > II_CONF_IPV4_FRAG_CNT_MAX) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (to_idx > II_CONF_IPV4_FRAG_CNT_MAX) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (from_idx >= to_idx) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint16_t i;
 		/*@
@@ -2018,10 +2111,12 @@ static enum iip_rc ipv4_send_ethernet__cancel_tx_pkts(
 			loop variant to_idx - i;
 		 */
 		for (i = from_idx; i < to_idx; i++) {
-			if (!ii_call_pkt_valid(tx_pkts[i], opaque))
-				return IIP_ERR_FATAL_SYS;
-			if (ii_call_pkt_free(tx_pkts[i], opaque))
-				return IIP_ERR_FATAL_SUB;
+			if (!ii_call_pkt_valid(tx_pkts[i], opaque)) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+			if (ii_call_pkt_free(tx_pkts[i], opaque)) {
+				IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+			}
 		}
 		return IIP_ERR_OK;
 	}
@@ -2065,15 +2160,17 @@ static enum iip_rc ii_ipv4_send_ethernet(
 					proto, diffserv, opaque) != IIP_ERR_OK) {
 			if (tx_pkt_cnt)
 				return ipv4_send_ethernet__cancel_tx_pkts(tx_pkts, 0, tx_pkt_cnt, opaque);
-			else
-				return IIP_ERR_FATAL_SYS;
+			else {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 		} else {
 			uint16_t xmitted_cnt = 0;
 			if (ipv4_send_ethernet__xmit_tx_pkts(tx_pkts, tx_len, tx_pkt_cnt, &xmitted_cnt, opaque) != IIP_ERR_OK) {
 				if (xmitted_cnt < tx_pkt_cnt)
 					return ipv4_send_ethernet__cancel_tx_pkts(tx_pkts, xmitted_cnt, tx_pkt_cnt, opaque);
-				else
-					return IIP_ERR_FATAL_SYS;
+				else {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 			} else
 				return IIP_ERR_OK;
 		}
@@ -2105,39 +2202,102 @@ static enum iip_rc ii_ipv4_send_ethernet_zero_copy(
 		const uint8_t **hdr_buf, IIP_PKT_LEN_T *hdr_buf_len, IIP_PKT_CNT_T cnt,
 		IIP_PKT_P tx_pkt, IIP_PKT_LEN_T payload_len, IIP_OPAQUE_P opaque)
 {
-	if (!ii_call_pkt_valid(tx_pkt, opaque))
-		return IIP_ERR_FATAL_SYS;
+	if (!ii_call_pkt_valid(tx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		IIP_PKT_P cloned_tx_pkt;
-		if (ii_call_pkt_clone(tx_pkt, &cloned_tx_pkt, opaque) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SUB;
+		if (ii_call_pkt_clone(tx_pkt, &cloned_tx_pkt, opaque) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+		}
 		{
 			IIP_PKT_P head_pkt;
-			if (ii_call_pkt_alloc(&head_pkt, opaque))
-				return IIP_ERR_FATAL_MEM;
-			if (ii_call_ethernet_hdr_craft(ii_call_pkt_get_data(head_pkt, opaque), dst_mac, ii_htons(0x0800) /* ipv4 */, opaque))
-				return IIP_ERR_FATAL_SUB;
+			if (ii_call_pkt_alloc(&head_pkt, opaque)) {
+				if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
+					IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+				}
+				IIP_OPS_ERROR_FATAL_MEM(); return IIP_ERR_FATAL_MEM;
+			}
+			if (ii_call_ethernet_hdr_craft(ii_call_pkt_get_data(head_pkt, opaque), dst_mac, ii_htons(0x0800) /* ipv4 */, opaque)) {
+				if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
+					IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+				}
+				if (ii_call_pkt_free(head_pkt, opaque)) {
+					IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+				}
+				IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+			}
 			{
 				IIP_PKT_LEN_T hdr_len;
-				if (ii_iov_total_len(hdr_buf_len, cnt, &hdr_len) != IIP_ERR_OK)
-					return IIP_ERR_FATAL_SYS;
-				if (II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + hdr_len > ii_call_pkt_get_capacity(head_pkt, opaque))
-					return IIP_ERR_FATAL_SYS;
-				if (ii_iov_copy(hdr_buf, hdr_buf_len, cnt, 0, ii_call_pkt_get_data(head_pkt, opaque) + II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL, hdr_len) != hdr_len)
-					return IIP_ERR_FATAL_SYS;
+				if (ii_iov_total_len(hdr_buf_len, cnt, &hdr_len) != IIP_ERR_OK) {
+					if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
+						IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+					}
+					if (ii_call_pkt_free(head_pkt, opaque)) {
+						IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+					}
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+				if (II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + hdr_len > ii_call_pkt_get_capacity(head_pkt, opaque)) {
+					if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
+						IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+					}
+					if (ii_call_pkt_free(head_pkt, opaque)) {
+						IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+					}
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+				if (ii_iov_copy(hdr_buf, hdr_buf_len, cnt, 0, ii_call_pkt_get_data(head_pkt, opaque) + II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL, hdr_len) != hdr_len) {
+					if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
+						IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+					}
+					if (ii_call_pkt_free(head_pkt, opaque)) {
+						IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+					}
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				ii_ipv4_hdr_craft_minimal(ii_call_pkt_get_data(head_pkt, opaque) + II_ETH_HDR_LEN, diffserv,
 						hdr_len + payload_len, 0 /* TODO: id randomization  */, 0,
 						0, 64, proto,
 						src_ipv4_be, dst_ipv4_be);
-				if (ii_ipv4_tx_csum(head_pkt, II_ETH_HDR_LEN, II_IPV4_HDR_LEN_MINIMAL, opaque) != IIP_ERR_OK)
-					return IIP_ERR_FATAL_SYS;
-				if (ii_call_pkt_set_len(head_pkt, II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + hdr_len, opaque))
-					return IIP_ERR_FATAL_SUB;
+				if (ii_ipv4_tx_csum(head_pkt, II_ETH_HDR_LEN, II_IPV4_HDR_LEN_MINIMAL, opaque) != IIP_ERR_OK) {
+					if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
+						IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+					}
+					if (ii_call_pkt_free(head_pkt, opaque)) {
+						IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+					}
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+				if (ii_call_pkt_set_len(head_pkt, II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + hdr_len, opaque)) {
+					if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
+						IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+					}
+					if (ii_call_pkt_free(head_pkt, opaque)) {
+						IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+					}
+					IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+				}
+				II_HOOK_TX_IPV4_ETHERNET_ZERO_COPY();
 			}
-			if (ii_call_pkt_scatter_gather_chain_append(head_pkt, cloned_tx_pkt, opaque))
-				return IIP_ERR_FATAL_SUB;
-			if (ii_call_ethernet_push(head_pkt, opaque))
-				return IIP_ERR_FATAL_SUB;
+			if (ii_call_pkt_scatter_gather_chain_append(head_pkt, cloned_tx_pkt, opaque)) {
+				if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
+					IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+				}
+				if (ii_call_pkt_free(head_pkt, opaque)) {
+					IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+				}
+				IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+			}
+			if (ii_call_ethernet_push(head_pkt, opaque)) {
+				if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
+					IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+				}
+				if (ii_call_pkt_free(head_pkt, opaque)) {
+					IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+				}
+				IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+			}
 		}
 	}
 	return IIP_ERR_OK;
@@ -2157,10 +2317,12 @@ static enum iip_rc ii_ipv4_send_ethernet_zero_copy(
 static enum iip_rc ii_icmp_echo_xmit_reply(IIP_MEM_P w, II_PB_P pb_id, const uint8_t *buf, uint16_t buf_len, IIP_OPAQUE_P opaque)
 {
 	uint8_t icmp_hdr[II_ICMP_HDR_LEN];
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	ii_icmp_echo_xmit_reply__icmp_hdr_craft_base(icmp_hdr, II_PB(pb_id).part_pkt[0], opaque);
 	ii_icmp_echo_xmit_reply__icmp_hdr_craft_csum(icmp_hdr, buf, buf_len);
 	{
@@ -2218,20 +2380,23 @@ static enum iip_rc ii_icmp_validation(const uint8_t *buf, uint16_t buf_len)
  */
 static enum iip_rc ii_icmp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint16_t buf_len;
-		if (ii_pb_ipv4_payload_len(w, pb_id, &buf_len, opaque) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
+		if (ii_pb_ipv4_payload_len(w, pb_id, &buf_len, opaque) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		if (buf_len < II_ICMP_HDR_LEN)
 			return IIP_ERR_INVALID_RX;
 		{
 			uint8_t tmp[0xffff]; /* XXX: assuming sufficiently large stack */
 			{
 				IIP_PKT_LEN_T copied_len;
-				if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))
-					return IIP_ERR_FATAL_SYS;
+				if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque)) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				if (ii_pb_payload_copy(w, pb_id, II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN), tmp, buf_len, &copied_len, opaque) != IIP_ERR_OK)
 					return IIP_ERR_INVALID_RX;
 				if (copied_len != buf_len)
@@ -2255,8 +2420,9 @@ static enum iip_rc ii_icmp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque
 					rc = IIP_ERR_FATAL_SYS;
 					break;
 				}
-				if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK)
-					return IIP_ERR_FATAL_SYS;
+				if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				return rc;
 			}
 		}
@@ -2540,12 +2706,15 @@ static void ii_tcp_conn_update_rto(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, bool los
  */
 static enum iip_rc ii_tcp_craft_sackbuf(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
-	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).pending_ring) != IIP_ERR_OK)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).pending_ring) != IIP_ERR_OK) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_SACK_OK))
 		return IIP_ERR_OK;
 	if (II_TCP_CONN(conn_id).pending_ring.head != II_TCP_CONN(conn_id).pending_ring.tail) {
@@ -2564,12 +2733,14 @@ static enum iip_rc ii_tcp_craft_sackbuf(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_
 					uint16_t slot_idx = II_TCP_CONN(conn_id).pending_ring.tail + i;
 					if (slot_idx >= II_CONF_TCP_RING_SLOT_LEN)
 						slot_idx %= II_CONF_TCP_RING_SLOT_LEN;
-					if (II_TCP_CONN(conn_id).pending_ring.slot[slot_idx] >= II_CONF_POOL_NUM_PB)
-						return IIP_ERR_FATAL_SYS;
+					if (II_TCP_CONN(conn_id).pending_ring.slot[slot_idx] >= II_CONF_POOL_NUM_PB) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
 					{
 						II_PB_P pb_id = II_TCP_CONN(conn_id).pending_ring.slot[slot_idx];
-						if (ii_extent_queue_add(&eq, ii_tcp_seq_le_raw(w, pb_id), ii_tcp_seq_re_raw(w, pb_id) - ii_tcp_seq_le_raw(w, pb_id)) != IIP_ERR_OK)
-							return IIP_ERR_FATAL_SYS;
+						if (ii_extent_queue_add(&eq, ii_tcp_seq_le_raw(w, pb_id), ii_tcp_seq_re_raw(w, pb_id) - ii_tcp_seq_le_raw(w, pb_id)) != IIP_ERR_OK) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
 					}
 				}
 			}
@@ -2601,8 +2772,9 @@ static enum iip_rc ii_tcp_craft_sackbuf(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_
  */
 static enum iip_rc ii_tcp_tx_push_control(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint16_t flags)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		II_PB_P pb_id;
 		{
@@ -2623,8 +2795,12 @@ static enum iip_rc ii_tcp_tx_push_control(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, u
 			II_PB(pb_id).tcp.inc_head = 0;
 			II_PB(pb_id).tcp.dec_tail = 0;
 			II_PB(pb_id).cnt = 0;
-			if (ii_tcp_craft_sackbuf(w, conn_id, pb_id) != IIP_ERR_OK)
-				return IIP_ERR_FATAL_SYS;
+			if (ii_tcp_craft_sackbuf(w, conn_id, pb_id) != IIP_ERR_OK) {
+				if (ii_free_pb(&w->pbs, pb_id) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 		}
 		{
 			II_TCP_CONN(conn_id).seq += ((flags & 0x3fU) & 0x01U /* fin */ ? 1 : 0) + ((flags & 0x3fU) & 0x02U /* syn */ ? 1 : 0);
@@ -2636,7 +2812,16 @@ static enum iip_rc ii_tcp_tx_push_control(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, u
 		}
 		if (II_TCP_CONN(conn_id).seq != II_TCP_CONN(conn_id).acked_seq)
 			ii_tcp_conn_update_rto(w, conn_id, false);
-		return ii_pb_ring_push(&II_TCP_CONN(conn_id).tx_ring, pb_id);
+		{
+			enum iip_rc rc = ii_pb_ring_push(&II_TCP_CONN(conn_id).tx_ring, pb_id);
+			if (rc != IIP_ERR_OK) {
+				if (ii_free_pb(&w->pbs, pb_id) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+				return rc;
+			}
+		}
+		return IIP_ERR_OK;
 	}
 }
 
@@ -2650,10 +2835,12 @@ static enum iip_rc ii_tcp_tx_push_control(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, u
  */
 static enum iip_rc ii_tcp_send(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint16_t flags, IIP_PKT_P pkts[], IIP_PKT_CNT_T cnt, IIP_OPAQUE_P opaque)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
-	if (cnt > II_CONF_IPV4_FRAG_CNT_MAX)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (cnt > II_CONF_IPV4_FRAG_CNT_MAX) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		II_PB_P pb_id;
 		{
@@ -2680,15 +2867,17 @@ static enum iip_rc ii_tcp_send(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint16_t fla
 					loop variant cnt - i;
 				 */
 				for (i = 0; i < cnt; i++) {
-					if (!ii_call_pkt_valid(pkts[i], opaque))
-						return IIP_ERR_FATAL_SYS;
+					if (!ii_call_pkt_valid(pkts[i], opaque)) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
 					II_PB(pb_id).tcp.payload_len += ii_call_pkt_get_len(pkts[i], opaque);;
 					II_PB(pb_id).part_pkt[i] = pkts[i];
 				}
 			}
 			II_PB(pb_id).cnt = cnt;
-			if (ii_tcp_craft_sackbuf(w, conn_id, pb_id) != IIP_ERR_OK)
-				return IIP_ERR_FATAL_SYS;
+			if (ii_tcp_craft_sackbuf(w, conn_id, pb_id) != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 		}
 		{
 			II_TCP_CONN(conn_id).seq += II_PB(pb_id).tcp.payload_len;
@@ -2698,7 +2887,16 @@ static enum iip_rc ii_tcp_send(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint16_t fla
 		}
 		if (II_TCP_CONN(conn_id).seq != II_TCP_CONN(conn_id).acked_seq)
 			ii_tcp_conn_update_rto(w, conn_id, false);
-		return ii_pb_ring_push(&II_TCP_CONN(conn_id).tx_ring, pb_id);
+		{
+			enum iip_rc rc = ii_pb_ring_push(&II_TCP_CONN(conn_id).tx_ring, pb_id);
+			if (rc != IIP_ERR_OK) {
+				if (ii_free_pb(&w->pbs, pb_id) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+				return rc;
+			}
+		}
+		return IIP_ERR_OK;
 	}
 }
 
@@ -2741,14 +2939,17 @@ static uint16_t ii_pb_tcp_hdr_len(IIP_MEM_P w, II_PB_P pb_id)
  */
 static enum iip_rc ii_pb_tcp_payload_len(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LEN_T *payload_len, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		IIP_PKT_LEN_T ipv4_payload_len;
-		if (ii_pb_ipv4_payload_len(w, pb_id, &ipv4_payload_len, opaque) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
-		if (ipv4_payload_len < ii_pb_tcp_hdr_len(w, pb_id))
-			return IIP_ERR_FATAL_SYS;
+		if (ii_pb_ipv4_payload_len(w, pb_id, &ipv4_payload_len, opaque) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
+		if (ipv4_payload_len < ii_pb_tcp_hdr_len(w, pb_id)) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		*payload_len = ipv4_payload_len - ii_pb_tcp_hdr_len(w, pb_id);
 		return IIP_ERR_OK;
 	}
@@ -2909,12 +3110,15 @@ static bool ii_tcp_paws(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id)
  */
 static enum iip_rc ii_tcp_check_input_seq(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
-	if (II_TCP_CONN(conn_id).buf.used > II_TCP_CONN(conn_id).buf.capacity)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (II_TCP_CONN(conn_id).buf.used > II_TCP_CONN(conn_id).buf.capacity) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (!ii_tcp_rx_window(w, conn_id))
 		return IIP_ERR_INVALID_RX;
 	if (ii_tcp_seq_entirely_acked(w, conn_id, pb_id))
@@ -2964,15 +3168,18 @@ static enum iip_rc ii_tcp_check_input_seq(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, I
  */
 static enum iip_rc ii_tcp_rx_push__pending(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint32_t le = ii_tcp_seq_le_raw(w, pb_id);
 		{
-			if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).pending_ring) != IIP_ERR_OK)
-				return IIP_ERR_FATAL_SYS;
+			if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).pending_ring) != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 			{
 				IIP_PKT_CNT_T cnt = ii_pb_ring_num_used(&II_TCP_CONN(conn_id).pending_ring);
 				{
@@ -2986,20 +3193,23 @@ static enum iip_rc ii_tcp_rx_push__pending(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 						uint16_t slot_idx = II_TCP_CONN(conn_id).pending_ring.tail + i;
 						if (slot_idx >= II_CONF_TCP_RING_SLOT_LEN)
 							slot_idx %= II_CONF_TCP_RING_SLOT_LEN;
-						if (II_TCP_CONN(conn_id).pending_ring.slot[slot_idx] >= II_CONF_POOL_NUM_PB)
-							return IIP_ERR_FATAL_SYS;
+						if (II_TCP_CONN(conn_id).pending_ring.slot[slot_idx] >= II_CONF_POOL_NUM_PB) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
 						{
 							uint32_t _le = ii_tcp_seq_le_raw(w, II_TCP_CONN(conn_id).pending_ring.slot[slot_idx]);
 							if (le == _le || ii_seq_ordered(le, _le)) {
-								if (ii_pb_ring_insert(&II_TCP_CONN(conn_id).pending_ring, pb_id, slot_idx) != IIP_ERR_OK)
-									return IIP_ERR_FATAL_SYS;
+								if (ii_pb_ring_insert(&II_TCP_CONN(conn_id).pending_ring, pb_id, slot_idx) != IIP_ERR_OK) {
+									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+								}
 								break;
 							}
 						}
 					}
 					if (i == cnt) {
-						if (ii_pb_ring_insert(&II_TCP_CONN(conn_id).pending_ring, pb_id, II_TCP_CONN(conn_id).pending_ring.head) != IIP_ERR_OK)
-							return IIP_ERR_FATAL_SYS;
+						if (ii_pb_ring_insert(&II_TCP_CONN(conn_id).pending_ring, pb_id, II_TCP_CONN(conn_id).pending_ring.head) != IIP_ERR_OK) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
 					}
 				}
 			}
@@ -3165,10 +3375,12 @@ static void ii_tcp_check_input_ack(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P 
  */
 static enum iip_rc ii_tcp_conn_update_info(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id, uint8_t out_of_order, uint8_t valid_ack, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (!out_of_order) {
 		II_TCP_CONN(conn_id).peer_win = II_PB(pb_id).tcp.win;
 		if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED) && ii_tcp_hdr_has_ack(w, pb_id)) {
@@ -3234,13 +3446,15 @@ static enum iip_rc ii_tcp_conn_update_info(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
  */
 static enum iip_rc ii_tcp_conn_close_check(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPAQUE_P opaque)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_CLOSING) {
 		int iip_ret_int;
 		IIP_OPS_TCP_CLOSED();
-		if (iip_ret_int)
-			return IIP_ERR_FATAL_USR;
+		if (iip_ret_int) {
+			IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+		}
 		II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_CLOSING;
 		ii_free_tcp_conn(&w->tcp_conns, conn_id);
 	}
@@ -3265,8 +3479,9 @@ static void ii_tcp_conn_set_state(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint8_t s
  */
 static enum iip_rc iip_tcp_close(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPAQUE_P opaque)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (II_TCP_CONN(conn_id).state == II_TCP_STATE_ESTABLISHED
 			|| II_TCP_CONN(conn_id).state == II_TCP_STATE_CLOSE_WAIT) {
 		if (II_TCP_CONN(conn_id).state == II_TCP_STATE_ESTABLISHED)
@@ -3395,10 +3610,12 @@ static void ii_tcp_conn_handle_in_order__closing(IIP_MEM_P w, IIP_TCP_CONN_P con
  */
 static enum iip_rc ii_tcp_conn_handle_in_order__syn_sent(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id, uint8_t *syn, uint8_t *ack, IIP_OPAQUE_P opaque)
 {
-	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).tx_ring) != IIP_ERR_OK)
-		return IIP_ERR_FATAL_SYS;
-	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).sent_ring) != IIP_ERR_OK)
-		return IIP_ERR_FATAL_SYS;
+	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).tx_ring) != IIP_ERR_OK) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).sent_ring) != IIP_ERR_OK) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (ii_tcp_hdr_has_syn(w, pb_id)) {
 		if (ii_tcp_hdr_has_ack(w, pb_id)) {
 			if (II_TCP_CONN(conn_id).fastopen_cookie.len /* active fast open */
@@ -3413,8 +3630,9 @@ static enum iip_rc ii_tcp_conn_handle_in_order__syn_sent(IIP_MEM_P w, IIP_TCP_CO
 #endif
 				{ /* assuming only the first packet has syn */
 					II_PB_P syn_pb_id = II_TCP_CONN(conn_id).sent_ring.slot[II_TCP_CONN(conn_id).sent_ring.tail];
-					if (syn_pb_id >= II_CONF_POOL_NUM_PB)
-						return IIP_ERR_FATAL_SYS;
+					if (syn_pb_id >= II_CONF_POOL_NUM_PB) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
 #if 0
 					/*@ assert II_PB(syn_pb_id).tcp.flags & II_TCP_FLAG_SYN; */
 #endif
@@ -3431,10 +3649,12 @@ static enum iip_rc ii_tcp_conn_handle_in_order__syn_sent(IIP_MEM_P w, IIP_TCP_CO
 					 */
 					for (i = 0; i < cnt; i++) {
 						uint32_t p;
-						if (ii_pb_ring_pull(&II_TCP_CONN(conn_id).tx_ring, &p) != IIP_ERR_OK)
-							return IIP_ERR_FATAL_SYS;
-						if (ii_pb_ring_push(&II_TCP_CONN(conn_id).sent_ring, p) != IIP_ERR_OK)
-							return IIP_ERR_FATAL_MEM; /* XXX: can we improve this? */
+						if (ii_pb_ring_pull(&II_TCP_CONN(conn_id).tx_ring, &p) != IIP_ERR_OK) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
+						if (ii_pb_ring_push(&II_TCP_CONN(conn_id).sent_ring, p) != IIP_ERR_OK) {
+							IIP_OPS_ERROR_FATAL_MEM(); return IIP_ERR_FATAL_MEM; /* XXX: can we improve this? */
+						}
 					}
 					/* copy all from sent_ring to tx_ring */
 					II_TCP_CONN(conn_id).tx_ring = II_TCP_CONN(conn_id).sent_ring;
@@ -3449,8 +3669,9 @@ static enum iip_rc ii_tcp_conn_handle_in_order__syn_sent(IIP_MEM_P w, IIP_TCP_CO
 				{
 					int iip_ret_int;
 					IIP_OPS_TCP_CONNECTED();
-					if (iip_ret_int)
-						return IIP_ERR_FATAL_USR;
+					if (iip_ret_int) {
+						IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+					}
 				}
 				if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_ACK_SENT)
 					*ack = 0;
@@ -3491,8 +3712,9 @@ static enum iip_rc ii_tcp_conn_handle_in_order__syn_recvd(IIP_MEM_P w, IIP_TCP_C
 				{
 					int iip_ret_int;
 					IIP_OPS_TCP_CONNECTED();
-					if (iip_ret_int)
-						return IIP_ERR_FATAL_USR;
+					if (iip_ret_int) {
+						IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+					}
 				}
 				if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_ACK_SENT)
 					*ack = 0;
@@ -3503,8 +3725,9 @@ static enum iip_rc ii_tcp_conn_handle_in_order__syn_recvd(IIP_MEM_P w, IIP_TCP_C
 				{
 					int iip_ret_int;
 					IIP_OPS_TCP_ACCEPTED();
-					if (iip_ret_int)
-						return IIP_ERR_FATAL_USR;
+					if (iip_ret_int) {
+						IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+					}
 				}
 				if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_ACK_SENT)
 					*ack = 0;
@@ -3521,8 +3744,9 @@ static enum iip_rc ii_tcp_conn_handle_in_order__syn_recvd(IIP_MEM_P w, IIP_TCP_C
 				{
 					int iip_ret_int;
 					IIP_OPS_TCP_URGENT();
-					if (iip_ret_int)
-						return IIP_ERR_FATAL_USR;
+					if (iip_ret_int) {
+						IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+					}
 				}
 			}
 			II_PB(pb_id).tcp.info_flags &= ~II_PB_FLAGS_TCP_URGENT;
@@ -3541,29 +3765,33 @@ static enum iip_rc ii_tcp_conn_handle_in_order__syn_recvd(IIP_MEM_P w, IIP_TCP_C
 			{
 				int iip_ret_int;
 				IIP_OPS_TCP_FASTOPEN_REQUEST();
-				if (iip_ret_int)
-					return IIP_ERR_FATAL_USR;
+				if (iip_ret_int) {
+					IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+				}
 			}
 			if (II_TCP_CONN(conn_id).fastopen_cookie.len >= 4 && II_TCP_CONN(conn_id).fastopen_cookie.len <= 16)
 				*fastopen_cookie = 1;
 		} else if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_FASTOPEN_VALID
 				&& !(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_FASTOPEN)
 				&& II_PB(pb_id).tcp.payload_len - II_PB(pb_id).tcp.inc_head - II_PB(pb_id).tcp.dec_tail) {
-			if (ii_tcp_tx_push_control(w, conn_id, II_TCP_FLAG_SYN | II_TCP_FLAG_ACK) != IIP_ERR_OK)
-				return IIP_ERR_FATAL_SYS;
+			if (ii_tcp_tx_push_control(w, conn_id, II_TCP_FLAG_SYN | II_TCP_FLAG_ACK) != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 			II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_FASTOPEN;
 			{
 				int iip_ret_int;
 				IIP_OPS_TCP_ACCEPTED();
-				if (iip_ret_int)
-					return IIP_ERR_FATAL_USR;
+				if (iip_ret_int) {
+					IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+				}
 			}
 			II_TCP_CONN(conn_id).buf.used += II_PB(pb_id).tcp.payload_len - II_PB(pb_id).tcp.inc_head - II_PB(pb_id).tcp.dec_tail;
 			{
 				int iip_ret_int;
 				IIP_OPS_TCP_PAYLOAD();
-				if (iip_ret_int)
-					return IIP_ERR_FATAL_USR;
+				if (iip_ret_int) {
+					IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+				}
 			}
 		}
 		return IIP_ERR_OK;
@@ -3590,8 +3818,9 @@ static enum iip_rc ii_tcp_conn_handle_in_order__established(IIP_MEM_P w, IIP_TCP
 		{
 			int iip_ret_int;
 			IIP_OPS_TCP_PAYLOAD();
-			if (iip_ret_int)
-				return IIP_ERR_FATAL_USR;
+			if (iip_ret_int) {
+				IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+			}
 		}
 		if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_ACK_SENT))
 			*ack = 1;
@@ -3603,8 +3832,9 @@ static enum iip_rc ii_tcp_conn_handle_in_order__established(IIP_MEM_P w, IIP_TCP
 		{
 			int iip_ret_int;
 			IIP_OPS_TCP_STATE_CLOSE_WAIT();
-			if (iip_ret_int)
-				return IIP_ERR_FATAL_USR;
+			if (iip_ret_int) {
+				IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+			}
 		}
 		if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_ACK_SENT)
 			*ack = 0;
@@ -3634,10 +3864,12 @@ static void ii_tcp_conn_handle_in_order__last_ack(IIP_MEM_P w, IIP_TCP_CONN_P co
  */
 static enum iip_rc ii_tcp_conn_handle_in_order(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint8_t syn = 0, ack = 0, rst = 0, fastopen_cookie = 0;
 		switch (II_TCP_CONN(conn_id).state) {
@@ -3708,10 +3940,12 @@ static enum iip_rc ii_tcp_conn_handle_in_order(IIP_MEM_P w, IIP_TCP_CONN_P conn_
  */
 static enum iip_rc ii_tcp_release_acked(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPAQUE_P opaque)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
-	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).sent_ring) != IIP_ERR_OK)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).sent_ring) != IIP_ERR_OK) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		IIP_PKT_CNT_T cnt = ii_pb_ring_num_used(&II_TCP_CONN(conn_id).sent_ring);
 		{
@@ -3725,8 +3959,9 @@ static enum iip_rc ii_tcp_release_acked(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP
 				uint16_t slot_idx = II_TCP_CONN(conn_id).sent_ring.tail + i;
 				if (slot_idx >= II_CONF_TCP_RING_SLOT_LEN)
 					slot_idx %= II_CONF_TCP_RING_SLOT_LEN;
-				if (II_TCP_CONN(conn_id).sent_ring.slot[slot_idx] >= II_CONF_POOL_NUM_PB)
-					return IIP_ERR_FATAL_SYS;
+				if (II_TCP_CONN(conn_id).sent_ring.slot[slot_idx] >= II_CONF_POOL_NUM_PB) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				{
 					/*
 					 *        conn->acked_seq             conn->seq_be
@@ -3771,16 +4006,18 @@ static enum iip_rc ii_tcp_release_acked(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP
  */
 static enum iip_rc ii_tcp_ipv4_ethernet_emss(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint16_t tcp_opt_len, uint16_t *emss)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
-	if (II_TCP_CONN(conn_id).mss < tcp_opt_len)
-		return IIP_ERR_FATAL_SYS;
-	else {
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (II_TCP_CONN(conn_id).mss < tcp_opt_len) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	} else {
 		uint16_t m = II_TCP_CONN(conn_id).mss - tcp_opt_len;
 		{
 			uint16_t hdr_len = II_IPV4_HDR_LEN_MINIMAL + 0 /* XXX: assuming no ipv4 option */ + II_TCP_HDR_LEN_MINIMAL + tcp_opt_len;
-			if (hdr_len >= II_TCP_CONN(conn_id).path_mtu)
-				return IIP_ERR_FATAL_SYS;
+			if (hdr_len >= II_TCP_CONN(conn_id).path_mtu) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 			{
 				uint16_t path_len = II_TCP_CONN(conn_id).path_mtu - hdr_len;
 				if (m > path_len)
@@ -3803,10 +4040,12 @@ static enum iip_rc ii_tcp_ipv4_ethernet_emss(IIP_MEM_P w, IIP_TCP_CONN_P conn_id
 static enum iip_rc ii_tcp_xmit_queued_data_one__craft_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id,
 		uint16_t tcp_flags, uint16_t info_flags, uint8_t tcp_opt[40], uint8_t *tcp_opt_len_p)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint16_t tcp_opt_len = 0;
 		if (tcp_flags & II_TCP_FLAG_SYN) { /* mss */
@@ -3832,10 +4071,12 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__craft_opt(IIP_MEM_P w, IIP_TCP_C
 		}
 		if (info_flags & II_PB_FLAGS_TCP_TX_SACKBUF) { /* sack */
 			uint8_t opt_len = II_PB(pb_id).tcp.sackbuf[1];
-			if (tcp_opt_len + opt_len > 40)
-				return IIP_ERR_FATAL_SYS;
-			if (opt_len > sizeof(II_PB(pb_id).tcp.sackbuf))
-				return IIP_ERR_FATAL_SYS;
+			if (tcp_opt_len + opt_len > 40) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+			if (opt_len > sizeof(II_PB(pb_id).tcp.sackbuf)) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 			{
 				uint8_t i;
 				/*@
@@ -3852,8 +4093,9 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__craft_opt(IIP_MEM_P w, IIP_TCP_C
 				&& ((tcp_flags & II_TCP_FLAG_SYN)
 				|| (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_OPT_SET_TS))) { /* time stamp */
 			uint8_t opt_len = 10;
-			if (tcp_opt_len + opt_len + 2 > 40)
-				return IIP_ERR_FATAL_SYS;
+			if (tcp_opt_len + opt_len + 2 > 40) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 			tcp_opt[tcp_opt_len + 0] = 1; /* nop */
 			tcp_opt[tcp_opt_len + 1] = 1; /* nop */
 			tcp_opt[tcp_opt_len + 2] = 8;
@@ -3863,12 +4105,14 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__craft_opt(IIP_MEM_P w, IIP_TCP_C
 			tcp_opt_len += opt_len + 2;
 		}
 		if (II_TCP_CONN(conn_id).fastopen_cookie.len) { /* fast open cookie */
-			if (II_TCP_CONN(conn_id).fastopen_cookie.len > sizeof(II_TCP_CONN(conn_id).fastopen_cookie.buf))
-				return IIP_ERR_FATAL_SYS;
+			if (II_TCP_CONN(conn_id).fastopen_cookie.len > sizeof(II_TCP_CONN(conn_id).fastopen_cookie.buf)) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 			{
 				uint8_t opt_len = 2 + II_TCP_CONN(conn_id).fastopen_cookie.len;
-				if (tcp_opt_len + opt_len > 40)
-					return IIP_ERR_FATAL_SYS;
+				if (tcp_opt_len + opt_len > 40) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				tcp_opt[tcp_opt_len + 0] = 34; /* fast open */
 				tcp_opt[tcp_opt_len + 1] = opt_len;
 				{
@@ -3918,23 +4162,28 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__trigger(IIP_MEM_P w, IIP_TCP_CON
 		uint16_t tcp_flags, uint16_t info_flags,
 		uint16_t head_off, uint16_t tx_len, uint16_t seq_off, uint16_t *head_forwarded, uint16_t *xmitted_len, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint8_t tcp_opt_len = 0;
 		uint8_t tcp_opt[40];
-		if (ii_tcp_xmit_queued_data_one__craft_opt(w, conn_id, pb_id, tcp_flags, info_flags, tcp_opt, &tcp_opt_len) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
+		if (ii_tcp_xmit_queued_data_one__craft_opt(w, conn_id, pb_id, tcp_flags, info_flags, tcp_opt, &tcp_opt_len) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		{
 			uint16_t xmit_len = tx_len;
 			{
 				uint16_t emss;
-				if (ii_tcp_ipv4_ethernet_emss(w, conn_id, tcp_opt_len, &emss) != IIP_ERR_OK)
-					return IIP_ERR_FATAL_SYS;
-				if (!emss)
-					return IIP_ERR_FATAL_SYS;
+				if (ii_tcp_ipv4_ethernet_emss(w, conn_id, tcp_opt_len, &emss) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+				if (!emss) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				if (xmit_len > emss)
 					xmit_len = emss;
 				{
@@ -3963,8 +4212,9 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__trigger(IIP_MEM_P w, IIP_TCP_CON
 							len[1] = sizeof(tcp_hdr);
 							buf_ptr[2] = tcp_opt;
 							len[2] = tcp_opt_len;
-							if (II_PB(pb_id).cnt > II_CONF_IPV4_FRAG_CNT_MAX)
-								return IIP_ERR_FATAL_SYS;
+							if (II_PB(pb_id).cnt > II_CONF_IPV4_FRAG_CNT_MAX) {
+								IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+							}
 							/*@ assert \forall integer j; 0 <= j < 3 ==> 0 < len[j] ==> \valid_read(buf_ptr[j] + (0 .. len[j] - 1)); */
 							{
 								IIP_PKT_LEN_T i, l = 0, head_fwd = head_off;
@@ -3978,8 +4228,9 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__trigger(IIP_MEM_P w, IIP_TCP_CON
 								  loop variant II_PB(pb_id).cnt - i;
 								 */
 								for (i = 0; i < II_PB(pb_id).cnt && l < xmit_len; i++) {
-									if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[i], opaque))
-										return IIP_ERR_FATAL_SYS;
+									if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[i], opaque)) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
 									buf_ptr[3 + i] = ii_call_pkt_get_data(II_PB(pb_id).part_pkt[i], opaque);
 									len[3 + i] = ii_call_pkt_get_len(II_PB(pb_id).part_pkt[i], opaque);
 									{
@@ -3991,15 +4242,17 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__trigger(IIP_MEM_P w, IIP_TCP_CON
 											len[3 + i] -= fwd;
 											head_fwd -= fwd;
 										}
-										if (len[3 + i] > ii_call_pkt_get_capacity(II_PB(pb_id).part_pkt[i], opaque) - fwd)
-											return IIP_ERR_FATAL_SYS;
+										if (len[3 + i] > ii_call_pkt_get_capacity(II_PB(pb_id).part_pkt[i], opaque) - fwd) {
+											IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+										}
 									}
 									if (xmit_len < l + len[3 + i])
 										len[3 + i] = xmit_len - l;
 									l += len[3 + i];
 								}
-								if (l != xmit_len)
-									return IIP_ERR_FATAL_SYS;
+								if (l != xmit_len) {
+									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+								}
 								*head_forwarded = head_fwd;
 								{
 									bool iip_ret_bool;
@@ -4013,13 +4266,15 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__trigger(IIP_MEM_P w, IIP_TCP_CON
 									if (iip_ret_bool && II_PB(pb_id).cnt == 1 && xmit_len == ii_call_pkt_get_len(II_PB(pb_id).part_pkt[0], opaque)) {
 										if (ii_ipv4_send_ethernet_zero_copy(II_TCP_CONN(conn_id).src_mac, ii_htonl(II_TCP_CONN(conn_id).src_ip[0]),
 													II_TCP_CONN(conn_id).dst_mac, ii_htonl(II_TCP_CONN(conn_id).dst_ip[0]), 6 /* tcp */, II_TCP_CONN(conn_id).diffserv,
-													&buf_ptr[1], &len[1], 2, II_PB(pb_id).part_pkt[0], II_PB(pb_id).tcp.payload_len, opaque) != IIP_ERR_OK)
-											return IIP_ERR_FATAL_SYS;
+													&buf_ptr[1], &len[1], 2, II_PB(pb_id).part_pkt[0], II_PB(pb_id).tcp.payload_len, opaque) != IIP_ERR_OK) {
+											IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+										}
 									} else {
 										if (ii_ipv4_send_ethernet(II_TCP_CONN(conn_id).src_mac, ii_htonl(II_TCP_CONN(conn_id).src_ip[0]),
 													II_TCP_CONN(conn_id).dst_mac, ii_htonl(II_TCP_CONN(conn_id).dst_ip[0]), 6 /* tcp */, II_TCP_CONN(conn_id).diffserv,
-													&buf_ptr[1], &len[1], 2 + i, opaque) != IIP_ERR_OK)
-											return IIP_ERR_FATAL_SYS;
+													&buf_ptr[1], &len[1], 2 + i, opaque) != IIP_ERR_OK) {
+											IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+										}
 									}
 								}
 							}
@@ -4041,19 +4296,23 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__trigger(IIP_MEM_P w, IIP_TCP_CON
  */
 static enum iip_rc ii_tcp_xmit_queued_data_one(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id, uint16_t head_off, uint16_t req_len, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
-	if (II_PB(pb_id).tcp.payload_len < head_off || II_PB(pb_id).tcp.payload_len < head_off + req_len)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (II_PB(pb_id).tcp.payload_len < head_off || II_PB(pb_id).tcp.payload_len < head_off + req_len) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (!req_len && !II_PB(pb_id).tcp.payload_len) {
 		/* control packet */
 		uint16_t head_forwarded, xmitted_len;
 		if (ii_tcp_xmit_queued_data_one__trigger(w, conn_id, pb_id,
 					II_PB(pb_id).tcp.flags, II_PB(pb_id).tcp.info_flags, head_off, 0, 0,
-					&head_forwarded, &xmitted_len, opaque) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
+					&head_forwarded, &xmitted_len, opaque) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 	} else {
 		uint16_t sent_len = 0;
 		uint16_t head_fwd = head_off;
@@ -4069,8 +4328,9 @@ static enum iip_rc ii_tcp_xmit_queued_data_one(IIP_MEM_P w, IIP_TCP_CONN_P conn_
 			if (ii_tcp_xmit_queued_data_one__trigger(w, conn_id, pb_id,
 						tcp_flags, info_flags,
 						head_off + sent_len, req_len - sent_len, head_off + sent_len,
-						&head_forwarded, &xmitted_len, opaque) != IIP_ERR_OK)
-				return IIP_ERR_FATAL_SYS;
+						&head_forwarded, &xmitted_len, opaque) != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 			head_fwd -= head_forwarded;
 			sent_len += xmitted_len;
 			tcp_flags &= ~(II_TCP_FLAG_SYN);
@@ -4088,18 +4348,22 @@ static enum iip_rc ii_tcp_xmit_queued_data_one(IIP_MEM_P w, IIP_TCP_CONN_P conn_
  */
 static enum iip_rc ii_tcp_conn_xmit_queued_data(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint32_t tx_space, IIP_OPAQUE_P opaque)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (!tx_space)
 		return IIP_ERR_OK;
-	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).tx_ring) != IIP_ERR_OK)
-		return IIP_ERR_FATAL_SYS;
-	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).sent_ring) != IIP_ERR_OK)
-		return IIP_ERR_FATAL_SYS;
+	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).tx_ring) != IIP_ERR_OK) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).sent_ring) != IIP_ERR_OK) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		IIP_PKT_CNT_T cnt = ii_pb_ring_num_used(&II_TCP_CONN(conn_id).tx_ring), sent_ring_space = ii_pb_ring_num_usable(&II_TCP_CONN(conn_id).sent_ring);
-		if (sent_ring_space < cnt)
-			return IIP_ERR_FATAL_MEM; /* TODO */
+		if (sent_ring_space < cnt) {
+			IIP_OPS_ERROR_FATAL_MEM(); return IIP_ERR_FATAL_MEM; /* TODO */
+		}
 		{
 			uint32_t sent = 0;
 			uint16_t i;
@@ -4112,12 +4376,15 @@ static enum iip_rc ii_tcp_conn_xmit_queued_data(IIP_MEM_P w, IIP_TCP_CONN_P conn
 				uint16_t slot_idx = II_TCP_CONN(conn_id).tx_ring.tail + i;
 				if (slot_idx >= II_CONF_TCP_RING_SLOT_LEN)
 					slot_idx %= II_CONF_TCP_RING_SLOT_LEN;
-				if (II_TCP_CONN(conn_id).tx_ring.slot[slot_idx] >= II_CONF_POOL_NUM_PB)
-					return IIP_ERR_FATAL_SYS;
-				if (II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).cnt > II_CONF_IPV4_FRAG_CNT_MAX)
-					return IIP_ERR_FATAL_SYS;
-				if (II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.payload_len < II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.sent_bytes)
-					return IIP_ERR_FATAL_SYS;
+				if (II_TCP_CONN(conn_id).tx_ring.slot[slot_idx] >= II_CONF_POOL_NUM_PB) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+				if (II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).cnt > II_CONF_IPV4_FRAG_CNT_MAX) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+				if (II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.payload_len < II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.sent_bytes) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				{
 					uint16_t l = II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.payload_len - II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.sent_bytes;
 					if (tx_space - sent < l)
@@ -4125,8 +4392,9 @@ static enum iip_rc ii_tcp_conn_xmit_queued_data(IIP_MEM_P w, IIP_TCP_CONN_P conn
 					if (ii_tcp_xmit_queued_data_one(w, conn_id, II_TCP_CONN(conn_id).tx_ring.slot[slot_idx],
 								II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.sent_bytes, l, opaque) != IIP_ERR_OK)
 						return IIP_ERR_OK;
-					if (II_TCP_CONN(conn_id).tx_ring.slot[slot_idx] >= II_CONF_POOL_NUM_PB)
-						return IIP_ERR_FATAL_SYS;
+					if (II_TCP_CONN(conn_id).tx_ring.slot[slot_idx] >= II_CONF_POOL_NUM_PB) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
 					II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.sent_bytes += l;
 					sent += l;
 				}
@@ -4136,8 +4404,9 @@ static enum iip_rc ii_tcp_conn_xmit_queued_data(IIP_MEM_P w, IIP_TCP_CONN_P conn
 					+ II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.sent_bytes;
 				if (II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.payload_len == II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.sent_bytes) {
 					II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.sent_bytes = 0; /* reuse for retransmission */
-					if (ii_pb_ring_push(&II_TCP_CONN(conn_id).sent_ring, II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]) != IIP_ERR_OK)
-						return IIP_ERR_FATAL_SYS; /* TODO */
+					if (ii_pb_ring_push(&II_TCP_CONN(conn_id).sent_ring, II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]) != IIP_ERR_OK) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS; /* TODO */
+					}
 				} else {
 					if (sent == tx_space)
 						break; /* do not forward i */
@@ -4180,10 +4449,12 @@ static void ii_tcp_conn_input_one__check_dup_ack(IIP_MEM_P w, IIP_TCP_CONN_P con
  */
 static enum iip_rc ii_tcp_conn_input_one(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint8_t out_of_order, valid_ack;
 		ii_tcp_check_input_ack(w, conn_id, pb_id, &out_of_order, &valid_ack);
@@ -4219,10 +4490,12 @@ static enum iip_rc ii_tcp_conn_input_one(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II
 static enum iip_rc ii_tcp_conn_copy_sent_payload(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint32_t le, uint16_t len,
 		uint8_t *payload, uint16_t *payload_len, uint8_t *fin, uint8_t *syn, uint8_t *ack, IIP_OPAQUE_P opaque)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
-	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).sent_ring) != IIP_ERR_OK)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).sent_ring) != IIP_ERR_OK) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		IIP_PKT_CNT_T cnt = ii_pb_ring_num_used(&II_TCP_CONN(conn_id).sent_ring);
 		{
@@ -4237,8 +4510,9 @@ static enum iip_rc ii_tcp_conn_copy_sent_payload(IIP_MEM_P w, IIP_TCP_CONN_P con
 				uint16_t slot_idx = II_TCP_CONN(conn_id).sent_ring.tail + i;
 				if (slot_idx >= II_CONF_TCP_RING_SLOT_LEN)
 					slot_idx %= II_CONF_TCP_RING_SLOT_LEN;
-				if (II_TCP_CONN(conn_id).sent_ring.slot[slot_idx] >= II_CONF_POOL_NUM_PB)
-					return IIP_ERR_FATAL_SYS;
+				if (II_TCP_CONN(conn_id).sent_ring.slot[slot_idx] >= II_CONF_POOL_NUM_PB) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				if (le == ii_tcp_seq_le_raw(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx]) || ii_seq_ordered(le, ii_tcp_seq_le_raw(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx]))) {
 					/*
 					 *  le
@@ -4256,7 +4530,7 @@ static enum iip_rc ii_tcp_conn_copy_sent_payload(IIP_MEM_P w, IIP_TCP_CONN_P con
 #if 0
 						/*@ assert \false; */
 #endif
-						return IIP_ERR_FATAL_SYS;
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 					} else {
 						/*
 						 *  le
@@ -4273,14 +4547,17 @@ static enum iip_rc ii_tcp_conn_copy_sent_payload(IIP_MEM_P w, IIP_TCP_CONN_P con
 							 */
 							uint16_t l = le + len - ii_tcp_seq_le_raw(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx]);
 							if (l) {
-								if (len < buf_off + l)
-									return IIP_ERR_FATAL_SYS;
+								if (len < buf_off + l) {
+									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+								}
 								{
 									IIP_PKT_LEN_T copied_len;
-									if (ii_pb_payload_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], 0, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK)
-										return IIP_ERR_FATAL_SYS;
-									if (copied_len != l)
-										return IIP_ERR_FATAL_SYS;
+									if (ii_pb_payload_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], 0, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
+									if (copied_len != l) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
 								}
 								buf_off += l;
 							}
@@ -4300,14 +4577,17 @@ static enum iip_rc ii_tcp_conn_copy_sent_payload(IIP_MEM_P w, IIP_TCP_CONN_P con
 							 */
 							uint16_t l = II_PB(II_TCP_CONN(conn_id).sent_ring.slot[slot_idx]).tcp.payload_len;
 							if (l) {
-								if (len < buf_off + l)
-									return IIP_ERR_FATAL_SYS;
+								if (len < buf_off + l) {
+									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+								}
 								{
 									IIP_PKT_LEN_T copied_len;
-									if (ii_pb_payload_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], 0, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK)
-										return IIP_ERR_FATAL_SYS;
-									if (copied_len != l)
-										return IIP_ERR_FATAL_SYS;
+									if (ii_pb_payload_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], 0, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
+									if (copied_len != l) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
 								}
 								buf_off += l;
 							}
@@ -4349,14 +4629,17 @@ static enum iip_rc ii_tcp_conn_copy_sent_payload(IIP_MEM_P w, IIP_TCP_CONN_P con
 							 */
 							uint16_t l = len, s = le - ii_tcp_seq_le_raw(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx]);
 							if (l) {
-								if (len < buf_off + l)
-									return IIP_ERR_FATAL_SYS;
+								if (len < buf_off + l) {
+									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+								}
 								{
 									IIP_PKT_LEN_T copied_len;
-									if (ii_pb_payload_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], s, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK)
-										return IIP_ERR_FATAL_SYS;
-									if (copied_len != l)
-										return IIP_ERR_FATAL_SYS;
+									if (ii_pb_payload_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], s, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
+									if (copied_len != l) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
 								}
 								buf_off += l;
 							}
@@ -4376,14 +4659,17 @@ static enum iip_rc ii_tcp_conn_copy_sent_payload(IIP_MEM_P w, IIP_TCP_CONN_P con
 							 */
 							uint16_t l = ii_tcp_seq_re_raw(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx]) - le, s = le - ii_tcp_seq_le_raw(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx]);
 							if (l) {
-								if (len < buf_off + l)
-									return IIP_ERR_FATAL_SYS;
+								if (len < buf_off + l) {
+									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+								}
 								{
 									IIP_PKT_LEN_T copied_len;
-									if (ii_pb_payload_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], s, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK)
-										return IIP_ERR_FATAL_SYS;
-									if (copied_len != l)
-										return IIP_ERR_FATAL_SYS;
+									if (ii_pb_payload_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], s, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
+									if (copied_len != l) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
 								}
 								buf_off += l;
 							}
@@ -4417,10 +4703,12 @@ static enum iip_rc ii_tcp_conn_copy_sent_payload(IIP_MEM_P w, IIP_TCP_CONN_P con
  */
 static enum iip_rc ii_tcp_conn_queue_retx_data__trigger(IIP_MEM_P w, struct ii_extent_queue *eq, uint8_t eq_cnt, IIP_TCP_CONN_P conn_id, uint32_t tx_space, uint32_t *retx_bytes, IIP_OPAQUE_P opaque)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
-	if (eq_cnt > II_CONF_EXTENT_QUEUE_SIZE)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (eq_cnt > II_CONF_EXTENT_QUEUE_SIZE) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint32_t le = II_TCP_CONN(conn_id).acked_seq, retx_b = 0;
 		uint8_t i;
@@ -4431,8 +4719,9 @@ static enum iip_rc ii_tcp_conn_queue_retx_data__trigger(IIP_MEM_P w, struct ii_e
 			loop variant eq_cnt - i;
 		 */
 		for (i = 0; i < eq_cnt && retx_b < tx_space; i++) {
-			if (le != eq->extent[i].v && !ii_seq_ordered(le, eq->extent[i].v))
-				return IIP_ERR_FATAL_SYS;
+			if (le != eq->extent[i].v && !ii_seq_ordered(le, eq->extent[i].v)) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 			{
 				uint32_t len = eq->extent[i].v - le;
 				if (len > tx_space - retx_b)
@@ -4447,16 +4736,16 @@ static enum iip_rc ii_tcp_conn_queue_retx_data__trigger(IIP_MEM_P w, struct ii_e
 					 */
 					while (l < len) {
 						IIP_PKT_P new_pkt;
-						if (ii_call_pkt_alloc(&new_pkt, opaque))
-							return -1;
+						if (ii_call_pkt_alloc(&new_pkt, opaque)) {
+							IIP_OPS_ERROR_FATAL_MEM(); return IIP_ERR_FATAL_MEM;
+						}
 						{
 							uint16_t tx_len;
 							{
 								uint16_t hdr_len = II_ETH_HDR_LEN + 60 + 60; /* XXX: assuming full ipv4 and tcp hdr sizes */
-#if 0
-								if (ii_call_pkt_get_capacity(new_pkt, opaque) <= hdr_len)
-									return IIP_ERR_FATAL_SYS;
-#endif
+								if (ii_call_pkt_get_capacity(new_pkt, opaque) <= hdr_len) {
+									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+								}
 								tx_len = ii_call_pkt_get_capacity(new_pkt, opaque) - hdr_len;
 								if (tx_len > len - l)
 									tx_len = len - l;
@@ -4467,8 +4756,9 @@ static enum iip_rc ii_tcp_conn_queue_retx_data__trigger(IIP_MEM_P w, struct ii_e
 								if (tx_len) {
 									uint8_t payload[0xffff]; /* XXX: for separation, assuming sufficiently large stack */
 									if (ii_tcp_conn_copy_sent_payload(w, conn_id, le + l, tx_len,
-												payload, &payload_len, &fin, &syn, &ack, opaque) != IIP_ERR_OK)
-										return IIP_ERR_FATAL_SYS;
+												payload, &payload_len, &fin, &syn, &ack, opaque) != IIP_ERR_OK) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
 									{
 										uint16_t copied_len;
 										/*@
@@ -4484,8 +4774,12 @@ static enum iip_rc ii_tcp_conn_queue_retx_data__trigger(IIP_MEM_P w, struct ii_e
 									II_PB_P pb_id;
 									{
 										enum iip_rc rc = ii_alloc_pb(&w->pbs, &pb_id);
-										if (rc != IIP_ERR_OK)
+										if (rc != IIP_ERR_OK) {
+											if (ii_call_pkt_free(new_pkt, opaque)) {
+												IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+											}
 											return rc;
+										}
 									}
 									II_PB(pb_id).part_pkt[0] = new_pkt;
 									II_PB(pb_id).cnt = 1;
@@ -4497,12 +4791,21 @@ static enum iip_rc ii_tcp_conn_queue_retx_data__trigger(IIP_MEM_P w, struct ii_e
 									II_PB(pb_id).tcp.urg_p = 0;
 									II_PB(pb_id).tcp.opt.ts[0] = w->tcp.pkt_ts;
 									II_PB(pb_id).tcp.opt.ts[1] = II_TCP_CONN(conn_id).ts;
-									if (ii_call_pkt_set_len(new_pkt, payload_len, opaque))
-										return IIP_ERR_FATAL_SUB;
-									if (ii_tcp_xmit_queued_data_one(w, conn_id, pb_id, 0, II_PB(pb_id).tcp.payload_len, opaque) != IIP_ERR_OK)
-										return IIP_ERR_FATAL_SYS;
-									if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK)
-										return IIP_ERR_FATAL_SYS;
+									if (ii_call_pkt_set_len(new_pkt, payload_len, opaque)) {
+										if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK) {
+											IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+										}
+										IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+									}
+									if (ii_tcp_xmit_queued_data_one(w, conn_id, pb_id, 0, II_PB(pb_id).tcp.payload_len, opaque) != IIP_ERR_OK) {
+										if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK) {
+											IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+										}
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
+									if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
 								}
 							}
 							l += tx_len;
@@ -4529,8 +4832,9 @@ static enum iip_rc ii_tcp_conn_queue_retx_data__trigger(IIP_MEM_P w, struct ii_e
  */
 static enum iip_rc ii_tcp_conn_retx(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint32_t tx_space, uint32_t *retx_bytes, IIP_OPAQUE_P opaque)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (II_TCP_CONN(conn_id).sent_ring.head != II_TCP_CONN(conn_id).sent_ring.tail) {
 		struct ii_extent_queue eq;
 		if (II_TCP_CONN(conn_id).sack.cnt)
@@ -4555,10 +4859,12 @@ static enum iip_rc ii_tcp_conn_retx(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint32_
  */
 static enum iip_rc ii_tcp_conn_on_wire_bytes(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint32_t *on_wire_bytes)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
-	if (II_TCP_CONN(conn_id).sack.cnt > II_CONF_EXTENT_QUEUE_SIZE)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (II_TCP_CONN(conn_id).sack.cnt > II_CONF_EXTENT_QUEUE_SIZE) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint32_t b;
 		if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED)
@@ -4568,12 +4874,14 @@ static enum iip_rc ii_tcp_conn_on_wire_bytes(IIP_MEM_P w, IIP_TCP_CONN_P conn_id
 			if (II_TCP_CONN(conn_id).sack.cnt) {
 				uint32_t le = II_TCP_CONN(conn_id).sack.extent[0].v;
 				uint32_t re = II_TCP_CONN(conn_id).sack.extent[II_TCP_CONN(conn_id).sack.cnt - 1].v + II_TCP_CONN(conn_id).sack.extent[II_TCP_CONN(conn_id).sack.cnt - 1].l;
-				if (ii_seq_ordered(re, le))
-					return IIP_ERR_FATAL_SYS;
+				if (ii_seq_ordered(re, le)) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				{
 					uint32_t sacked_range = re - le;
-					if (b < sacked_range)
-						return IIP_ERR_FATAL_SYS;
+					if (b < sacked_range) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
 					b -= sacked_range;
 				}
 			}
@@ -4592,10 +4900,12 @@ static enum iip_rc ii_tcp_conn_on_wire_bytes(IIP_MEM_P w, IIP_TCP_CONN_P conn_id
  */
 static enum iip_rc ii_tcp_conn_tx_space(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint32_t *space)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
-	if (II_TCP_CONN(conn_id).ws >= 15)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (II_TCP_CONN(conn_id).ws >= 15) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint32_t flow_win = (uint32_t) II_TCP_CONN(conn_id).peer_win << II_TCP_CONN(conn_id).ws;
 		uint32_t cc_win = (uint32_t) II_TCP_CONN(conn_id).cc.win * II_TCP_CONN(conn_id).mss;
@@ -4607,8 +4917,9 @@ static enum iip_rc ii_tcp_conn_tx_space(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uin
 				win = cc_win;
 			{
 				uint32_t on_wire;
-				if (ii_tcp_conn_on_wire_bytes(w, conn_id, &on_wire) != IIP_ERR_OK)
-					return IIP_ERR_FATAL_SYS;
+				if (ii_tcp_conn_on_wire_bytes(w, conn_id, &on_wire) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				if (win < on_wire)
 					*space = 0;
 				else
@@ -4625,8 +4936,9 @@ static enum iip_rc ii_tcp_conn_tx_space(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uin
  */
 static enum iip_rc ii_tcp_conn_retx_timeout_check(IIP_MEM_P w, IIP_TCP_CONN_P conn_id)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_SET_PROBE)
 		return IIP_ERR_OK;
 	if (ii_seq_ordered(II_TCP_CONN(conn_id).acked_seq, II_TCP_CONN(conn_id).sent_seq)) {
@@ -4639,8 +4951,9 @@ static enum iip_rc ii_tcp_conn_retx_timeout_check(IIP_MEM_P w, IIP_TCP_CONN_P co
 				if (II_TCP_CONN(conn_id).retrans_cnt == II_TCP_CONN(conn_id).retrans_r1) {
 					int iip_ret_int;
 					IIP_OPS_TCP_IP_NEGATIVE_ADVICE();
-					if (iip_ret_int)
-						return IIP_ERR_FATAL_USR;
+					if (iip_ret_int) {
+						IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+					}
 				}
 				if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
 					II_TCP_CONN(conn_id).cc.ssthresh = (II_TCP_CONN(conn_id).cc.win / 2 < 1 ? 2 : II_TCP_CONN(conn_id).cc.win / 2);
@@ -4666,16 +4979,18 @@ static enum iip_rc ii_tcp_conn_retx_timeout_check(IIP_MEM_P w, IIP_TCP_CONN_P co
  */
 static enum iip_rc ii_tcp_conn__zero_window_probe_send(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, bool is_tx_ring, bool *sent, IIP_OPAQUE_P opaque)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		struct ii_pb__ring *ring;
 		if (is_tx_ring)
 			ring = &II_TCP_CONN(conn_id).tx_ring;
 		else
 			ring = &II_TCP_CONN(conn_id).sent_ring;
-		if (ii_pb_ring_validation(ring) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
+		if (ii_pb_ring_validation(ring) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		{
 			uint32_t new_sent_seq = 0;
 			bool probe_sent = false, new_seq_set = false;;
@@ -4692,16 +5007,18 @@ static enum iip_rc ii_tcp_conn__zero_window_probe_send(IIP_MEM_P w, IIP_TCP_CONN
 						uint16_t slot_idx = ring->tail + i;
 						if (slot_idx >= II_CONF_TCP_RING_SLOT_LEN)
 							slot_idx %= II_CONF_TCP_RING_SLOT_LEN;
-						if (ring->slot[slot_idx] >= II_CONF_POOL_NUM_PB)
-							return IIP_ERR_FATAL_SYS;
+						if (ring->slot[slot_idx] >= II_CONF_POOL_NUM_PB) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
 						{
 							II_PB_P probe_pb_id = ring->slot[slot_idx];
 							if (!II_PB(probe_pb_id).tcp.payload_len) {
 								if (II_PB(probe_pb_id).tcp.flags & II_TCP_FLAG_FIN) {
 									uint16_t head_forwarded, xmitted_len;
 									if (ii_tcp_xmit_queued_data_one__trigger(w, conn_id, probe_pb_id, II_TCP_FLAG_FIN | II_TCP_FLAG_ACK,
-												0, 0, 0, 0, &head_forwarded, &xmitted_len, opaque) != IIP_ERR_OK)
-										return IIP_ERR_FATAL_SYS;
+												0, 0, 0, 0, &head_forwarded, &xmitted_len, opaque) != IIP_ERR_OK) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
 									if (is_tx_ring) {
 										if (ii_seq_ordered(II_TCP_CONN(conn_id).sent_seq, II_PB(probe_pb_id).tcp.seq + 1)) {
 											new_sent_seq = II_PB(probe_pb_id).tcp.seq + 1;
@@ -4715,8 +5032,9 @@ static enum iip_rc ii_tcp_conn__zero_window_probe_send(IIP_MEM_P w, IIP_TCP_CONN
 								if (II_PB(probe_pb_id).tcp.flags & II_TCP_FLAG_FIN) {
 									uint16_t head_forwarded, xmitted_len;
 									if (ii_tcp_xmit_queued_data_one__trigger(w, conn_id, probe_pb_id, II_TCP_FLAG_FIN | II_TCP_FLAG_ACK,
-												II_PB(probe_pb_id).tcp.payload_len, 0, 0, II_PB(probe_pb_id).tcp.payload_len, &head_forwarded, &xmitted_len, opaque) != IIP_ERR_OK)
-										return IIP_ERR_FATAL_SYS;
+												II_PB(probe_pb_id).tcp.payload_len, 0, 0, II_PB(probe_pb_id).tcp.payload_len, &head_forwarded, &xmitted_len, opaque) != IIP_ERR_OK) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
 									if (is_tx_ring) {
 										if (ii_seq_ordered(II_TCP_CONN(conn_id).sent_seq, II_PB(probe_pb_id).tcp.seq + II_PB(probe_pb_id).tcp.payload_len + 1)) {
 											new_sent_seq = II_PB(probe_pb_id).tcp.seq + II_PB(probe_pb_id).tcp.payload_len + 1;
@@ -4730,8 +5048,9 @@ static enum iip_rc ii_tcp_conn__zero_window_probe_send(IIP_MEM_P w, IIP_TCP_CONN
 								uint16_t head_forwarded, xmitted_len;
 								if (ii_tcp_xmit_queued_data_one__trigger(w, conn_id, probe_pb_id, II_TCP_FLAG_ACK,
 											II_TCP_CONN(conn_id).acked_seq - II_PB(probe_pb_id).tcp.seq, 0,
-											1, II_TCP_CONN(conn_id).acked_seq - II_PB(probe_pb_id).tcp.seq, &head_forwarded, &xmitted_len, opaque) != IIP_ERR_OK)
-									return IIP_ERR_FATAL_SYS;
+											1, II_TCP_CONN(conn_id).acked_seq - II_PB(probe_pb_id).tcp.seq, &head_forwarded, &xmitted_len, opaque) != IIP_ERR_OK) {
+									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+								}
 								if (is_tx_ring) {
 									if (ii_seq_ordered(II_TCP_CONN(conn_id).sent_seq, II_PB(probe_pb_id).tcp.seq + II_TCP_CONN(conn_id).acked_seq - II_PB(probe_pb_id).tcp.seq + 1)) {
 										new_sent_seq = II_PB(probe_pb_id).tcp.seq + II_TCP_CONN(conn_id).acked_seq - II_PB(probe_pb_id).tcp.seq + 1;
@@ -4761,8 +5080,9 @@ static enum iip_rc ii_tcp_conn__zero_window_probe_send(IIP_MEM_P w, IIP_TCP_CONN
  */
 static enum iip_rc ii_tcp_conn__zero_window_probe_check(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPAQUE_P opaque)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		bool clear = false;
 		if ((II_TCP_CONN(conn_id).tx_ring.head != II_TCP_CONN(conn_id).tx_ring.tail)
@@ -4783,15 +5103,18 @@ static enum iip_rc ii_tcp_conn__zero_window_probe_check(IIP_MEM_P w, IIP_TCP_CON
 					if (II_TCP_CONN(conn_id).probe_rto_ms < w->now_ms - II_TCP_CONN(conn_id).probe_ts) {
 						bool sent;
 						if (II_TCP_CONN(conn_id).sent_ring.head != II_TCP_CONN(conn_id).sent_ring.tail) {
-							if (ii_tcp_conn__zero_window_probe_send(w, conn_id, 0, &sent, opaque) != IIP_ERR_OK)
-								return IIP_ERR_FATAL_SYS;
+							if (ii_tcp_conn__zero_window_probe_send(w, conn_id, 0, &sent, opaque) != IIP_ERR_OK) {
+								IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+							}
 							if (!sent) {
-								if (ii_tcp_conn__zero_window_probe_send(w, conn_id, 1, &sent, opaque) != IIP_ERR_OK)
-									return IIP_ERR_FATAL_SYS;
+								if (ii_tcp_conn__zero_window_probe_send(w, conn_id, 1, &sent, opaque) != IIP_ERR_OK) {
+									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+								}
 							}
 						} else {
-							if (ii_tcp_conn__zero_window_probe_send(w, conn_id, 1, &sent, opaque) != IIP_ERR_OK)
-								return IIP_ERR_FATAL_SYS;
+							if (ii_tcp_conn__zero_window_probe_send(w, conn_id, 1, &sent, opaque) != IIP_ERR_OK) {
+								IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+							}
 						}
 						if (sent) {
 							II_TCP_CONN(conn_id).probe_rto_ms *= 2;
@@ -4821,14 +5144,17 @@ static enum iip_rc ii_tcp_conn__zero_window_probe_check(IIP_MEM_P w, IIP_TCP_CON
  */
 static enum iip_rc ii_tcp_conn_work(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPAQUE_P opaque)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
-	if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_ACK_PENDING) {
-		if (ii_tcp_tx_push_control(w, conn_id, II_TCP_FLAG_ACK) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
-	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).rx_ring) != IIP_ERR_OK)
-		return IIP_ERR_FATAL_SYS;
+	if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_ACK_PENDING) {
+		if (ii_tcp_tx_push_control(w, conn_id, II_TCP_FLAG_ACK) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
+	}
+	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).rx_ring) != IIP_ERR_OK) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		IIP_PKT_CNT_T cnt = ii_pb_ring_num_used(&II_TCP_CONN(conn_id).rx_ring);
 		{
@@ -4844,8 +5170,9 @@ static enum iip_rc ii_tcp_conn_work(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPA
 					slot_idx %= II_CONF_TCP_RING_SLOT_LEN;
 				{
 					II_PB_P pb_id = II_TCP_CONN(conn_id).rx_ring.slot[slot_idx];
-					if (pb_id >= II_CONF_POOL_NUM_PB)
-						return IIP_ERR_FATAL_SYS;
+					if (pb_id >= II_CONF_POOL_NUM_PB) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
 					{
 						enum iip_rc rc = ii_tcp_conn_input_one(w, conn_id, pb_id, opaque);
 						switch (rc) {
@@ -4857,33 +5184,40 @@ static enum iip_rc ii_tcp_conn_work(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPA
 							break;
 						}
 					}
-					if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK)
-						return IIP_ERR_FATAL_SYS;
+					if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
 				}
 			}
 		}
 		II_TCP_CONN(conn_id).rx_ring.tail = II_TCP_CONN(conn_id).rx_ring.head;
 		ii_tcp_release_acked(w, conn_id, opaque);
 		ii_extent_queue_shrink(&II_TCP_CONN(conn_id).sack, II_TCP_CONN(conn_id).acked_seq);
-		if (ii_tcp_conn__zero_window_probe_check(w, conn_id, opaque) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
-		if (ii_tcp_conn_retx_timeout_check(w, conn_id) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
+		if (ii_tcp_conn__zero_window_probe_check(w, conn_id, opaque) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
+		if (ii_tcp_conn_retx_timeout_check(w, conn_id) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		if ((II_TCP_CONN(conn_id).tx_ring.head != II_TCP_CONN(conn_id).tx_ring.tail)
 				|| (II_TCP_CONN(conn_id).sent_ring.head != II_TCP_CONN(conn_id).sent_ring.tail)) {
 			uint32_t tx_space;
-			if (ii_tcp_conn_tx_space(w, conn_id, &tx_space) != IIP_ERR_OK)
-				return IIP_ERR_FATAL_SYS;
+			if (ii_tcp_conn_tx_space(w, conn_id, &tx_space) != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 			if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED) {
 				uint32_t retx_bytes;
-				if (ii_tcp_conn_retx(w, conn_id, tx_space, &retx_bytes, opaque) != IIP_ERR_OK)
-					return IIP_ERR_FATAL_SYS;
-				if (tx_space < retx_bytes)
-					return IIP_ERR_FATAL_SYS;
+				if (ii_tcp_conn_retx(w, conn_id, tx_space, &retx_bytes, opaque) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+				if (tx_space < retx_bytes) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				II_TCP_CONN(conn_id).retx_bytes = retx_bytes;
 			} else {
-				if (ii_tcp_conn_xmit_queued_data(w, conn_id, tx_space, opaque) != IIP_ERR_OK)
-					return IIP_ERR_FATAL_SYS;
+				if (ii_tcp_conn_xmit_queued_data(w, conn_id, tx_space, opaque) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 			}
 		}
 		ii_tcp_conn_close_check(w, conn_id, opaque);
@@ -4897,15 +5231,17 @@ static enum iip_rc ii_tcp_conn_work(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPA
  */
 static enum iip_rc ii_tcp_rx_push(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint32_t push_pb_id = pb_id;
-		if (II_TCP_CONN(conn_id).pending_ring.head >= II_CONF_TCP_RING_SLOT_LEN || II_TCP_CONN(conn_id).pending_ring.tail >= II_CONF_TCP_RING_SLOT_LEN)
-			return IIP_ERR_FATAL_SYS;
-		else {
+		if (II_TCP_CONN(conn_id).pending_ring.head >= II_CONF_TCP_RING_SLOT_LEN || II_TCP_CONN(conn_id).pending_ring.tail >= II_CONF_TCP_RING_SLOT_LEN) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		} else {
 			uint16_t i, loop_max = ii_pb_ring_num_used(&II_TCP_CONN(conn_id).pending_ring) + 1;
 			/*@
 				loop invariant 0 <= i <= loop_max;
@@ -4914,8 +5250,9 @@ static enum iip_rc ii_tcp_rx_push(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P p
 				loop variant loop_max - i;
 			 */
 			for (i = 0; i < loop_max; i++) {
-				if (II_TCP_CONN(conn_id).buf.used > II_TCP_CONN(conn_id).buf.capacity)
-					return IIP_ERR_FATAL_SYS;
+				if (II_TCP_CONN(conn_id).buf.used > II_TCP_CONN(conn_id).buf.capacity) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				if (ii_tcp_retransmitted_syn_ack(w, conn_id, pb_id))
 					II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING; /* send ack */
 				if (ii_tcp_check_input_seq(w, conn_id, push_pb_id) != IIP_ERR_OK)
@@ -4932,10 +5269,12 @@ static enum iip_rc ii_tcp_rx_push(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P p
 					return ii_tcp_rx_push__pending(w, conn_id, push_pb_id);
 				}
 				if (II_TCP_CONN(conn_id).pending_ring.head != II_TCP_CONN(conn_id).pending_ring.tail) {
-					if (ii_pb_ring_pull(&II_TCP_CONN(conn_id).pending_ring, &push_pb_id) != IIP_ERR_OK)
-							return IIP_ERR_FATAL_SYS;
-					if (push_pb_id >= II_CONF_POOL_NUM_PB)
-						return IIP_ERR_FATAL_SYS;
+					if (ii_pb_ring_pull(&II_TCP_CONN(conn_id).pending_ring, &push_pb_id) != IIP_ERR_OK) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					if (push_pb_id >= II_CONF_POOL_NUM_PB) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
 				} else
 					break;
 			}
@@ -4972,18 +5311,21 @@ static void ii_tcp_pb_init__base(IIP_MEM_P w, II_PB_P pb_id, uint8_t tcp_hdr[II_
  */
 static enum iip_rc ii_tcp_pb_init__payload_len(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		IIP_PKT_LEN_T ipv4_payload_len;
-		if (ii_pb_ipv4_payload_len(w, pb_id, &ipv4_payload_len, opaque) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
+		if (ii_pb_ipv4_payload_len(w, pb_id, &ipv4_payload_len, opaque) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		if (ipv4_payload_len < ii_pb_tcp_hdr_len(w, pb_id))
 			return IIP_ERR_INVALID_RX;
 		{
 			IIP_PKT_LEN_T len;
-			if (ii_pb_tcp_payload_len(w, pb_id, &len, opaque) != IIP_ERR_OK)
-				return IIP_ERR_FATAL_SYS;
+			if (ii_pb_tcp_payload_len(w, pb_id, &len, opaque) != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 			II_PB(pb_id).tcp.payload_len = len;
 		}
 		return IIP_ERR_OK;
@@ -4998,10 +5340,12 @@ static enum iip_rc ii_tcp_pb_init__payload_len(IIP_MEM_P w, II_PB_P pb_id, IIP_O
  */
 static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (ii_pb_tcp_hdr_len(w, pb_id) < II_TCP_HDR_LEN_MINIMAL)
 		return IIP_ERR_INVALID_RX;
 	{
@@ -5010,8 +5354,9 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 			uint8_t tcp_opt[40];
 			{
 				IIP_PKT_LEN_T copied_len;
-				if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))
-					return IIP_ERR_FATAL_SYS;
+				if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque)) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				if (ii_pb_payload_copy(w, pb_id, II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN) + II_TCP_HDR_LEN_MINIMAL, tcp_opt, tcp_opt_len, &copied_len, opaque) != IIP_ERR_OK)
 					return IIP_ERR_INVALID_RX;
 				if (copied_len != tcp_opt_len)
@@ -5098,8 +5443,9 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 												if (rc == IIP_ERR_BUF_FULL) {
 													II_TCP_CONN(conn_id).sack.cnt = 0; /* XXX: clear sack extent because it's full */
 													break;
-												} else
-													return IIP_ERR_FATAL_SYS;
+												} else {
+													IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+												}
 											}
 										} else
 											break;
@@ -5295,8 +5641,9 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
  */
 static enum iip_rc ii_tcp_rx_csum_check(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		IIP_OPS_TCP_RX_CHECKSUM();
 	}
@@ -5311,12 +5658,15 @@ static enum iip_rc ii_tcp_rx_csum_check(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P
  */
 static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))
-		return IIP_ERR_FATAL_SYS;
-	if (ii_tcp_rx_csum_check(w, pb_id, opaque) != IIP_ERR_OK)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (ii_tcp_rx_csum_check(w, pb_id, opaque) != IIP_ERR_OK) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint32_t src_ipv4_be = ii_extract_ipv4_src_be(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN);
 		uint32_t dst_ipv4_be = ii_extract_ipv4_dst_be(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN);
@@ -5324,10 +5674,12 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 			uint8_t tcp_hdr[II_TCP_HDR_LEN_MINIMAL];
 			{
 				IIP_PKT_LEN_T copied_len;
-				if (ii_pb_payload_copy(w, pb_id, II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN), tcp_hdr, sizeof(tcp_hdr), &copied_len, opaque) != IIP_ERR_OK)
-					return IIP_ERR_FATAL_SYS;
-				if (copied_len != sizeof(tcp_hdr))
-					return IIP_ERR_FATAL_SYS;
+				if (ii_pb_payload_copy(w, pb_id, II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN), tcp_hdr, sizeof(tcp_hdr), &copied_len, opaque) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+				if (copied_len != sizeof(tcp_hdr)) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 			}
 			ii_tcp_pb_init__base(w, pb_id, tcp_hdr);
 			if (ii_tcp_pb_init__payload_len(w, pb_id, opaque) != IIP_ERR_OK)
@@ -5338,8 +5690,9 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 							ii_extract_tcp_dst_be(tcp_hdr),
 							ii_extract_ipv4_src_be(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN),
 							ii_extract_tcp_src_be(tcp_hdr));
-				if (conn_id > II_CONF_POOL_NUM_TCP_CONN)
-					return IIP_ERR_FATAL_SYS;
+				if (conn_id > II_CONF_POOL_NUM_TCP_CONN) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				if (conn_id < II_CONF_POOL_NUM_TCP_CONN && II_TCP_CONN(conn_id).state == II_TCP_STATE_CLOSED)
 					return IIP_ERR_OK; /* do nothing */
 				if (ii_tcp_hdr_has_syn(w, pb_id)) {
@@ -5354,7 +5707,7 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 						if (ii_tcp_hdr_has_rst(w, pb_id))
 							return IIP_ERR_OK; /* do nothing */
 						else if (ii_tcp_hdr_has_ack(w, pb_id)) {
-							/* DEBUG_PRINT("WARNING: got syn-ack for non-existing connection, maybe RSS sterring would be wrong\n"); */
+							IIP_OPS_DEBUG_PRINTF("WARNING: got syn-ack for non-existing connection, maybe RSS sterring would be wrong\n");
 							return IIP_ERR_INVALID_RX; /* do nothing */
 						} else {
 							bool iip_ret_bool;
@@ -5363,8 +5716,9 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 								enum iip_rc rc = ii_alloc_tcp_conn(&w->tcp_conns, &conn_id);
 								if (rc != IIP_ERR_OK)
 									return rc;
-								if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))
-									return IIP_ERR_FATAL_SYS;
+								if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque)) {
+									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+								}
 								ii_ipv4_tcp_conn_init(w, conn_id,
 										ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + 0,
 										dst_ipv4_be,
@@ -5379,8 +5733,9 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 					if (conn_id < II_CONF_POOL_NUM_TCP_CONN)
 						II_TCP_CONN(conn_id).seq_next_expected = ii_tcp_seq_le_raw(w, pb_id);
 				}
-				if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-					return IIP_ERR_FATAL_MEM;
+				if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+					IIP_OPS_ERROR_FATAL_MEM(); return IIP_ERR_FATAL_MEM;
+				}
 				if (ii_ipv4_tcp_input__parse_opt(w, conn_id, pb_id, opaque) != IIP_ERR_OK)
 					return IIP_ERR_INVALID_RX;
 				return ii_tcp_rx_push(w, conn_id, pb_id);
@@ -5403,8 +5758,9 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
  */
 static enum iip_rc ii_udp_rx_csum_check(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		IIP_OPS_UDP_RX_CHECKSUM();
 	}
@@ -5419,17 +5775,20 @@ static enum iip_rc ii_udp_rx_csum_check(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P
  */
 static enum iip_rc ii_ipv4_udp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (ii_udp_rx_csum_check(w, pb_id, opaque) != IIP_ERR_OK)
 		return IIP_ERR_INVALID_RX;
 	{
 		int iip_ret_int;
 		IIP_OPS_UDP_PAYLOAD();
-		if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
-		else if (iip_ret_int)
-			return IIP_ERR_FATAL_USR;
+		if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
+		else if (iip_ret_int) {
+			IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+		}
 		else
 			return IIP_ERR_OK;
 	}
@@ -5504,8 +5863,9 @@ static enum iip_rc iip_udp_ipv4_ethernet_send_copy(IIP_MEM_P w,
  */
 static int iip_tcp_rxbuf_consumed(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_TCP_SEQ_INT_T consumed, IIP_OPAQUE_P opaque)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	II_TCP_CONN(conn_id).buf.adv_cnt += consumed;
 	{
 		uint32_t l;
@@ -5544,8 +5904,9 @@ static int iip_tcp_rxbuf_consumed(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_TCP_S
  */
 static enum iip_rc ii_ipv4_frag_validation(struct ii_pb *frag, IIP_OPAQUE_P opaque)
 {
-	if (frag->cnt > II_CONF_IPV4_FRAG_CNT_MAX)
-		return IIP_ERR_FATAL_SYS;
+	if (frag->cnt > II_CONF_IPV4_FRAG_CNT_MAX) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint16_t i;
 		/*@
@@ -5607,8 +5968,9 @@ static enum iip_rc ii_ipv4_received_invalid_option(const uint8_t *buf)
  */
 static enum iip_rc ii_ipv4_frag_push__discard_slot(struct ii_pb *frag, IIP_OPAQUE_P opaque)
 {
-	if (frag->cnt > II_CONF_IPV4_FRAG_CNT_MAX)
-		return IIP_ERR_FATAL_SYS;
+	if (frag->cnt > II_CONF_IPV4_FRAG_CNT_MAX) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		IIP_PKT_CNT_T i, cnt = frag->cnt;
 		/*@
@@ -5617,10 +5979,12 @@ static enum iip_rc ii_ipv4_frag_push__discard_slot(struct ii_pb *frag, IIP_OPAQU
 		  loop variant cnt - i;
 		  */
 		for (i = 0; i < cnt; i++) {
-			if (!ii_call_pkt_valid(frag->part_pkt[i], opaque))
-				return IIP_ERR_FATAL_SYS;
-			if (ii_call_pkt_free(frag->part_pkt[i], opaque))
-				return IIP_ERR_FATAL_SUB;
+			if (!ii_call_pkt_valid(frag->part_pkt[i], opaque)) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+			if (ii_call_pkt_free(frag->part_pkt[i], opaque)) {
+				IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+			}
 		}
 		frag->cnt = 0;
 		return IIP_ERR_OK;
@@ -5648,9 +6012,9 @@ static enum iip_rc ii_ipv4_frag_push__slot(const uint8_t *buf, struct ii_pb ipv4
 		if (!ipv4_frag[i].cnt)
 			unused = i;
 		else {
-			if (!ii_call_pkt_valid(ipv4_frag[i].part_pkt[0], opaque))
-				return IIP_ERR_FATAL_SYS;
-			else {
+			if (!ii_call_pkt_valid(ipv4_frag[i].part_pkt[0], opaque)) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			} else {
 				uint8_t *buf2 = ii_call_pkt_get_data(ipv4_frag[i].part_pkt[0], opaque) + II_ETH_HDR_LEN;
 				if (ii_extract_ipv4_src_be(buf) == ii_extract_ipv4_src_be(buf2)
 						&& ii_extract_ipv4_dst_be(buf) == ii_extract_ipv4_dst_be(buf2)
@@ -5661,9 +6025,9 @@ static enum iip_rc ii_ipv4_frag_push__slot(const uint8_t *buf, struct ii_pb ipv4
 		}
 	}
 	if (i == II_CONF_IPV4_FRAG_ARRAY_LEN) {
-		if (unused == -1)
-			return IIP_ERR_FATAL_MEM;
-		else {
+		if (unused == -1) {
+			IIP_OPS_ERROR_FATAL_MEM(); return IIP_ERR_FATAL_MEM;
+		} else {
 			*slot = unused;
 			return IIP_ERR_OK;
 		}
@@ -5695,10 +6059,12 @@ static enum iip_rc ii_ipv4_frag_push__ordering(IIP_PKT_P part_pkt[II_CONF_IPV4_F
 			loop variant cnt - 1 - j - i;
 		 */
 		for (i = 0; i < cnt - 1 - j; i++) {
-			if (!ii_call_pkt_valid(part_pkt[i], opaque))
-				return IIP_ERR_FATAL_SYS;
-			if (!ii_call_pkt_valid(part_pkt[i + 1], opaque))
-				return IIP_ERR_FATAL_SYS;
+			if (!ii_call_pkt_valid(part_pkt[i], opaque)) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+			if (!ii_call_pkt_valid(part_pkt[i + 1], opaque)) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 			if (ii_extract_ipv4_off(ii_call_pkt_get_data(part_pkt[i], opaque) + II_ETH_HDR_LEN) >
 					ii_extract_ipv4_off(ii_call_pkt_get_data(part_pkt[i + 1], opaque) + II_ETH_HDR_LEN)) {
 				IIP_PKT_P tmp = part_pkt[i];
@@ -5726,10 +6092,12 @@ static enum iip_rc ii_ipv4_frag_push__check_complete(IIP_PKT_P part_pkt[II_CONF_
 		loop variant cnt - i;
 	 */
 	for (i = 0, off = 0; i < cnt; i++) {
-		if (!ii_call_pkt_valid(part_pkt[i], opaque))
-			return IIP_ERR_FATAL_SYS;
-		if (ii_extract_ipv4_tot_len(ii_call_pkt_get_data(part_pkt[i], opaque) + II_ETH_HDR_LEN) < ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(part_pkt[i], opaque) + II_ETH_HDR_LEN))
-			return IIP_ERR_FATAL_SYS;
+		if (!ii_call_pkt_valid(part_pkt[i], opaque)) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
+		if (ii_extract_ipv4_tot_len(ii_call_pkt_get_data(part_pkt[i], opaque) + II_ETH_HDR_LEN) < ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(part_pkt[i], opaque) + II_ETH_HDR_LEN)) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		if (off != ii_extract_ipv4_off(ii_call_pkt_get_data(part_pkt[i], opaque) + II_ETH_HDR_LEN)) { /* not contiguous */
 			if (cnt == II_CONF_IPV4_FRAG_CNT_MAX)
 				return IIP_ERR_INVALID_RX; /* incomplete and no extra space, so discard all */
@@ -5765,10 +6133,12 @@ static enum iip_rc ii_ipv4_frag_push__check_complete(IIP_PKT_P part_pkt[II_CONF_
  */
 static enum iip_rc ii_ipv4_rx_push(IIP_MEM_P w, uint16_t pb_id, IIP_OPAQUE_P opaque)
 {
-	if (pb_id >= II_CONF_POOL_NUM_PB)
-		return IIP_ERR_FATAL_SYS;
-	if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))
-		return IIP_ERR_FATAL_SYS;
+	if (pb_id >= II_CONF_POOL_NUM_PB) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		enum iip_rc rc;
 		switch (ii_extract_ipv4_proto(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN)) {
@@ -5811,29 +6181,35 @@ static enum iip_rc ii_ipv4_rx_push(IIP_MEM_P w, uint16_t pb_id, IIP_OPAQUE_P opa
  */
 static enum iip_rc ii_ipv4_frag_push(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaque)
 {
-	if (!ii_call_pkt_valid(rx_pkt, opaque))
-		return IIP_ERR_FATAL_USR;
+	if (!ii_call_pkt_valid(rx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+	}
 	{
 		uint8_t *buf = ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN;
 		uint16_t slot;
-		if (ii_ipv4_frag_push__slot(buf, w->ipv4_frag, &slot, opaque) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
-		if (ii_ipv4_frag_validation(&w->ipv4_frag[slot], opaque) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
+		if (ii_ipv4_frag_push__slot(buf, w->ipv4_frag, &slot, opaque) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
+		if (ii_ipv4_frag_validation(&w->ipv4_frag[slot], opaque) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 
-		if (w->ipv4_frag[slot].cnt >= II_CONF_IPV4_FRAG_CNT_MAX)
-			return IIP_ERR_FATAL_SYS;
+		if (w->ipv4_frag[slot].cnt >= II_CONF_IPV4_FRAG_CNT_MAX) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		{
 			IIP_PKT_P cloned_rx_pkt;
-			if (ii_call_pkt_clone(rx_pkt, &cloned_rx_pkt, opaque))
-				return IIP_ERR_FATAL_SUB;
+			if (ii_call_pkt_clone(rx_pkt, &cloned_rx_pkt, opaque)) {
+				IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+			}
 			if (!w->ipv4_frag[slot].cnt)
 				w->ipv4_frag[slot].tcp.opt.ts[0] = w->now_ms; /* XXX: reusing the field for tcp */
 			w->ipv4_frag[slot].part_pkt[w->ipv4_frag[slot].cnt++] = cloned_rx_pkt;
 			if (w->ipv4_frag[slot].cnt < 2)
 				return IIP_ERR_OK;
-			if (ii_ipv4_frag_push__ordering(w->ipv4_frag[slot].part_pkt, w->ipv4_frag[slot].cnt, opaque) != IIP_ERR_OK)
-				return IIP_ERR_FATAL_SYS;
+			if (ii_ipv4_frag_push__ordering(w->ipv4_frag[slot].part_pkt, w->ipv4_frag[slot].cnt, opaque) != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 			switch (ii_ipv4_frag_push__check_complete(w->ipv4_frag[slot].part_pkt, w->ipv4_frag[slot].cnt, opaque)) {
 			case IIP_ERR_OK: /* complete */
 				{
@@ -5845,7 +6221,16 @@ static enum iip_rc ii_ipv4_frag_push(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P
 					}
 					II_PB(pb_id) = w->ipv4_frag[slot];
 					w->ipv4_frag[slot].cnt = 0;
-					return ii_ipv4_rx_push(w, pb_id, opaque);
+					{
+						enum iip_rc rc = ii_ipv4_rx_push(w, pb_id, opaque);
+						if (rc != IIP_ERR_OK) {
+							if (ii_free_pb(&w->pbs, pb_id)) {
+								IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+							}
+							return rc;
+						}
+					}
+					return IIP_ERR_OK;
 				}
 			case IIP_ERR_AGAIN: /* wait */
 				return IIP_ERR_OK;
@@ -5853,7 +6238,9 @@ static enum iip_rc ii_ipv4_frag_push(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P
 				ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[slot], opaque);
 				return IIP_ERR_INVALID_RX;
 			default:
-				return IIP_ERR_FATAL_SYS;
+				{
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 			}
 		}
 	}
@@ -5867,12 +6254,14 @@ static enum iip_rc ii_ipv4_frag_push(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P
  */
 static enum iip_rc ii_ipv4_push_one(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaque)
 {
-	if (!ii_call_pkt_valid(rx_pkt, opaque))
-		return IIP_ERR_FATAL_SYS;
+	if (!ii_call_pkt_valid(rx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		IIP_PKT_P cloned_rx_pkt;
-		if (ii_call_pkt_clone(rx_pkt, &cloned_rx_pkt, opaque))
-			return IIP_ERR_FATAL_SUB;
+		if (ii_call_pkt_clone(rx_pkt, &cloned_rx_pkt, opaque)) {
+			IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+		}
 		{
 			II_PB_P pb_id;
 			{
@@ -5893,8 +6282,9 @@ static enum iip_rc ii_ipv4_push_one(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P 
  */
 static enum iip_rc ii_ipv4_validation(IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaque)
 {
-	if (!ii_call_pkt_valid(rx_pkt, opaque))
-		return IIP_ERR_FATAL_SYS;
+	if (!ii_call_pkt_valid(rx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint8_t *buf = ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN;
 		IIP_PKT_LEN_T buf_len = ii_call_pkt_get_len(rx_pkt, opaque);
@@ -5942,8 +6332,9 @@ static enum iip_rc ii_ipv4_validation(IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaque)
  */
 static enum iip_rc ii_ipv4_rx_csum_check(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaque)
 {
-	if (!ii_call_pkt_valid(rx_pkt, opaque))
-		return IIP_ERR_FATAL_SYS;
+	if (!ii_call_pkt_valid(rx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		IIP_OPS_IPV4_RX_CHECKSUM();
 	}
@@ -6016,19 +6407,22 @@ static enum iip_rc ii_ipv4_opt_validation(uint8_t *buf, uint16_t buf_len, uint16
  */
 static enum iip_rc ii_ipv4_input(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaque)
 {
-	if (!ii_call_pkt_valid(rx_pkt, opaque))
-		return IIP_ERR_FATAL_SYS;
+	if (!ii_call_pkt_valid(rx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint16_t buf_len = ii_call_pkt_get_len(rx_pkt, opaque);
-		if (buf_len > ii_call_pkt_get_capacity(rx_pkt, opaque))
-			return IIP_ERR_FATAL_SYS;
+		if (buf_len > ii_call_pkt_get_capacity(rx_pkt, opaque)) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		if (!(buf_len > II_ETH_HDR_LEN
 					&& ii_ipv4_validation(rx_pkt, opaque) == IIP_ERR_OK))
 			return IIP_ERR_INVALID_RX;
 		if (ii_ipv4_rx_csum_check(w, rx_pkt, opaque) != IIP_ERR_OK)
 			return IIP_ERR_INVALID_RX;
-		if (ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN) < II_IPV4_HDR_LEN_MINIMAL)
-			return IIP_ERR_FATAL_SYS;
+		if (ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN) < II_IPV4_HDR_LEN_MINIMAL) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		if (!(buf_len > II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL
 					&& ii_ipv4_opt_validation(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL, buf_len - II_ETH_HDR_LEN - II_IPV4_HDR_LEN_MINIMAL, ii_extract_ipv4_opt_len(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN)) == IIP_ERR_OK))
 			return IIP_ERR_INVALID_RX;
@@ -6054,51 +6448,51 @@ static enum iip_rc ii_ipv4_input(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opa
  */
 static int iip_arp_ethernet_request(IIP_MEM_P w, uint8_t local_mac[II_ETH_ADDR_LEN], uint32_t local_ip4_be, uint32_t target_ip4_be, IIP_OPAQUE_P opaque)
 {
-	IIP_PKT_P out_pkt;
-	if (ii_call_pkt_alloc(&out_pkt, opaque))
-		return -1;
-#if 0
-	if (ii_call_pkt_get_capacity(out_pkt, opaque) < II_ETH_HDR_LEN + II_ARP_HDR_LEN + 20) {
-		ii_call_pkt_free(out_pkt, opaque);
-		return -1;
-	}
-#endif
 	{
-		uint8_t *txbuf = ii_call_pkt_get_data(out_pkt, opaque);
-		{
-			uint8_t bc_mac[II_ETH_ADDR_LEN];
-			bc_mac[0] = 0xff;
-			bc_mac[1] = 0xff;
-			bc_mac[2] = 0xff;
-			bc_mac[3] = 0xff;
-			bc_mac[4] = 0xff;
-			bc_mac[5] = 0xff;
-			ii_call_ethernet_hdr_craft(txbuf, bc_mac, ii_htons(0x0806 /* arp */), opaque);
+		IIP_PKT_P out_pkt;
+		if (ii_call_pkt_alloc(&out_pkt, opaque))
+			return -1;
+		if (ii_call_pkt_get_capacity(out_pkt, opaque) < II_ETH_HDR_LEN + II_ARP_HDR_LEN + 20) {
+			ii_call_pkt_free(out_pkt, opaque);
+			return -1;
 		}
-		ii_write_uint16(txbuf + II_ETH_HDR_LEN + 0, ii_htons(0x0001)); /* hw */
-		ii_write_uint16(txbuf + II_ETH_HDR_LEN + 2, ii_htons(0x0800)); /* protocol ipv4 */
-		txbuf[II_ETH_HDR_LEN + 4] = 6; /* hw addr len */
-		txbuf[II_ETH_HDR_LEN + 5] = 4; /* ipv4 protocol addr len */
-		ii_write_uint16(txbuf + II_ETH_HDR_LEN + 6, ii_htons(0x0001)); /* op */
-		txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 0] = local_mac[0];
-		txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 1] = local_mac[1];
-		txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 2] = local_mac[2];
-		txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 3] = local_mac[3];
-		txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 4] = local_mac[4];
-		txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 5] = local_mac[5];
-		ii_write_uint32(txbuf + II_ETH_HDR_LEN + II_ARP_HDR_LEN + 6, local_ip4_be);
-		txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 10] = 0;
-		txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 11] = 0;
-		txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 12] = 0;
-		txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 13] = 0;
-		txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 14] = 0;
-		txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 15] = 0;
-		ii_write_uint32(txbuf + II_ETH_HDR_LEN + II_ARP_HDR_LEN + 16, target_ip4_be);
-	}
-	ii_call_pkt_set_len(out_pkt, II_ETH_HDR_LEN + II_ARP_HDR_LEN + 20, opaque);
-	if (ii_call_ethernet_push(out_pkt, opaque)) {
-		ii_call_pkt_free(out_pkt, opaque);
-		return -1;
+		{
+			uint8_t *txbuf = ii_call_pkt_get_data(out_pkt, opaque);
+			{
+				uint8_t bc_mac[II_ETH_ADDR_LEN];
+				bc_mac[0] = 0xff;
+				bc_mac[1] = 0xff;
+				bc_mac[2] = 0xff;
+				bc_mac[3] = 0xff;
+				bc_mac[4] = 0xff;
+				bc_mac[5] = 0xff;
+				ii_call_ethernet_hdr_craft(txbuf, bc_mac, ii_htons(0x0806 /* arp */), opaque);
+			}
+			ii_write_uint16(txbuf + II_ETH_HDR_LEN + 0, ii_htons(0x0001)); /* hw */
+			ii_write_uint16(txbuf + II_ETH_HDR_LEN + 2, ii_htons(0x0800)); /* protocol ipv4 */
+			txbuf[II_ETH_HDR_LEN + 4] = 6; /* hw addr len */
+			txbuf[II_ETH_HDR_LEN + 5] = 4; /* ipv4 protocol addr len */
+			ii_write_uint16(txbuf + II_ETH_HDR_LEN + 6, ii_htons(0x0001)); /* op */
+			txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 0] = local_mac[0];
+			txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 1] = local_mac[1];
+			txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 2] = local_mac[2];
+			txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 3] = local_mac[3];
+			txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 4] = local_mac[4];
+			txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 5] = local_mac[5];
+			ii_write_uint32(txbuf + II_ETH_HDR_LEN + II_ARP_HDR_LEN + 6, local_ip4_be);
+			txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 10] = 0;
+			txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 11] = 0;
+			txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 12] = 0;
+			txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 13] = 0;
+			txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 14] = 0;
+			txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 15] = 0;
+			ii_write_uint32(txbuf + II_ETH_HDR_LEN + II_ARP_HDR_LEN + 16, target_ip4_be);
+		}
+		ii_call_pkt_set_len(out_pkt, II_ETH_HDR_LEN + II_ARP_HDR_LEN + 20, opaque);
+		if (ii_call_ethernet_push(out_pkt, opaque)) {
+			ii_call_pkt_free(out_pkt, opaque);
+			return -1;
+		}
 	}
 	{
 		int iip_ret_int;
@@ -6119,26 +6513,28 @@ static int iip_arp_ethernet_request(IIP_MEM_P w, uint8_t local_mac[II_ETH_ADDR_L
  */
 static enum iip_rc ii_arp_input__ipv4_request(IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaque)
 {
-	if (!ii_call_pkt_valid(rx_pkt, opaque))
-		return IIP_ERR_FATAL_SYS;
+	if (!ii_call_pkt_valid(rx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		bool iip_ret_bool;
 		IIP_OPS_IPV4_ADDR_MATCH();
 		if (iip_ret_bool) {
 			IIP_PKT_P tx_pkt;
-			if (ii_call_pkt_alloc(&tx_pkt, opaque))
-				return IIP_ERR_FATAL_MEM;
-#if 0
-			if (ii_call_pkt_get_capacity(tx_pkt, opaque) < II_ETH_HDR_LEN + II_ARP_HDR_LEN + 20)
-				return IIP_ERR_FATAL_SUB;
-#endif
+			if (ii_call_pkt_alloc(&tx_pkt, opaque)) {
+				IIP_OPS_ERROR_FATAL_MEM(); return IIP_ERR_FATAL_MEM;
+			}
+			if (ii_call_pkt_get_capacity(tx_pkt, opaque) < II_ETH_HDR_LEN + II_ARP_HDR_LEN + 20) {
+				IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+			}
 			{
 				uint8_t *rxbuf = ii_call_pkt_get_data(rx_pkt, opaque);
 				uint8_t *txbuf = ii_call_pkt_get_data(tx_pkt, opaque);
 				if (ii_call_ethernet_hdr_craft(txbuf, rxbuf + 6, ii_htons(0x0806) /* arp */, opaque)) {
-					if (ii_call_pkt_free(tx_pkt, opaque))
-						return IIP_ERR_FATAL_SUB;
-					return IIP_ERR_FATAL_SUB;
+					if (ii_call_pkt_free(tx_pkt, opaque)) {
+						IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+					}
+					IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
 				}
 				/* arp hdr common */
 				ii_write_uint16(txbuf + II_ETH_HDR_LEN + 0, ii_htons(0x0001)); /* ethernet */
@@ -6171,10 +6567,18 @@ static enum iip_rc ii_arp_input__ipv4_request(IIP_PKT_P rx_pkt, IIP_OPAQUE_P opa
 				txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 16 + 2] = rxbuf[II_ETH_HDR_LEN + 8 +  6 + 2];
 				txbuf[II_ETH_HDR_LEN + II_ARP_HDR_LEN + 16 + 3] = rxbuf[II_ETH_HDR_LEN + 8 +  6 + 3];
 			}
-			if (ii_call_pkt_set_len(tx_pkt, II_ETH_HDR_LEN + II_ARP_HDR_LEN + 20, opaque))
-				return IIP_ERR_FATAL_SUB;
-			if (ii_call_ethernet_push(tx_pkt, opaque))
-				return IIP_ERR_FATAL_SUB;
+			if (ii_call_pkt_set_len(tx_pkt, II_ETH_HDR_LEN + II_ARP_HDR_LEN + 20, opaque)) {
+				if (ii_call_pkt_free(tx_pkt, opaque)) {
+					IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+				}
+				IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+			}
+			if (ii_call_ethernet_push(tx_pkt, opaque)) {
+				if (ii_call_pkt_free(tx_pkt, opaque)) {
+					IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+				}
+				IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+			}
 			return IIP_ERR_OK;
 		} else
 			return IIP_ERR_INVALID_RX;
@@ -6189,13 +6593,15 @@ static enum iip_rc ii_arp_input__ipv4_request(IIP_PKT_P rx_pkt, IIP_OPAQUE_P opa
  */
 static enum iip_rc ii_arp_input__ipv4_reply(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaque)
 {
-	if (!ii_call_pkt_valid(rx_pkt, opaque))
-		return IIP_ERR_FATAL_SYS;
+	if (!ii_call_pkt_valid(rx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		int iip_ret_int;
 		IIP_OPS_ARP_ETHERNET_REPLY();
-		if (iip_ret_int)
-			return IIP_ERR_FATAL_USR;
+		if (iip_ret_int) {
+			IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+		}
 		return IIP_ERR_OK;
 	}
 	{ /* unused */
@@ -6211,8 +6617,9 @@ static enum iip_rc ii_arp_input__ipv4_reply(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_O
  */
 static enum iip_rc ii_arp_input__ipv4(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaque)
 {
-	if (!ii_call_pkt_valid(rx_pkt, opaque))
-		return IIP_ERR_FATAL_SYS;
+	if (!ii_call_pkt_valid(rx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (ii_call_pkt_get_data(rx_pkt, opaque)[II_ETH_HDR_LEN + 4] != 6) /* ethenet addr len */
 		return IIP_ERR_INVALID_RX;
 	if (ii_call_pkt_get_data(rx_pkt, opaque)[II_ETH_HDR_LEN + 5] != 4) /* ipv4 addr len */
@@ -6235,12 +6642,14 @@ static enum iip_rc ii_arp_input__ipv4(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_
  */
 static enum iip_rc ii_arp_input(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaque)
 {
-	if (!ii_call_pkt_valid(rx_pkt, opaque))
-		return IIP_ERR_FATAL_USR;
+	if (!ii_call_pkt_valid(rx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+	}
 	{
 		uint16_t buf_len = ii_call_pkt_get_len(rx_pkt, opaque);
-		if (buf_len > ii_call_pkt_get_capacity(rx_pkt, opaque))
-			return IIP_ERR_FATAL_SYS;
+		if (buf_len > ii_call_pkt_get_capacity(rx_pkt, opaque)) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		if (buf_len < II_ETH_HDR_LEN + II_ARP_HDR_LEN + 20)
 			return IIP_ERR_INVALID_RX;
 		switch (ii_ntohs(ii_read_uint16(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN))) {
@@ -6271,8 +6680,9 @@ static enum iip_rc ii_arp_input(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaq
  */
 static enum iip_rc ii_ethernet_input(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaque)
 {
-	if (!ii_call_pkt_valid(rx_pkt, opaque))
-		return IIP_ERR_FATAL_SYS;
+	if (!ii_call_pkt_valid(rx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint8_t *buf = ii_call_pkt_get_data(rx_pkt, opaque);
 		if (ii_call_pkt_get_len(rx_pkt, opaque) < II_ETH_HDR_LEN)
@@ -6331,8 +6741,9 @@ static enum iip_rc ii_periodic_timer__delayed_ack(IIP_MEM_P w)
 		if (II_TCP_CONN(i).state == II_TCP_STATE_ESTABLISHED
 				&& !(II_TCP_CONN(i).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
 			if ((II_TCP_CONN(i).ack_seq) != II_TCP_CONN(i).ack_seq_sent) { /* we got payload, but ack is not pushed by the app */
-				if (ii_tcp_tx_push_control(w, i, II_TCP_FLAG_ACK) != IIP_ERR_OK)
-					return IIP_ERR_FATAL_SYS;
+				if (ii_tcp_tx_push_control(w, i, II_TCP_FLAG_ACK) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 			}
 		}
 	}
@@ -6347,8 +6758,9 @@ static enum iip_rc ii_periodic_timer__delayed_ack(IIP_MEM_P w)
  */
 static enum iip_rc ii_periodic_timer__keep_alive_xmit(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPAQUE_P opaque)
 {
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN)
-		return IIP_ERR_FATAL_SYS;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
 		uint8_t xmit_len = 0;
 		uint8_t tcp_opt_len = 0;
@@ -6378,8 +6790,9 @@ static enum iip_rc ii_periodic_timer__keep_alive_xmit(IIP_MEM_P w, IIP_TCP_CONN_
 				ii_write_uint16(tcp_hdr + 16, ii_htons(ii_csum16(buf_ptr, len, 2, 0)));
 				if (ii_ipv4_send_ethernet(II_TCP_CONN(conn_id).src_mac, ii_htonl(II_TCP_CONN(conn_id).src_ip[0]),
 							II_TCP_CONN(conn_id).dst_mac, ii_htonl(II_TCP_CONN(conn_id).dst_ip[0]), 6 /* tcp */, II_TCP_CONN(conn_id).diffserv,
-							&buf_ptr[1], &len[1], 1, opaque) != IIP_ERR_OK)
-					return IIP_ERR_FATAL_SYS;
+							&buf_ptr[1], &len[1], 1, opaque) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 			}
 		}
 		return IIP_ERR_OK;
@@ -6454,10 +6867,12 @@ static enum iip_rc ii_periodic_timer__ipv4_fragment_expiration(IIP_MEM_P w, IIP_
 	for (i = 0; i < II_CONF_IPV4_FRAG_ARRAY_LEN; i++) {
 		if (w->ipv4_frag[i].cnt) {
 			if (60000 /* 60 sec */ <= w->now_ms - w->ipv4_frag[i].tcp.opt.ts[0] /* XXX: reusing the field for tcp */) {
-				if (ii_ipv4_frag_validation(&w->ipv4_frag[i], opaque) != IIP_ERR_OK)
-					return IIP_ERR_FATAL_SYS;
-				if (ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[i], opaque) != IIP_ERR_OK)
-					return IIP_ERR_FATAL_SYS;
+				if (ii_ipv4_frag_validation(&w->ipv4_frag[i], opaque) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+				if (ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[i], opaque) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 			}
 		}
 	}
@@ -6473,22 +6888,26 @@ static enum iip_rc ii_periodic_timer__ipv4_fragment_expiration(IIP_MEM_P w, IIP_
 static enum iip_rc ii_preiodic_timer(IIP_MEM_P w, IIP_OPAQUE_P opaque)
 {
 	if (200 <= w->now_ms - w->timer.prev_fast){ /* fast timer every 200 ms */
-		if (ii_periodic_timer__delayed_ack(w) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
+		if (ii_periodic_timer__delayed_ack(w) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		w->tcp.pkt_ts++; /* incrment tcp packet timestamp counter */
 		w->timer.prev_fast = w->now_ms;
 	}
 	if (500 <= w->now_ms - w->timer.prev_slow){ /* slow timer every 500 ms */
-		if (ii_periodic_timer__keep_alive(w, opaque) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
-		if (ii_periodic_timer__tcp_close_check(w) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
+		if (ii_periodic_timer__keep_alive(w, opaque) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
+		if (ii_periodic_timer__tcp_close_check(w) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		w->tcp.iss++; /* incrment initial send sequence number */
 		w->timer.prev_slow = w->now_ms;
 	}
 	if (1000 <= w->now_ms - w->timer.prev_very_slow) { /* slow timer every 1000 ms */
-		if (ii_periodic_timer__ipv4_fragment_expiration(w, opaque) != IIP_ERR_OK)
-			return IIP_ERR_FATAL_SYS;
+		if (ii_periodic_timer__ipv4_fragment_expiration(w, opaque) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		w->timer.prev_very_slow = w->now_ms;
 	}
 	return IIP_ERR_OK;
@@ -6508,12 +6927,12 @@ static enum iip_rc ii_preiodic_timer(IIP_MEM_P w, IIP_OPAQUE_P opaque)
  */
 static enum iip_rc ii_packet_input_round1(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaque)
 {
-	if (!ii_call_pkt_valid(rx_pkt, opaque))
-		return IIP_ERR_FATAL_USR;
-
-	if (ii_call_pkt_get_len(rx_pkt, opaque) > ii_call_pkt_get_capacity(rx_pkt, opaque))
-		return IIP_ERR_FATAL_USR;
-	else
+	if (!ii_call_pkt_valid(rx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+	}
+	if (ii_call_pkt_get_len(rx_pkt, opaque) > ii_call_pkt_get_capacity(rx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+	} else
 		return ii_ethernet_input(w, rx_pkt, opaque);
 }
 
@@ -6544,11 +6963,13 @@ static enum iip_rc ii_work(IIP_MEM_P w, IIP_OPAQUE_P opaque)
  */
 static int iip_input(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaque)
 {
-	if (!ii_call_pkt_valid(rx_pkt, opaque))
-		return IIP_ERR_FATAL_USR;
+	if (!ii_call_pkt_valid(rx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+	}
 	ii_packet_input_round1(w, rx_pkt, opaque);
-	if (ii_call_pkt_free(rx_pkt, opaque))
-		return IIP_ERR_FATAL_USR;
+	if (ii_call_pkt_free(rx_pkt, opaque)) {
+		IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+	}
 	return IIP_ERR_OK;
 }
 
@@ -6578,8 +6999,9 @@ static int iip_run(IIP_MEM_P w, IIP_PKT_P pkt[], IIP_PKT_CNT_T cnt, uint32_t *ne
 	{
 		int iip_ret_int;
 		IIP_OPS_ETHERNET_FLUSH();
-		if (iip_ret_int)
-			return IIP_ERR_FATAL_USR;
+		if (iip_ret_int) {
+			IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
+		}
 	}
 	*next_us = 0;
 	return 0;
