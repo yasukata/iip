@@ -4413,6 +4413,8 @@ static enum iip_rc ii_tcp_conn_xmit_queued_data(IIP_MEM_P w, IIP_TCP_CONN_P conn
 	}
 	{
 		IIP_PKT_CNT_T cnt = ii_pb_ring_num_used(&II_TCP_CONN(conn_id).tx_ring), sent_ring_space = ii_pb_ring_num_usable(&II_TCP_CONN(conn_id).sent_ring);
+		if (!cnt)
+			return IIP_ERR_OK;
 		if (sent_ring_space < cnt) {
 			IIP_OPS_ERROR_FATAL_MEM(); return IIP_ERR_FATAL_MEM; /* TODO */
 		}
