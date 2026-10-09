@@ -2779,8 +2779,9 @@ static enum iip_rc ii_tcp_tx_push_control(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, u
 		II_PB_P pb_id;
 		{
 			enum iip_rc rc = ii_alloc_pb(&w->pbs, &pb_id);
-			if (rc != IIP_ERR_OK)
-				return rc;
+			if (rc != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 		}
 		{
 			II_PB(pb_id).tcp.info_flags = 0;
@@ -2817,6 +2818,8 @@ static enum iip_rc ii_tcp_tx_push_control(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, u
 			if (rc != IIP_ERR_OK) {
 				if (ii_free_pb(&w->pbs, pb_id) != IIP_ERR_OK) {
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				} else if (rc == IIP_ERR_FATAL_MEM) {
+					IIP_OPS_ERROR_FATAL_MEM(); return IIP_ERR_FATAL_MEM;
 				}
 				return rc;
 			}
@@ -2845,8 +2848,9 @@ static enum iip_rc ii_tcp_send(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint16_t fla
 		II_PB_P pb_id;
 		{
 			enum iip_rc rc = ii_alloc_pb(&w->pbs, &pb_id);
-			if (rc != IIP_ERR_OK)
-				return rc;
+			if (rc != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 		}
 		{
 			II_PB(pb_id).tcp.info_flags = 0;
@@ -2870,7 +2874,7 @@ static enum iip_rc ii_tcp_send(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint16_t fla
 					if (!ii_call_pkt_valid(pkts[i], opaque)) {
 						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 					}
-					II_PB(pb_id).tcp.payload_len += ii_call_pkt_get_len(pkts[i], opaque);;
+					II_PB(pb_id).tcp.payload_len += ii_call_pkt_get_len(pkts[i], opaque);
 					II_PB(pb_id).part_pkt[i] = pkts[i];
 				}
 			}
@@ -3163,7 +3167,9 @@ static enum iip_rc ii_tcp_check_input_seq(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, I
 }
 
 /*@
+	requires \valid(opaque);
 	requires \valid(w);
+	requires \separated(w, opaque);
 	assigns *w;
  */
 static enum iip_rc ii_tcp_rx_push__pending(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id, IIP_OPAQUE_P opaque)
@@ -3530,8 +3536,9 @@ static enum iip_rc iip_tcp_close(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPAQUE
 			ii_tcp_conn_set_state(w, conn_id, II_TCP_STATE_LAST_ACK);
 		{
 			enum iip_rc rc = ii_tcp_tx_push_control(w, conn_id, II_TCP_FLAG_FIN | II_TCP_FLAG_ACK);
-			if (rc != IIP_ERR_OK)
-				return rc;
+			if (rc != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 			II_TCP_CONN(conn_id).fin_ack_seq = II_TCP_CONN(conn_id).seq;
 		}
 	}
@@ -3928,8 +3935,9 @@ static enum iip_rc ii_tcp_conn_handle_in_order(IIP_MEM_P w, IIP_TCP_CONN_P conn_
 		case II_TCP_STATE_SYN_SENT:
 			{
 				enum iip_rc rc = ii_tcp_conn_handle_in_order__syn_sent(w, conn_id, pb_id, &syn, &ack, opaque);
-				if (rc != IIP_ERR_OK)
-					return rc;
+				if (rc != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 			}
 			break;
 		case II_TCP_STATE_SYN_RECVD:
@@ -3937,8 +3945,9 @@ static enum iip_rc ii_tcp_conn_handle_in_order(IIP_MEM_P w, IIP_TCP_CONN_P conn_
 				bool fallthrough = false;
 				{
 					enum iip_rc rc = ii_tcp_conn_handle_in_order__syn_recvd(w, conn_id, pb_id, &fallthrough, &syn, &ack, &fastopen_cookie, opaque);
-					if (rc != IIP_ERR_OK)
-						return rc;
+					if (rc != IIP_ERR_OK) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
 				}
 				if (!fallthrough)
 					break;
@@ -3947,8 +3956,9 @@ static enum iip_rc ii_tcp_conn_handle_in_order(IIP_MEM_P w, IIP_TCP_CONN_P conn_
 		case II_TCP_STATE_ESTABLISHED:
 			{
 				enum iip_rc rc = ii_tcp_conn_handle_in_order__established(w, conn_id, pb_id, &ack, opaque);
-				if (rc != IIP_ERR_OK)
-					return rc;
+				if (rc != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 			}
 			break;
 		case II_TCP_STATE_CLOSE_WAIT:
@@ -3965,8 +3975,9 @@ static enum iip_rc ii_tcp_conn_handle_in_order(IIP_MEM_P w, IIP_TCP_CONN_P conn_
 		if (syn || ack || rst) {
 			enum iip_rc rc = ii_tcp_tx_push_control(w, conn_id,
 					(syn ? II_TCP_FLAG_SYN : 0) | (ack ? II_TCP_FLAG_ACK : 0) | (rst ? II_TCP_FLAG_RST : 0));
-			if (rc != IIP_ERR_OK)
-				return rc;
+			if (rc != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 		}
 		return IIP_ERR_OK;
 	}
@@ -4176,7 +4187,7 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__craft_opt(IIP_MEM_P w, IIP_TCP_C
 			  loop invariant 0 <= i <= l;
 			  loop assigns i, tcp_opt[tcp_opt_len .. tcp_opt_len + l - 1];
 			  loop variant l - i;
-			  */
+			 */
 			for (i = 0; i < l; i++)
 				tcp_opt[tcp_opt_len + i] = 1; /* nop */
 			tcp_opt_len += l;
@@ -4503,8 +4514,9 @@ static enum iip_rc ii_tcp_conn_input_one(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II
 			return IIP_ERR_INVALID_RX;
 		{
 			enum iip_rc rc = ii_tcp_conn_update_info(w, conn_id, pb_id, out_of_order, valid_ack, opaque);
-			if (rc != IIP_ERR_OK)
-				return rc;
+			if (rc != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 		}
 	}
 	if (ii_tcp_hdr_has_rst(w, pb_id)) {
@@ -5033,7 +5045,7 @@ static enum iip_rc ii_tcp_conn__zero_window_probe_send(IIP_MEM_P w, IIP_TCP_CONN
 		}
 		{
 			uint32_t new_sent_seq = 0;
-			bool probe_sent = false, new_seq_set = false;;
+			bool probe_sent = false, new_seq_set = false;
 			{
 				IIP_PKT_CNT_T cnt = ii_pb_ring_num_used(ring);
 				{
@@ -5217,9 +5229,11 @@ static enum iip_rc ii_tcp_conn_work(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPA
 						enum iip_rc rc = ii_tcp_conn_input_one(w, conn_id, pb_id, opaque);
 						switch (rc) {
 						case IIP_ERR_FATAL_SYS:
+								IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 						case IIP_ERR_FATAL_USR:
+								IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
 						case IIP_ERR_FATAL_SUB:
-								return rc;
+								IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
 						default:
 							break;
 						}
@@ -5303,8 +5317,9 @@ static enum iip_rc ii_tcp_rx_push(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P p
 					II_TCP_CONN(conn_id).seq_next_expected = ii_tcp_seq_re_raw(w, push_pb_id);
 					{
 						enum iip_rc rc = ii_pb_ring_push(&II_TCP_CONN(conn_id).rx_ring, push_pb_id);
-						if (rc != IIP_ERR_OK)
-							return rc;
+						if (rc != IIP_ERR_OK) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
 					}
 				} else {
 					II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING; /* send ack for packet loss detection */
@@ -5632,8 +5647,9 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 	IIP_TCP_CONN_P conn_id;
 	{
 		enum iip_rc rc = ii_alloc_tcp_conn(&w->tcp_conns, &conn_id);
-		if (rc != IIP_ERR_OK)
-			return rc;
+		if (rc != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
 		ii_ipv4_tcp_conn_init(w, conn_id,
 				src_mac,
 				src_ipv4_be,
@@ -5756,8 +5772,9 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 							IIP_OPS_TCP_ACCEPT();
 							if (iip_ret_bool) {
 								enum iip_rc rc = ii_alloc_tcp_conn(&w->tcp_conns, &conn_id);
-								if (rc != IIP_ERR_OK)
-									return rc;
+								if (rc != IIP_ERR_OK) {
+									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+								}
 								if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque)) {
 									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 								}
@@ -6258,8 +6275,9 @@ static enum iip_rc ii_ipv4_frag_push(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P
 					II_PB_P pb_id;
 					{
 						enum iip_rc rc = ii_alloc_pb(&w->pbs, &pb_id);
-						if (rc != IIP_ERR_OK)
-							return rc;
+						if (rc != IIP_ERR_OK) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
 					}
 					II_PB(pb_id) = w->ipv4_frag[slot];
 					w->ipv4_frag[slot].cnt = 0;
@@ -6308,14 +6326,27 @@ static enum iip_rc ii_ipv4_push_one(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P 
 			II_PB_P pb_id;
 			{
 				enum iip_rc rc = ii_alloc_pb(&w->pbs, &pb_id);
-				if (rc != IIP_ERR_OK)
+				if (rc != IIP_ERR_OK) {
+					if (ii_call_pkt_free(cloned_rx_pkt, opaque)) {
+						IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+					}
 					return rc;
+				}
 			}
 			II_PB(pb_id).part_pkt[0] = cloned_rx_pkt;
 			II_PB(pb_id).cnt = 1;
-			return ii_ipv4_rx_push(w, pb_id, opaque);
+			{
+				enum iip_rc rc = ii_ipv4_rx_push(w, pb_id, opaque);
+				if (rc != IIP_ERR_OK) {
+					if (ii_free_pb_and_pkt(w, pb_id, opaque)) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					return rc;
+				}
+			}
 		}
 	}
+	return IIP_ERR_OK;
 }
 
 /*@
