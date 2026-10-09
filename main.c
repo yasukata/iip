@@ -6603,6 +6603,9 @@ static enum iip_rc ii_arp_input__ipv4_request(IIP_PKT_P rx_pkt, IIP_OPAQUE_P opa
 				IIP_OPS_ERROR_FATAL_MEM(); return IIP_ERR_FATAL_MEM;
 			}
 			if (ii_call_pkt_get_capacity(tx_pkt, opaque) < II_ETH_HDR_LEN + II_ARP_HDR_LEN + 20) {
+				if (ii_call_pkt_free(tx_pkt, opaque)) {
+					IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+				}
 				IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
 			}
 			{
