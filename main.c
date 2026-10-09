@@ -146,6 +146,7 @@ struct ii_extent_queue {
 #define II_TCP_CONN_FLAGS_SACK_OK (1U << 9)
 #define II_TCP_CONN_FLAGS_KEEPALIVE_ENABLED (1U << 10)
 #define II_TCP_CONN_FLAGS_OPT_SET_TS (1U << 11)
+#define II_TCP_CONN_FLAGS_RETRANSMIT (1U << 12)
 
 #define II_DEFINE_RING(_obj_name, _type, _cnt) \
 struct ii_##_obj_name##__ring { \
@@ -5002,6 +5003,7 @@ static enum iip_rc ii_tcp_conn_retx_timeout_check(IIP_MEM_P w, IIP_TCP_CONN_P co
 				II_TCP_CONN(conn_id).sack.cnt = 0; /* clear sack info */
 				II_TCP_CONN(conn_id).retx_bytes = 0; /* no data is on wire */
 				II_TCP_CONN(conn_id).retrans_cnt++;
+				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_RETRANSMIT;
 				if (II_TCP_CONN(conn_id).retrans_cnt == II_TCP_CONN(conn_id).retrans_r1) {
 					int iip_ret_int;
 					IIP_OPS_TCP_IP_NEGATIVE_ADVICE();
@@ -5262,7 +5264,8 @@ static enum iip_rc ii_tcp_conn_work(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPA
 			if (ii_tcp_conn_tx_space(w, conn_id, &tx_space) != IIP_ERR_OK) {
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
-			if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED) {
+			if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED
+					&& II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_RETRANSMIT) {
 				uint32_t retx_bytes;
 				if (ii_tcp_conn_retx(w, conn_id, tx_space, &retx_bytes, opaque) != IIP_ERR_OK) {
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
@@ -5271,6 +5274,7 @@ static enum iip_rc ii_tcp_conn_work(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPA
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 				}
 				II_TCP_CONN(conn_id).retx_bytes = retx_bytes;
+				II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_RETRANSMIT;
 			} else {
 				if (ii_tcp_conn_xmit_queued_data(w, conn_id, tx_space, opaque) != IIP_ERR_OK) {
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
