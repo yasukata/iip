@@ -3506,6 +3506,53 @@ static enum iip_rc ii_tcp_conn_close_check(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 			IIP_OPS_ERROR_FATAL_USR(); return IIP_ERR_FATAL_USR;
 		}
 		II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_CLOSING;
+		{
+			uint8_t j;
+			/*@
+				loop invariant 0 <= j <= 4;
+				loop variant 4 - j;
+			 */
+			for (j = 0; j < 4; j++) {
+				struct ii_pb__ring *ring;
+				switch (j) {
+				case 0:
+					ring = &II_TCP_CONN(conn_id).rx_ring;
+					break;
+				case 1:
+					ring = &II_TCP_CONN(conn_id).tx_ring;
+					break;
+				case 2:
+					ring = &II_TCP_CONN(conn_id).sent_ring;
+					break;
+				case 3:
+					ring = &II_TCP_CONN(conn_id).pending_ring;
+					break;
+				}
+				{
+					IIP_PKT_CNT_T cnt = ii_pb_ring_num_used(ring);
+					{
+						IIP_PKT_CNT_T i;
+						/*@
+						  loop invariant 0 <= i <= cnt;
+						  loop assigns i, *opaque;
+						  loop variant cnt - i;
+						 */
+						for (i = 0; i < cnt; i++) {
+							uint16_t slot_idx = ring->tail + i;
+							if (slot_idx >= II_CONF_TCP_RING_SLOT_LEN)
+								slot_idx %= II_CONF_TCP_RING_SLOT_LEN;
+							if (ring->slot[slot_idx] >= II_CONF_POOL_NUM_PB) {
+								IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+							}
+							if (ii_free_pb_and_pkt(w, ring->slot[slot_idx], opaque) != IIP_ERR_OK) {
+								IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+							}
+						}
+					}
+					ring->head = ring->tail = 0;
+				}
+			}
+		}
 		ii_free_tcp_conn(&w->tcp_conns, conn_id);
 	}
 	return IIP_ERR_OK;
