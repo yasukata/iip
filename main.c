@@ -24,6 +24,9 @@
 #ifndef IIP_CONF_TCP_MSL_SEC
 #define IIP_CONF_TCP_MSL_SEC (1) /* RFC specifies more than 2 min, but we keep this short so that we can stop a process after 1 second wait */
 #endif
+#ifndef IIP_CONF_TCP_INIT_MSS
+#define IIP_CONF_TCP_INIT_MSS (1460)
+#endif
 #ifndef II_CONF_IPV4_FRAG_CNT_MAX
 #define II_CONF_IPV4_FRAG_CNT_MAX (4)
 #endif
@@ -5460,7 +5463,7 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 										/* ignore mss 0 */
 									} else {
 										II_TCP_CONN(conn_id).mss = mss;
-										if (536 < II_TCP_CONN(conn_id).mss) /* TODO: mss */
+										if (536 > II_TCP_CONN(conn_id).mss)
 											II_TCP_CONN(conn_id).mss = 536;
 									}
 								}
@@ -5616,7 +5619,7 @@ static void ii_ipv4_tcp_conn_init(IIP_MEM_P w, IIP_TCP_CONN_P conn_id,
 	II_TCP_CONN(conn_id).src_port = ii_ntohs(src_port_be);
 	II_TCP_CONN(conn_id).dst_port = ii_ntohs(dst_port_be);
 	II_TCP_CONN(conn_id).state = II_TCP_STATE_SYN_RECVD;
-	II_TCP_CONN(conn_id).mss = 536; /* TODO */
+	II_TCP_CONN(conn_id).mss = IIP_CONF_TCP_INIT_MSS;
 	II_TCP_CONN(conn_id).path_mtu = 1360; /* TODO */
 	II_TCP_CONN(conn_id).seq_next_expected = ii_ntohl(seq_next_expected_be);
 	II_TCP_CONN(conn_id).iss = w->tcp.iss;
