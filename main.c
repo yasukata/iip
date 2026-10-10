@@ -6857,7 +6857,7 @@ static enum iip_rc ii_periodic_timer__keep_alive_xmit(IIP_MEM_P w, IIP_TCP_CONN_
 		uint8_t tcp_hdr[II_TCP_HDR_LEN_MINIMAL];
 		ii_write_uint16(tcp_hdr +  0, ii_htons(II_TCP_CONN(conn_id).src_port));
 		ii_write_uint16(tcp_hdr +  2, ii_htons(II_TCP_CONN(conn_id).dst_port));
-		ii_write_uint32(tcp_hdr +  4, ii_htonl(II_TCP_CONN(conn_id).seq));
+		ii_write_uint32(tcp_hdr +  4, ii_htonl(II_TCP_CONN(conn_id).sent_seq - 1));
 		ii_write_uint32(tcp_hdr +  8, ii_htonl(II_TCP_CONN(conn_id).ack_seq));
 		ii_write_uint16(tcp_hdr + 12, ii_htons(II_TCP_FLAG_ACK | (((II_TCP_HDR_LEN_MINIMAL + tcp_opt_len) / 4) * 4096)));
 		ii_write_uint16(tcp_hdr + 14, ii_htons(ii_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, 7)));
