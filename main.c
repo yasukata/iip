@@ -489,7 +489,7 @@ static int iip_arp_ethernet_request(IIP_MEM_P w, uint8_t local_mac[II_ETH_ADDR_L
 #ifndef SKIP_IIP_IMPLEMENTATION
 
 #ifndef IIP_OPS_DEBUG_PRINTF
-#define IIP_OPS_DEBUG_PRINTF() do { } while (0)
+#define IIP_OPS_DEBUG_PRINTF(_fmt, ...) do { } while (0)
 #endif
 #ifndef IIP_OPS_ERROR_FATAL_SYS
 #define IIP_OPS_ERROR_FATAL_SYS() do { } while (0)
