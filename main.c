@@ -6226,10 +6226,6 @@ static enum iip_rc ii_ipv4_rx_push(IIP_MEM_P w, uint16_t pb_id, IIP_OPAQUE_P opa
 		case 6: /* tcp */ 
 			{
 				rc = ii_ipv4_tcp_input(w, pb_id, opaque);
-				if (rc != IIP_ERR_OK) {
-					if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK)
-						rc = IIP_ERR_FATAL_SYS;
-				}
 			}
 			break;
 		case 17: /* udp */ 
@@ -6301,7 +6297,7 @@ static enum iip_rc ii_ipv4_frag_push(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P
 					{
 						enum iip_rc rc = ii_ipv4_rx_push(w, pb_id, opaque);
 						if (rc != IIP_ERR_OK) {
-							if (ii_free_pb(&w->pbs, pb_id)) {
+							if (ii_free_pb_and_pkt(w, pb_id, opaque)) {
 								IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 							}
 							return rc;
