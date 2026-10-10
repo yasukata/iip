@@ -2058,14 +2058,12 @@ static enum iip_rc ipv4_send_ethernet__prepare_tx_pkts(
 	requires \valid(opaque);
 	requires \valid_read(tx_pkts + (0 .. tx_pkt_cnt - 1));
 	requires \valid_read(tx_len + (0 .. tx_pkt_cnt - 1));
-	requires \valid(xmitted_cnt);
 	requires \separated(tx_pkts + (0 .. tx_pkt_cnt - 1),
-		tx_len + (0 .. tx_pkt_cnt - 1), xmitted_cnt, opaque);
-	assigns *xmitted_cnt, *opaque;
+		tx_len + (0 .. tx_pkt_cnt - 1), opaque);
+	assigns *opaque;
  */
 static enum iip_rc ipv4_send_ethernet__xmit_tx_pkts(IIP_PKT_P tx_pkts[II_CONF_IPV4_FRAG_CNT_MAX],
-		uint16_t tx_len[II_CONF_IPV4_FRAG_CNT_MAX], uint16_t tx_pkt_cnt,
-		uint16_t *xmitted_cnt, IIP_OPAQUE_P opaque)
+		uint16_t tx_len[II_CONF_IPV4_FRAG_CNT_MAX], uint16_t tx_pkt_cnt, IIP_OPAQUE_P opaque)
 {
 	uint16_t i;
 	/*@
@@ -2077,53 +2075,14 @@ static enum iip_rc ipv4_send_ethernet__xmit_tx_pkts(IIP_PKT_P tx_pkts[II_CONF_IP
 		if (!ii_call_pkt_valid(tx_pkts[i], opaque)) {
 			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 		}
-		if (ii_call_pkt_set_len(tx_pkts[i], II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + tx_len[i], opaque))
-			break;
-		if (ii_call_ethernet_push(tx_pkts[i], opaque))
-			break;
-	}
-	*xmitted_cnt = i;
-	if (i != tx_pkt_cnt) {
-		IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
-	} else
-		return IIP_ERR_OK;
-}
-
-/*@
-	requires \valid(opaque);
-	requires \valid_read(tx_pkts + (0 .. II_CONF_IPV4_FRAG_CNT_MAX - 1));
-	assigns *opaque;
- */
-static enum iip_rc ipv4_send_ethernet__cancel_tx_pkts(
-		IIP_PKT_P tx_pkts[II_CONF_IPV4_FRAG_CNT_MAX],
-		uint16_t from_idx, uint16_t to_idx, IIP_OPAQUE_P opaque)
-{
-	if (from_idx > II_CONF_IPV4_FRAG_CNT_MAX) {
-		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-	}
-	if (to_idx > II_CONF_IPV4_FRAG_CNT_MAX) {
-		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-	}
-	if (from_idx >= to_idx) {
-		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-	}
-	{
-		uint16_t i;
-		/*@
-			loop invariant from_idx <= i <= to_idx;
-			loop assigns i, *opaque;
-			loop variant to_idx - i;
-		 */
-		for (i = from_idx; i < to_idx; i++) {
-			if (!ii_call_pkt_valid(tx_pkts[i], opaque)) {
-				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-			}
-			if (ii_call_pkt_free(tx_pkts[i], opaque)) {
-				IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
-			}
+		if (ii_call_pkt_set_len(tx_pkts[i], II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + tx_len[i], opaque)) {
+			IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
 		}
-		return IIP_ERR_OK;
+		if (ii_call_ethernet_push(tx_pkts[i], opaque)) {
+			IIP_OPS_ERROR_FATAL_SUB(); return IIP_ERR_FATAL_SUB;
+		}
 	}
+	return IIP_ERR_OK;
 }
 
 /* simple copy-based ipv4 send, supporting fragmentation */
@@ -2162,22 +2121,12 @@ static enum iip_rc ii_ipv4_send_ethernet(
 					tx_pkts, tx_len, &tx_pkt_cnt,
 					dst_mac, dst_ipv4_be, src_ipv4_be,
 					proto, diffserv, opaque) != IIP_ERR_OK) {
-			if (tx_pkt_cnt)
-				return ipv4_send_ethernet__cancel_tx_pkts(tx_pkts, 0, tx_pkt_cnt, opaque);
-			else {
-				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-			}
-		} else {
-			uint16_t xmitted_cnt = 0;
-			if (ipv4_send_ethernet__xmit_tx_pkts(tx_pkts, tx_len, tx_pkt_cnt, &xmitted_cnt, opaque) != IIP_ERR_OK) {
-				if (xmitted_cnt < tx_pkt_cnt)
-					return ipv4_send_ethernet__cancel_tx_pkts(tx_pkts, xmitted_cnt, tx_pkt_cnt, opaque);
-				else {
-					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-				}
-			} else
-				return IIP_ERR_OK;
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 		}
+		if (ipv4_send_ethernet__xmit_tx_pkts(tx_pkts, tx_len, tx_pkt_cnt, opaque) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
+		return IIP_ERR_OK;
 	}
 	{ /* unused */
 		(void) src_mac;
