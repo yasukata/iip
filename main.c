@@ -4240,7 +4240,7 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__trigger(IIP_MEM_P w, IIP_TCP_CON
 					ii_write_uint16(tcp_hdr +  2, ii_htons(II_TCP_CONN(conn_id).dst_port));
 					ii_write_uint32(tcp_hdr +  4, ii_htonl(II_PB(pb_id).tcp.seq + seq_off));
 					ii_write_uint32(tcp_hdr +  8, ii_htonl(II_PB(pb_id).tcp.ack_seq));
-					ii_write_uint16(tcp_hdr + 12, ii_htons(tcp_flags | (((II_TCP_HDR_LEN_MINIMAL + tcp_opt_len) / 4) * 4096)));
+					ii_write_uint16(tcp_hdr + 12, ii_htons((tcp_flags & (xmit_len != tx_len ? ~II_TCP_FLAG_PSH : 0xffff)) | (((II_TCP_HDR_LEN_MINIMAL + tcp_opt_len) / 4) * 4096)));
 					ii_write_uint16(tcp_hdr + 14, ii_htons(ii_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, 7)));
 					ii_write_uint16(tcp_hdr + 16, 0); /* csum */
 					ii_write_uint16(tcp_hdr + 18, ii_htons(II_PB(pb_id).tcp.urg_p));
@@ -4357,14 +4357,14 @@ static enum iip_rc ii_tcp_xmit_queued_data_one(IIP_MEM_P w, IIP_TCP_CONN_P conn_
 		/* control packet */
 		uint16_t head_forwarded, xmitted_len;
 		if (ii_tcp_xmit_queued_data_one__trigger(w, conn_id, pb_id,
-					II_PB(pb_id).tcp.flags, II_PB(pb_id).tcp.info_flags, head_off, 0, 0,
+					II_PB(pb_id).tcp.flags | II_TCP_FLAG_PSH, II_PB(pb_id).tcp.info_flags, head_off, 0, 0,
 					&head_forwarded, &xmitted_len, opaque) != IIP_ERR_OK) {
 			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 		}
 	} else {
 		uint16_t sent_len = 0;
 		uint16_t head_fwd = head_off;
-		uint16_t tcp_flags = II_PB(pb_id).tcp.flags;
+		uint16_t tcp_flags = II_PB(pb_id).tcp.flags | II_TCP_FLAG_PSH;
 		uint16_t info_flags = II_PB(pb_id).tcp.info_flags;
 		/*@
 		  loop invariant 0 <= sent_len <= req_len;
@@ -5070,7 +5070,7 @@ static enum iip_rc ii_tcp_conn__zero_window_probe_send(IIP_MEM_P w, IIP_TCP_CONN
 							if (!II_PB(probe_pb_id).tcp.payload_len) {
 								if (II_PB(probe_pb_id).tcp.flags & II_TCP_FLAG_FIN) {
 									uint16_t head_forwarded, xmitted_len;
-									if (ii_tcp_xmit_queued_data_one__trigger(w, conn_id, probe_pb_id, II_TCP_FLAG_FIN | II_TCP_FLAG_ACK,
+									if (ii_tcp_xmit_queued_data_one__trigger(w, conn_id, probe_pb_id, II_TCP_FLAG_FIN | II_TCP_FLAG_ACK | II_TCP_FLAG_PSH,
 												0, 0, 0, 0, &head_forwarded, &xmitted_len, opaque) != IIP_ERR_OK) {
 										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 									}
@@ -5086,7 +5086,7 @@ static enum iip_rc ii_tcp_conn__zero_window_probe_send(IIP_MEM_P w, IIP_TCP_CONN
 							} else if (II_PB(probe_pb_id).tcp.payload_len == II_TCP_CONN(conn_id).acked_seq - II_PB(probe_pb_id).tcp.seq) {
 								if (II_PB(probe_pb_id).tcp.flags & II_TCP_FLAG_FIN) {
 									uint16_t head_forwarded, xmitted_len;
-									if (ii_tcp_xmit_queued_data_one__trigger(w, conn_id, probe_pb_id, II_TCP_FLAG_FIN | II_TCP_FLAG_ACK,
+									if (ii_tcp_xmit_queued_data_one__trigger(w, conn_id, probe_pb_id, II_TCP_FLAG_FIN | II_TCP_FLAG_ACK | II_TCP_FLAG_PSH,
 												II_PB(probe_pb_id).tcp.payload_len, 0, 0, II_PB(probe_pb_id).tcp.payload_len, &head_forwarded, &xmitted_len, opaque) != IIP_ERR_OK) {
 										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 									}
@@ -5101,7 +5101,7 @@ static enum iip_rc ii_tcp_conn__zero_window_probe_send(IIP_MEM_P w, IIP_TCP_CONN
 								}
 							} else if (II_PB(probe_pb_id).tcp.payload_len > II_TCP_CONN(conn_id).acked_seq - II_PB(probe_pb_id).tcp.seq) {
 								uint16_t head_forwarded, xmitted_len;
-								if (ii_tcp_xmit_queued_data_one__trigger(w, conn_id, probe_pb_id, II_TCP_FLAG_ACK,
+								if (ii_tcp_xmit_queued_data_one__trigger(w, conn_id, probe_pb_id, II_TCP_FLAG_ACK | (i == cnt - 1 ? II_TCP_FLAG_PSH : 0),
 											II_TCP_CONN(conn_id).acked_seq - II_PB(probe_pb_id).tcp.seq, 0,
 											1, II_TCP_CONN(conn_id).acked_seq - II_PB(probe_pb_id).tcp.seq, &head_forwarded, &xmitted_len, opaque) != IIP_ERR_OK) {
 									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
