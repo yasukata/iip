@@ -5382,6 +5382,8 @@ static enum iip_rc ii_tcp_pb_init__payload_len(IIP_MEM_P w, II_PB_P pb_id, IIP_O
 		if (ii_pb_ipv4_payload_len(w, pb_id, &ipv4_payload_len, opaque) != IIP_ERR_OK) {
 			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 		}
+		if (ii_pb_tcp_hdr_len(w, pb_id) < II_TCP_HDR_LEN_MINIMAL)
+			return IIP_ERR_INVALID_RX;
 		if (ipv4_payload_len < ii_pb_tcp_hdr_len(w, pb_id))
 			return IIP_ERR_INVALID_RX;
 		{
@@ -5443,15 +5445,16 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 							l++;
 							break;
 						default:
-							if (tcp_opt_len - l < 2) {
-								l = tcp_opt_len; /* stop loop */
-								break;
-							}
+							if (tcp_opt_len - l < 2)
+								return IIP_ERR_INVALID_RX;
+							if (tcp_opt[l + 1] < 2)
+								return IIP_ERR_INVALID_RX;
+							if (tcp_opt[l + 1] > tcp_opt_len - l)
+								return IIP_ERR_INVALID_RX;
 							/*@ assert l < tcp_opt_len - 1; */
 							switch (tcp_opt[l]) {
 							case 2: /* mss */
-								if (tcp_opt[l + 1] == 4
-										&& tcp_opt_len - l >= 4) {
+								if (tcp_opt[l + 1] == 4) {
 									if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) { /* accept only with syn */
 										uint16_t mss = ii_ntohs(ii_read_uint16(tcp_opt + l + 2));
 										if (!mss) {
@@ -5467,24 +5470,18 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 									return IIP_ERR_INVALID_RX;
 								break;
 							case 3: /* window scale */
-								if (tcp_opt[l + 1] == 3
-										&& tcp_opt_len - l >= 3) {
+								if (tcp_opt[l + 1] == 3) {
 									if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) /* accept only with syn */
 										II_TCP_CONN(conn_id).ws = tcp_opt[l + 2];
 								} else
 									return IIP_ERR_INVALID_RX;
 								break;
 							case 4: /* sack permitted */
-#if 0
-								if (tcp_opt[l + 1] == 2
-										&& tcp_opt_len - l >= 2) {
-#endif
+								if (tcp_opt[l + 1] == 2) {
 									if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) /* accept only with syn */
 										II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_SACK_OK;
-#if 0
 								} else
 									return IIP_ERR_INVALID_RX;
-#endif
 								break;
 							case 5: /* sack */
 								if (tcp_opt[l + 1] >= (2 + 8)
@@ -5533,8 +5530,7 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 									return IIP_ERR_INVALID_RX;
 								break;
 							case 8: /* timestamp */
-								if (tcp_opt[l + 1] == 10
-										&& tcp_opt_len - l >= 10) {
+								if (tcp_opt[l + 1] == 10) {
 									II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_OPT_HAS_TS;
 									II_PB(pb_id).tcp.opt.ts[0] = ii_ntohl(ii_read_uint32(tcp_opt + l + 2));
 									II_PB(pb_id).tcp.opt.ts[1] = ii_ntohl(ii_read_uint32(tcp_opt + l + 6));
@@ -5735,8 +5731,15 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 	if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque)) {
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
-	if (ii_tcp_rx_csum_check(w, pb_id, opaque) != IIP_ERR_OK) {
-		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	{
+		enum iip_rc rc = ii_tcp_rx_csum_check(w, pb_id, opaque);
+		if (rc != IIP_ERR_OK) {
+			if (rc == IIP_ERR_INVALID_RX)
+				return IIP_ERR_INVALID_RX;
+			else {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+		}
 	}
 	{
 		uint32_t src_ipv4_be = ii_extract_ipv4_src_be(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN);
@@ -5748,9 +5751,8 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 				if (ii_pb_payload_copy(w, pb_id, II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN), tcp_hdr, sizeof(tcp_hdr), &copied_len, opaque) != IIP_ERR_OK) {
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 				}
-				if (copied_len != sizeof(tcp_hdr)) {
-					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-				}
+				if (copied_len != sizeof(tcp_hdr))
+					return IIP_ERR_INVALID_RX;
 			}
 			ii_tcp_pb_init__base(w, pb_id, tcp_hdr);
 			if (ii_tcp_pb_init__payload_len(w, pb_id, opaque) != IIP_ERR_OK)
