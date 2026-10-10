@@ -5411,168 +5411,174 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 	if (ii_pb_tcp_hdr_len(w, pb_id) < II_TCP_HDR_LEN_MINIMAL)
 		return IIP_ERR_INVALID_RX;
 	{
-		uint8_t tcp_opt_len = ii_pb_tcp_hdr_len(w, pb_id) - II_TCP_HDR_LEN_MINIMAL;
-		if (tcp_opt_len) {
-			uint8_t tcp_opt[40];
-			{
-				IIP_PKT_LEN_T copied_len;
-				if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque)) {
-					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		bool mss_set = false;
+		{
+			uint8_t tcp_opt_len = ii_pb_tcp_hdr_len(w, pb_id) - II_TCP_HDR_LEN_MINIMAL;
+			if (tcp_opt_len) {
+				uint8_t tcp_opt[40];
+				{
+					IIP_PKT_LEN_T copied_len;
+					if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque)) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					if (ii_pb_payload_copy(w, pb_id, II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN) + II_TCP_HDR_LEN_MINIMAL, tcp_opt, tcp_opt_len, &copied_len, opaque) != IIP_ERR_OK)
+						return IIP_ERR_INVALID_RX;
+					if (copied_len != tcp_opt_len)
+						return IIP_ERR_INVALID_RX;
 				}
-				if (ii_pb_payload_copy(w, pb_id, II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN) + II_TCP_HDR_LEN_MINIMAL, tcp_opt, tcp_opt_len, &copied_len, opaque) != IIP_ERR_OK)
-					return IIP_ERR_INVALID_RX;
-				if (copied_len != tcp_opt_len)
-					return IIP_ERR_INVALID_RX;
-			}
-			{ /* parse tcp option */
-				uint8_t l = 0;
-				/*@
-					loop invariant 0 <= l <= tcp_opt_len;
-					loop assigns l, *w, *opaque;
-					loop variant tcp_opt_len - l;
-				 */
-				while (l < tcp_opt_len) {
-					switch (tcp_opt[l]) {
-					case 0: /* eol */
-						l = tcp_opt_len; /* stop loop */
-						break;
-					case 1: /* nop */
-						l++;
-						break;
-					default:
-						if (tcp_opt_len - l < 2) {
+				{ /* parse tcp option */
+					uint8_t l = 0;
+					/*@
+						loop invariant 0 <= l <= tcp_opt_len;
+						loop assigns l, mss_set, *w, *opaque;
+						loop variant tcp_opt_len - l;
+					 */
+					while (l < tcp_opt_len) {
+						switch (tcp_opt[l]) {
+						case 0: /* eol */
 							l = tcp_opt_len; /* stop loop */
 							break;
-						}
-						/*@ assert l < tcp_opt_len - 1; */
-						switch (tcp_opt[l]) {
-						case 2: /* mss */
-							if (tcp_opt[l + 1] == 4
-									&& tcp_opt_len - l >= 4) {
-								if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) { /* accept only with syn */
-									uint16_t mss = ii_ntohs(ii_read_uint16(tcp_opt + l + 2));
-									if (!mss) {
-										/* ignore mss 0 */
-									} else {
-										II_TCP_CONN(conn_id).mss = mss;
-										if (536 > II_TCP_CONN(conn_id).mss)
-											II_TCP_CONN(conn_id).mss = 536;
+						case 1: /* nop */
+							l++;
+							break;
+						default:
+							if (tcp_opt_len - l < 2) {
+								l = tcp_opt_len; /* stop loop */
+								break;
+							}
+							/*@ assert l < tcp_opt_len - 1; */
+							switch (tcp_opt[l]) {
+							case 2: /* mss */
+								if (tcp_opt[l + 1] == 4
+										&& tcp_opt_len - l >= 4) {
+									if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) { /* accept only with syn */
+										uint16_t mss = ii_ntohs(ii_read_uint16(tcp_opt + l + 2));
+										if (!mss) {
+											/* ignore mss 0 */
+										} else {
+											mss_set = true;
+											II_TCP_CONN(conn_id).mss = mss;
+											if (536 > II_TCP_CONN(conn_id).mss)
+												II_TCP_CONN(conn_id).mss = 536;
+										}
 									}
-								}
-							} else
-								return IIP_ERR_INVALID_RX;
-							break;
-						case 3: /* window scale */
-							if (tcp_opt[l + 1] == 3
-									&& tcp_opt_len - l >= 3) {
-								if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) /* accept only with syn */
-									II_TCP_CONN(conn_id).ws = tcp_opt[l + 2];
-							} else
-								return IIP_ERR_INVALID_RX;
-							break;
-						case 4: /* sack permitted */
+								} else
+									return IIP_ERR_INVALID_RX;
+								break;
+							case 3: /* window scale */
+								if (tcp_opt[l + 1] == 3
+										&& tcp_opt_len - l >= 3) {
+									if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) /* accept only with syn */
+										II_TCP_CONN(conn_id).ws = tcp_opt[l + 2];
+								} else
+									return IIP_ERR_INVALID_RX;
+								break;
+							case 4: /* sack permitted */
 #if 0
-							if (tcp_opt[l + 1] == 2
-									&& tcp_opt_len - l >= 2) {
+								if (tcp_opt[l + 1] == 2
+										&& tcp_opt_len - l >= 2) {
 #endif
-								if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) /* accept only with syn */
-									II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_SACK_OK;
+									if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) /* accept only with syn */
+										II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_SACK_OK;
 #if 0
-							} else
-								return IIP_ERR_INVALID_RX;
+								} else
+									return IIP_ERR_INVALID_RX;
 #endif
-							break;
-						case 5: /* sack */
-							if (tcp_opt[l + 1] >= (2 + 8)
-									&& tcp_opt[l + 1] <= tcp_opt_len - l
-									&& (tcp_opt[l + 1] - 2) % 8 == 0) {
-								uint8_t sackbuf_len = tcp_opt[l + 1] - 2;
-								if (sackbuf_len) {
-									uint8_t i;
-									/*@
-										loop invariant 0 <= i <= sackbuf_len;
-										loop invariant i % 8 == 0;
-										loop invariant sackbuf_len % 8 == 0;
-										loop assigns i, II_TCP_CONN(conn_id).sack;
-										loop variant sackbuf_len - i;
-									 */
-									for (i = 0; i < sackbuf_len; i += 8) {
-										uint32_t sle = ii_ntohl(ii_read_uint32(tcp_opt + l + 2 + i + 0));
-										uint32_t sre = ii_ntohl(ii_read_uint32(tcp_opt + l + 2 + i + 4));
-										if (ii_seq_ordered(sle, sre)) {
-											enum iip_rc rc = ii_extent_queue_add(&II_TCP_CONN(conn_id).sack, sle, sre - sle);
-											if (rc != IIP_ERR_OK) {
-												if (rc == IIP_ERR_BUF_FULL) {
-													II_TCP_CONN(conn_id).sack.cnt = 0; /* XXX: clear sack extent because it's full */
-													break;
-												} else {
-													IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+								break;
+							case 5: /* sack */
+								if (tcp_opt[l + 1] >= (2 + 8)
+										&& tcp_opt[l + 1] <= tcp_opt_len - l
+										&& (tcp_opt[l + 1] - 2) % 8 == 0) {
+									uint8_t sackbuf_len = tcp_opt[l + 1] - 2;
+									if (sackbuf_len) {
+										uint8_t i;
+										/*@
+											loop invariant 0 <= i <= sackbuf_len;
+											loop invariant i % 8 == 0;
+											loop invariant sackbuf_len % 8 == 0;
+											loop assigns i, II_TCP_CONN(conn_id).sack;
+											loop variant sackbuf_len - i;
+										 */
+										for (i = 0; i < sackbuf_len; i += 8) {
+											uint32_t sle = ii_ntohl(ii_read_uint32(tcp_opt + l + 2 + i + 0));
+											uint32_t sre = ii_ntohl(ii_read_uint32(tcp_opt + l + 2 + i + 4));
+											if (ii_seq_ordered(sle, sre)) {
+												enum iip_rc rc = ii_extent_queue_add(&II_TCP_CONN(conn_id).sack, sle, sre - sle);
+												if (rc != IIP_ERR_OK) {
+													if (rc == IIP_ERR_BUF_FULL) {
+														II_TCP_CONN(conn_id).sack.cnt = 0; /* XXX: clear sack extent because it's full */
+														break;
+													} else {
+														IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+													}
 												}
-											}
-										} else
-											break;
-									}
-									if (i == sackbuf_len) {
-										II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_RX_SACKBUF;
-										if (ii_seq_ordered(II_TCP_CONN(conn_id).acked_seq, II_TCP_CONN(conn_id).seq)) {
-											if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
-												II_TCP_CONN(conn_id).cc.ssthresh = (II_TCP_CONN(conn_id).cc.win / 2 < 1 ? 2 : II_TCP_CONN(conn_id).cc.win / 2);
-												II_TCP_CONN(conn_id).cc.win = 1;
-												II_TCP_CONN(conn_id).sent_seq_when_loss_detected = II_TCP_CONN(conn_id).seq;
-												II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_PEER_RX_FAILED;
-												IIP_OPS_DEBUG_PRINTF("[%s:%u]: loss detected because of sack\n", __func__, __LINE__);
+											} else
+												break;
+										}
+										if (i == sackbuf_len) {
+											II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_RX_SACKBUF;
+											if (ii_seq_ordered(II_TCP_CONN(conn_id).acked_seq, II_TCP_CONN(conn_id).seq)) {
+												if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
+													II_TCP_CONN(conn_id).cc.ssthresh = (II_TCP_CONN(conn_id).cc.win / 2 < 1 ? 2 : II_TCP_CONN(conn_id).cc.win / 2);
+													II_TCP_CONN(conn_id).cc.win = 1;
+													II_TCP_CONN(conn_id).sent_seq_when_loss_detected = II_TCP_CONN(conn_id).seq;
+													II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_PEER_RX_FAILED;
+													IIP_OPS_DEBUG_PRINTF("[%s:%u]: loss detected because of sack\n", __func__, __LINE__);
+												}
 											}
 										}
 									}
-								}
-							} else
-								return IIP_ERR_INVALID_RX;
-							break;
-						case 8: /* timestamp */
-							if (tcp_opt[l + 1] == 10
-									&& tcp_opt_len - l >= 10) {
-								II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_OPT_HAS_TS;
-								II_PB(pb_id).tcp.opt.ts[0] = ii_ntohl(ii_read_uint32(tcp_opt + l + 2));
-								II_PB(pb_id).tcp.opt.ts[1] = ii_ntohl(ii_read_uint32(tcp_opt + l + 6));
-								II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
-							} else
-								return IIP_ERR_INVALID_RX;
-							break;
-						case 34: /* fast open */
-							if (II_PB(pb_id).tcp.info_flags & (II_PB_FLAGS_TCP_FASTOPEN_REQUEST | II_PB_FLAGS_TCP_FASTOPEN_VALID | II_PB_FLAGS_TCP_FASTOPEN_INVALID)) {
-								II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_FASTOPEN_INVALID;
-								II_PB(pb_id).tcp.info_flags &= ~(II_PB_FLAGS_TCP_FASTOPEN_REQUEST | II_PB_FLAGS_TCP_FASTOPEN_VALID);
-							} else if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) {
-								if (tcp_opt_len - l >= tcp_opt[l + 1]) {
-									if (tcp_opt[l + 1] == 2) /* request */
-										II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_FASTOPEN_REQUEST;
-									else if (tcp_opt[l + 1] >= 2 + 4 && tcp_opt[l + 1] <= 2 + 16) { /* has cookie */
-										bool iip_ret_bool;
-										IIP_OPS_TCP_IPV4_FASTOPEN_CHECK();
-										if (iip_ret_bool)
-											II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_FASTOPEN_VALID;
-									}
-								}
-								if (!(II_PB(pb_id).tcp.info_flags & (II_PB_FLAGS_TCP_FASTOPEN_REQUEST | II_PB_FLAGS_TCP_FASTOPEN_VALID)))
+								} else
+									return IIP_ERR_INVALID_RX;
+								break;
+							case 8: /* timestamp */
+								if (tcp_opt[l + 1] == 10
+										&& tcp_opt_len - l >= 10) {
+									II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_OPT_HAS_TS;
+									II_PB(pb_id).tcp.opt.ts[0] = ii_ntohl(ii_read_uint32(tcp_opt + l + 2));
+									II_PB(pb_id).tcp.opt.ts[1] = ii_ntohl(ii_read_uint32(tcp_opt + l + 6));
+									II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
+								} else
+									return IIP_ERR_INVALID_RX;
+								break;
+							case 34: /* fast open */
+								if (II_PB(pb_id).tcp.info_flags & (II_PB_FLAGS_TCP_FASTOPEN_REQUEST | II_PB_FLAGS_TCP_FASTOPEN_VALID | II_PB_FLAGS_TCP_FASTOPEN_INVALID)) {
 									II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_FASTOPEN_INVALID;
+									II_PB(pb_id).tcp.info_flags &= ~(II_PB_FLAGS_TCP_FASTOPEN_REQUEST | II_PB_FLAGS_TCP_FASTOPEN_VALID);
+								} else if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) {
+									if (tcp_opt_len - l >= tcp_opt[l + 1]) {
+										if (tcp_opt[l + 1] == 2) /* request */
+											II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_FASTOPEN_REQUEST;
+										else if (tcp_opt[l + 1] >= 2 + 4 && tcp_opt[l + 1] <= 2 + 16) { /* has cookie */
+											bool iip_ret_bool;
+											IIP_OPS_TCP_IPV4_FASTOPEN_CHECK();
+											if (iip_ret_bool)
+												II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_FASTOPEN_VALID;
+										}
+									}
+									if (!(II_PB(pb_id).tcp.info_flags & (II_PB_FLAGS_TCP_FASTOPEN_REQUEST | II_PB_FLAGS_TCP_FASTOPEN_VALID)))
+										II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_FASTOPEN_INVALID;
+								}
+								break;
+							default:
+								break;
 							}
-							break;
-						default:
+							if (!tcp_opt[l + 1]) {
+								l = tcp_opt_len; /* stop loop */
+								break;
+							}
+							if (tcp_opt_len - l < tcp_opt[l + 1])
+								l = tcp_opt_len; /* stop loop */
+							else
+								l += tcp_opt[l + 1];
 							break;
 						}
-						if (!tcp_opt[l + 1]) {
-							l = tcp_opt_len; /* stop loop */
-							break;
-						}
-						if (tcp_opt_len - l < tcp_opt[l + 1])
-							l = tcp_opt_len; /* stop loop */
-						else
-							l += tcp_opt[l + 1];
-						break;
 					}
 				}
 			}
 		}
+		if ((II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) && !mss_set)
+			II_TCP_CONN(conn_id).mss = 536;
 		return IIP_ERR_OK;
 	}
 }
