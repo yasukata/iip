@@ -545,6 +545,9 @@ static int iip_arp_ethernet_request(IIP_MEM_P w, uint8_t local_mac[II_ETH_ADDR_L
 #ifndef IIP_OPS_IPV4_ADDR_MATCH
 #define IIP_OPS_IPV4_ADDR_MATCH() do { iip_ret_bool = true; } while (0)
 #endif
+#ifndef IIP_OPS_IPV4_TCP_INPUT_FILTER
+#define IIP_OPS_IPV4_TCP_INPUT_FILTER() do { iip_ret_bool = false; } while (0)
+#endif
 
 #ifndef IIP_OPS_ARP_ETHERNET_REPLY
 #define IIP_OPS_ARP_ETHERNET_REPLY() do { iip_ret_int = 0; } while (0)
@@ -5732,6 +5735,17 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
 	{
+		uint32_t ipv4_be = ii_ntohl(ii_extract_ipv4_src_be(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN));
+		if (ipv4_be >> 28 == 0xe) /* 224.0.0.0/4 */
+			return IIP_ERR_INVALID_RX;
+		{
+			bool iip_ret_bool;
+			IIP_OPS_IPV4_TCP_INPUT_FILTER();
+			if (iip_ret_bool)
+				return IIP_ERR_INVALID_RX;
+		}
+	}
+	{
 		enum iip_rc rc = ii_tcp_rx_csum_check(w, pb_id, opaque);
 		if (rc != IIP_ERR_OK) {
 			if (rc == IIP_ERR_INVALID_RX)
@@ -6000,33 +6014,11 @@ static enum iip_rc ii_ipv4_frag_validation(struct ii_pb *frag, IIP_OPAQUE_P opaq
 /*@
 	requires \valid_read(buf + (0 .. II_IPV4_HDR_LEN_MINIMAL - 1));
 	assigns \nothing;
-	ensures \result == 0 || \result == 1;
- */
-static int ii_ipv4_should_ignore(const uint8_t *buf)
-{
-	uint32_t src = ii_ntohl(ii_extract_ipv4_src_be(buf));
-	if (src == 0xffffffff) /* limited broadcast */
-		return 1;
-	if (src >> 24 == 0) /* 0.0.0.0/8 */
-		return 1;
-	if (src >> 28 == 0xe) /* 224.0.0.0/4 */
-		return 1;
-	if (src >> 28 == 0xf) /* Class E */
-		return 1;
-	/* TODO: subnet-directed broadcast  */
-	return 0;
-}
-
-/*@
-	requires \valid_read(buf + (0 .. II_IPV4_HDR_LEN_MINIMAL - 1));
-	assigns \nothing;
 	ensures \result == IIP_ERR_OK;
  */
 static enum iip_rc ii_ipv4_received_invalid_option(const uint8_t *buf)
 {
 	if (ii_extract_ipv4_off(buf)) /* skip fragment */
-		return IIP_ERR_OK;
-	if (ii_ipv4_should_ignore(buf)) /* skip particular ip addresses */
 		return IIP_ERR_OK;
 	if (ii_extract_ipv4_proto(buf) == 1 /* icmp */) {
 	}
@@ -6506,6 +6498,15 @@ static enum iip_rc ii_ipv4_input(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opa
 			return IIP_ERR_INVALID_RX;
 		if (ii_ipv4_rx_csum_check(w, rx_pkt, opaque) != IIP_ERR_OK)
 			return IIP_ERR_INVALID_RX;
+		{
+			uint32_t src = ii_ntohl(ii_extract_ipv4_src_be(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN));
+			if (src == 0xffffffff) /* limited broadcast */
+				return IIP_ERR_INVALID_RX;
+			if (src >> 24 == 0) /* 0.0.0.0/8 */
+				return IIP_ERR_INVALID_RX;
+			if (src >> 28 == 0xf) /* Class E */
+				return IIP_ERR_INVALID_RX;
+		}
 		if (ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN) < II_IPV4_HDR_LEN_MINIMAL) {
 			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 		}
