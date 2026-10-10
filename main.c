@@ -2020,7 +2020,8 @@ static enum iip_rc ipv4_send_ethernet__prepare_tx_pkts(
 				}
 				ii_ipv4_hdr_craft_minimal(ii_call_pkt_get_data(tx_pkt, opaque) + II_ETH_HDR_LEN, diffserv,
 						tx_bytes, 0 /* TODO: id randomization  */, xmit_len,
-						xmit_len + tx_bytes == total_len ? 0 : 0x20 /* more flag */,
+						(xmit_len + tx_bytes == total_len ? 0 : 0x20 /* more flag */)
+						| ((xmit_len == 0 && tx_bytes == total_len) ? 0x40 /* DF */ : 0),
 						64, proto,
 						src_ipv4_be, dst_ipv4_be);
 				if (ii_ipv4_tx_csum(tx_pkt, II_ETH_HDR_LEN, II_IPV4_HDR_LEN_MINIMAL, opaque) != IIP_ERR_OK) {
@@ -2207,7 +2208,7 @@ static enum iip_rc ii_ipv4_send_ethernet_zero_copy(
 				}
 				ii_ipv4_hdr_craft_minimal(ii_call_pkt_get_data(head_pkt, opaque) + II_ETH_HDR_LEN, diffserv,
 						hdr_len + payload_len, 0 /* TODO: id randomization  */, 0,
-						0, 64, proto,
+						0x40 /* DF */, 64, proto,
 						src_ipv4_be, dst_ipv4_be);
 				if (ii_ipv4_tx_csum(head_pkt, II_ETH_HDR_LEN, II_IPV4_HDR_LEN_MINIMAL, opaque) != IIP_ERR_OK) {
 					if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
