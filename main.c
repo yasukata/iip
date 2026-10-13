@@ -5649,7 +5649,7 @@ static void ii_ipv4_tcp_conn_init(IIP_MEM_P w, IIP_TCP_CONN_P conn_id,
 	II_TCP_CONN(conn_id).cc.win = 10;
 	II_TCP_CONN(conn_id).cc.ssthresh = 65535;
 	II_TCP_CONN(conn_id).retrans_r1 = 3;
-	II_TCP_CONN(conn_id).retrans_r2 = 4;
+	II_TCP_CONN(conn_id).retrans_r2 = 12; /* retransmission must continue longer than 180 seconds */
 	II_TCP_CONN(conn_id).rto_ms = 0;
 	II_TCP_CONN(conn_id).rto_expire = UINT16_MAX;
 	IIP_OPS_TCP_CONN_INIT();
