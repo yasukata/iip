@@ -142,7 +142,6 @@ struct ii_extent_queue {
 #define II_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN (1U << 3)
 #define II_TCP_CONN_FLAGS_SKIP_TCP_CLOSE_CALLBACK (1U << 4)
 #define II_TCP_CONN_FLAGS_CLOSING (1U << 5)
-#define II_TCP_CONN_FLAGS_URGENT_SET (1U << 6)
 #define II_TCP_CONN_FLAGS_FASTOPEN (1U << 7)
 #define II_TCP_CONN_FLAGS_ACK_SENT (1U << 8)
 #define II_TCP_CONN_FLAGS_SACK_OK (1U << 9)
@@ -410,7 +409,6 @@ struct ii_tcp_conn {
 	uint32_t sent_seq_when_loss_detected;
 	uint32_t fin_ack_seq;
 	uint32_t time_wait_ts_ms;
-	uint32_t urgent_ptr;
 	uint32_t keepalive_ts;
 	uint32_t keepalive_interval_ms;
 	uint32_t rto_ms;
@@ -3847,24 +3845,6 @@ static enum iip_rc ii_tcp_conn_handle_in_order__syn_recvd(IIP_MEM_P w, IIP_TCP_C
 					*ack = 0;
 			}
 		}
-		if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_URGENT) {
-			uint32_t up = II_PB(pb_id).tcp.seq + II_PB(pb_id).tcp.urg_p;
-			if ((II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_URGENT_SET
-						&& up - II_TCP_CONN(conn_id).urgent_ptr < 2147483648U
-						&& up != II_TCP_CONN(conn_id).urgent_ptr)
-					|| !(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_URGENT_SET)) {
-				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_URGENT_SET;
-				II_TCP_CONN(conn_id).urgent_ptr = up;
-				{
-					int iip_ret_int;
-					IIP_OPS_TCP_URGENT();
-					if (iip_ret_int) {
-						IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
-					}
-				}
-			}
-			II_PB(pb_id).tcp.info_flags &= ~II_PB_FLAGS_TCP_URGENT;
-		}
 		if (II_TCP_CONN(conn_id).state == II_TCP_STATE_FIN_WAIT1 /* updated by close called in callback */
 				&& ii_tcp_hdr_has_fin(w, pb_id)) {
 			ii_tcp_conn_set_state(w, conn_id, II_TCP_STATE_CLOSING);
@@ -5344,6 +5324,28 @@ static enum iip_rc ii_tcp_rx_push(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P p
 				if (ii_tcp_check_input_seq(w, conn_id, push_pb_id) != IIP_ERR_OK)
 					return IIP_ERR_INVALID_RX;
 				if (II_TCP_CONN(conn_id).seq_next_expected == ii_tcp_seq_le_raw(w, push_pb_id)) {
+					if ((II_PB(push_pb_id).tcp.info_flags & II_PB_FLAGS_TCP_URGENT) && !(II_PB(push_pb_id).tcp.flags & II_TCP_FLAG_RST)) {
+						switch (II_TCP_CONN(conn_id).state) {
+						case II_TCP_STATE_FIN_WAIT1:
+						case II_TCP_STATE_FIN_WAIT2:
+						case II_TCP_STATE_ESTABLISHED:
+						case II_TCP_STATE_CLOSE_WAIT:
+						case II_TCP_STATE_SYN_RECVD:
+							{
+								uint32_t up = II_PB(push_pb_id).tcp.seq + II_PB(push_pb_id).tcp.urg_p;
+								if (ii_seq_ordered(II_TCP_CONN(conn_id).seq_next_expected, up)) {
+									int iip_ret_int;
+									IIP_OPS_TCP_URGENT();
+									if (iip_ret_int) {
+										IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+									}
+								}
+							}
+							break;
+						default:
+							break;
+						}
+					}
 					II_TCP_CONN(conn_id).seq_next_expected = ii_tcp_seq_re_raw(w, push_pb_id);
 					{
 						enum iip_rc rc = ii_pb_ring_push(&II_TCP_CONN(conn_id).rx_ring, push_pb_id);
@@ -5389,6 +5391,8 @@ static void ii_tcp_pb_init__base(IIP_MEM_P w, II_PB_P pb_id, uint8_t tcp_hdr[II_
 	II_PB(pb_id).tcp.flags = ii_ntohs(ii_read_uint16(&tcp_hdr[12]));
 	II_PB(pb_id).tcp.win = ii_ntohs(ii_read_uint16(&tcp_hdr[14]));
 	II_PB(pb_id).tcp.urg_p = ii_ntohs(ii_read_uint16(&tcp_hdr[18]));
+	if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_URG)
+		II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_URGENT;
 }
 
 /*@
