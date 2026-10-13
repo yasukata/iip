@@ -2377,8 +2377,10 @@ static enum iip_rc ii_icmp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque
 					rc = IIP_ERR_FATAL_SYS;
 					break;
 				}
-				if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK) {
-					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				if (rc == IIP_ERR_OK) {
+					if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
 				}
 				return rc;
 			}
@@ -6233,8 +6235,6 @@ static enum iip_rc ii_ipv4_rx_push(IIP_MEM_P w, uint16_t pb_id, IIP_OPAQUE_P opa
 		default:
 			{
 				rc = IIP_ERR_INVALID_RX;
-				if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK)
-					rc = IIP_ERR_FATAL_SYS;
 			}
 			break;
 		}
