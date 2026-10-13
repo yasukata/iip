@@ -606,6 +606,10 @@ static int iip_arp_ethernet_request(IIP_MEM_P w, uint8_t local_mac[II_ETH_ADDR_L
 #ifndef IIP_OPS_UDP_TX_SKIP_SW_CHECKSUM
 #define IIP_OPS_UDP_TX_SKIP_SW_CHECKSUM() do { iip_ret_bool = false; } while (0)
 #endif
+#ifndef IIP_OPS_TCP_CONN_INIT
+/* can be used for iss setting */
+#define IIP_OPS_TCP_CONN_INIT() do { } while (0)
+#endif
 #ifndef II_HOOK_TX_IPV4_ETHERNET
 #define II_HOOK_TX_IPV4_ETHERNET() do { (void) opaque; } while (0)
 #endif
@@ -5631,6 +5635,7 @@ static void ii_ipv4_tcp_conn_init(IIP_MEM_P w, IIP_TCP_CONN_P conn_id,
 	II_TCP_CONN(conn_id).retrans_r2 = 4;
 	II_TCP_CONN(conn_id).rto_ms = 0;
 	II_TCP_CONN(conn_id).rto_expire = UINT16_MAX;
+	IIP_OPS_TCP_CONN_INIT();
 }
 
 /*@
