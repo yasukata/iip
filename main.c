@@ -3373,6 +3373,67 @@ static void ii_tcp_check_input_ack(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P 
 }
 
 /*@
+	requires \valid(w);
+	requires \valid(on_wire_bytes);
+	requires \separated(w, on_wire_bytes);
+	assigns *on_wire_bytes;
+ */
+static enum iip_rc ii_tcp_conn_on_wire_bytes(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint32_t *on_wire_bytes)
+{
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (II_TCP_CONN(conn_id).sack.cnt > II_CONF_EXTENT_QUEUE_SIZE) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	{
+		uint32_t b;
+		if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED)
+			b = 0;
+		else {
+			b = II_TCP_CONN(conn_id).sent_seq - II_TCP_CONN(conn_id).acked_seq;
+			if (II_TCP_CONN(conn_id).sack.cnt) {
+				uint32_t le = II_TCP_CONN(conn_id).sack.extent[0].v;
+				uint32_t re = II_TCP_CONN(conn_id).sack.extent[II_TCP_CONN(conn_id).sack.cnt - 1].v + II_TCP_CONN(conn_id).sack.extent[II_TCP_CONN(conn_id).sack.cnt - 1].l;
+				if (ii_seq_ordered(re, le)) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+				{
+					uint32_t sacked_range = re - le;
+					if (b < sacked_range) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					b -= sacked_range;
+				}
+			}
+		}
+		b += II_TCP_CONN(conn_id).retx_bytes;
+		*on_wire_bytes = b;
+		return IIP_ERR_OK;
+	}
+}
+
+/*@
+	requires \valid(w);
+	requires conn_id < II_CONF_POOL_NUM_TCP_CONN;
+	assigns II_TCP_CONN(conn_id);
+ */
+static enum iip_rc ii_tcp_loss_detected(IIP_MEM_P w, IIP_TCP_CONN_P conn_id)
+{
+	uint32_t on_wire;
+	if (ii_tcp_conn_on_wire_bytes(w, conn_id, &on_wire) != IIP_ERR_OK) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	II_TCP_CONN(conn_id).cc.ssthresh = (on_wire / II_TCP_CONN(conn_id).mss) /  2;
+	if (II_TCP_CONN(conn_id).cc.ssthresh < 2)
+		II_TCP_CONN(conn_id).cc.ssthresh = 2;
+	II_TCP_CONN(conn_id).cc.win = 1;
+	II_TCP_CONN(conn_id).sent_seq_when_loss_detected = II_TCP_CONN(conn_id).seq;
+	II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_PEER_RX_FAILED;
+	return IIP_ERR_OK;
+}
+
+/*@
 	requires \valid(opaque);
 	requires \valid(w);
 	requires \separated(w, opaque);
@@ -4492,10 +4553,7 @@ static void ii_tcp_conn_input_one__check_dup_ack(IIP_MEM_P w, IIP_TCP_CONN_P con
 	if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
 		if (II_TCP_CONN(conn_id).dup_ack_received == 3) {
 			II_TCP_CONN(conn_id).dup_ack_received = 0;
-			II_TCP_CONN(conn_id).cc.ssthresh = (II_TCP_CONN(conn_id).cc.win / 2 < 1 ? 2 : II_TCP_CONN(conn_id).cc.win / 2);
-			II_TCP_CONN(conn_id).cc.win = 1;
-			II_TCP_CONN(conn_id).sent_seq_when_loss_detected = II_TCP_CONN(conn_id).seq;
-			II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_PEER_RX_FAILED;
+			ii_tcp_loss_detected(w, conn_id);
 			IIP_OPS_DEBUG_PRINTF("[%s:%u]: loss detected because of dup ack\n", __func__, __LINE__);
 		}
 	}
@@ -4915,47 +4973,6 @@ static enum iip_rc ii_tcp_conn_retx(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint32_
 
 /*@
 	requires \valid(w);
-	requires \valid(on_wire_bytes);
-	requires \separated(w, on_wire_bytes);
-	assigns *on_wire_bytes;
- */
-static enum iip_rc ii_tcp_conn_on_wire_bytes(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint32_t *on_wire_bytes)
-{
-	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
-		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-	}
-	if (II_TCP_CONN(conn_id).sack.cnt > II_CONF_EXTENT_QUEUE_SIZE) {
-		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-	}
-	{
-		uint32_t b;
-		if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED)
-			b = 0;
-		else {
-			b = II_TCP_CONN(conn_id).sent_seq - II_TCP_CONN(conn_id).acked_seq;
-			if (II_TCP_CONN(conn_id).sack.cnt) {
-				uint32_t le = II_TCP_CONN(conn_id).sack.extent[0].v;
-				uint32_t re = II_TCP_CONN(conn_id).sack.extent[II_TCP_CONN(conn_id).sack.cnt - 1].v + II_TCP_CONN(conn_id).sack.extent[II_TCP_CONN(conn_id).sack.cnt - 1].l;
-				if (ii_seq_ordered(re, le)) {
-					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-				}
-				{
-					uint32_t sacked_range = re - le;
-					if (b < sacked_range) {
-						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-					}
-					b -= sacked_range;
-				}
-			}
-		}
-		b += II_TCP_CONN(conn_id).retx_bytes;
-		*on_wire_bytes = b;
-		return IIP_ERR_OK;
-	}
-}
-
-/*@
-	requires \valid(w);
 	requires \valid(space);
 	requires \separated(w, space);
 	assigns *space;
@@ -5019,10 +5036,9 @@ static enum iip_rc ii_tcp_conn_retx_timeout_check(IIP_MEM_P w, IIP_TCP_CONN_P co
 					}
 				}
 				if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
-					II_TCP_CONN(conn_id).cc.ssthresh = (II_TCP_CONN(conn_id).cc.win / 2 < 1 ? 2 : II_TCP_CONN(conn_id).cc.win / 2);
-					II_TCP_CONN(conn_id).cc.win = 1;
-					II_TCP_CONN(conn_id).sent_seq_when_loss_detected = II_TCP_CONN(conn_id).sent_seq;
-					II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_PEER_RX_FAILED;
+					if (ii_tcp_loss_detected(w, conn_id) != IIP_ERR_OK) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
 					IIP_OPS_DEBUG_PRINTF("[%s:%u]: loss detected because of timeout\n", __func__, __LINE__);
 				}
 			} else {
@@ -5526,10 +5542,9 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 											II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_RX_SACKBUF;
 											if (ii_seq_ordered(II_TCP_CONN(conn_id).acked_seq, II_TCP_CONN(conn_id).seq)) {
 												if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
-													II_TCP_CONN(conn_id).cc.ssthresh = (II_TCP_CONN(conn_id).cc.win / 2 < 1 ? 2 : II_TCP_CONN(conn_id).cc.win / 2);
-													II_TCP_CONN(conn_id).cc.win = 1;
-													II_TCP_CONN(conn_id).sent_seq_when_loss_detected = II_TCP_CONN(conn_id).seq;
-													II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_PEER_RX_FAILED;
+													if (ii_tcp_loss_detected(w, conn_id) != IIP_ERR_OK) {
+														IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+													}
 													IIP_OPS_DEBUG_PRINTF("[%s:%u]: loss detected because of sack\n", __func__, __LINE__);
 												}
 											}
