@@ -106,6 +106,7 @@ enum ii_tcp_state {
 #define II_PB_FLAGS_TCP_SACKED (1U << 5)
 #define II_PB_FLAGS_TCP_TX_SACKBUF (1U << 6)
 #define II_PB_FLAGS_TCP_RX_SACKBUF (1U << 8)
+#define II_PB_FLAGS_TCP_OPT_HAS_WS (1U << 9)
 
 struct ii_pb {
 	IIP_PKT_CNT_T cnt;
@@ -149,6 +150,7 @@ struct ii_extent_queue {
 #define II_TCP_CONN_FLAGS_KEEPALIVE_ENABLED (1U << 10)
 #define II_TCP_CONN_FLAGS_OPT_SET_TS (1U << 11)
 #define II_TCP_CONN_FLAGS_RETRANSMIT (1U << 12)
+#define II_TCP_CONN_FLAGS_OPT_WS (1U << 13)
 
 #define II_DEFINE_RING(_obj_name, _type, _cnt) \
 struct ii_##_obj_name##__ring { \
@@ -4155,7 +4157,9 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__craft_opt(IIP_MEM_P w, IIP_TCP_C
 			ii_write_uint16(tcp_opt + tcp_opt_len + 2, ii_htons(II_TCP_CONN(conn_id).mss));
 			tcp_opt_len += opt_len;
 		}
-		if (tcp_flags & II_TCP_FLAG_SYN) { /* window scale */
+		if (tcp_flags & II_TCP_FLAG_SYN
+				&& (!(tcp_flags & II_TCP_FLAG_ACK) ||
+					((tcp_flags & II_TCP_FLAG_ACK) && (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_OPT_WS)))) { /* window scale */
 			uint8_t opt_len = 3;
 			tcp_opt[tcp_opt_len + 0] = 3;
 			tcp_opt[tcp_opt_len + 1] = 3;
@@ -5558,8 +5562,12 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 								break;
 							case 3: /* window scale */
 								if (tcp_opt[l + 1] == 3) {
-									if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) /* accept only with syn */
+									if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) { /* accept only with syn */
 										II_TCP_CONN(conn_id).ws = tcp_opt[l + 2];
+										if (II_TCP_CONN(conn_id).ws > 14)
+											II_TCP_CONN(conn_id).ws = 14;
+										II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_OPT_HAS_WS;
+									}
 								} else
 									return IIP_ERR_INVALID_RX;
 								break;
@@ -5756,6 +5764,7 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 				0);
 		II_TCP_CONN(conn_id).diffserv = diffserv;
 		II_TCP_CONN(conn_id).peer_win = 0xffff;
+		II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_WS;
 		II_TCP_CONN(conn_id).ws = 7;
 		if (fastopen_cookie_len) {
 			if (fastopen_cookie_len > sizeof(II_TCP_CONN(conn_id).fastopen_cookie.buf))
@@ -5900,6 +5909,12 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 										src_ipv4_be,
 										ii_read_uint16(&tcp_hdr[0]),
 										ii_read_uint32(&tcp_hdr[4]));
+								if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_OPT_HAS_WS)
+									II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_WS;
+								else {
+									II_TCP_CONN(conn_id).flags &= II_TCP_CONN_FLAGS_OPT_WS;
+									II_TCP_CONN(conn_id).ws = 0;
+								}
 							}
 						}
 					}
