@@ -4194,8 +4194,7 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__craft_opt(IIP_MEM_P w, IIP_TCP_C
 			tcp_opt_len += opt_len;
 		}
 		if (II_CONF_TCP_OPT_TS_OK
-				&& ((tcp_flags & II_TCP_FLAG_SYN)
-				|| (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_OPT_SET_TS))) { /* time stamp */
+				&& (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_OPT_SET_TS)) { /* time stamp */
 			uint8_t opt_len = 10;
 			if (tcp_opt_len + opt_len + 2 > 40) {
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
@@ -5625,10 +5624,13 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 								break;
 							case 8: /* timestamp */
 								if (tcp_opt[l + 1] == 10) {
-									II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_OPT_HAS_TS;
-									II_PB(pb_id).tcp.opt.ts[0] = ii_ntohl(ii_read_uint32(tcp_opt + l + 2));
-									II_PB(pb_id).tcp.opt.ts[1] = ii_ntohl(ii_read_uint32(tcp_opt + l + 6));
-									II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
+									if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN)
+										II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
+									if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_OPT_SET_TS) {
+										II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_OPT_HAS_TS;
+										II_PB(pb_id).tcp.opt.ts[0] = ii_ntohl(ii_read_uint32(tcp_opt + l + 2));
+										II_PB(pb_id).tcp.opt.ts[1] = ii_ntohl(ii_read_uint32(tcp_opt + l + 6));
+									}
 								} else
 									return IIP_ERR_INVALID_RX;
 								break;
@@ -5766,6 +5768,7 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 		II_TCP_CONN(conn_id).peer_win = 0xffff;
 		II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_WS;
 		II_TCP_CONN(conn_id).ws = 7;
+		II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
 		if (fastopen_cookie_len) {
 			if (fastopen_cookie_len > sizeof(II_TCP_CONN(conn_id).fastopen_cookie.buf))
 				return -1;
@@ -5915,6 +5918,10 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 									II_TCP_CONN(conn_id).flags &= II_TCP_CONN_FLAGS_OPT_WS;
 									II_TCP_CONN(conn_id).ws = 0;
 								}
+								if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_OPT_HAS_TS)
+									II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
+								else
+									II_TCP_CONN(conn_id).flags &= II_TCP_CONN_FLAGS_OPT_SET_TS;
 							}
 						}
 					}
