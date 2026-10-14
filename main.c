@@ -142,6 +142,7 @@ struct ii_extent_queue {
 #define II_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN (1U << 3)
 #define II_TCP_CONN_FLAGS_SKIP_TCP_CLOSE_CALLBACK (1U << 4)
 #define II_TCP_CONN_FLAGS_CLOSING (1U << 5)
+#define II_TCP_CONN_FLAGS_SENDER_SWS (1U << 6)
 #define II_TCP_CONN_FLAGS_FASTOPEN (1U << 7)
 #define II_TCP_CONN_FLAGS_ACK_SENT (1U << 8)
 #define II_TCP_CONN_FLAGS_SACK_OK (1U << 9)
@@ -413,6 +414,7 @@ struct ii_tcp_conn {
 	uint32_t keepalive_interval_ms;
 	uint32_t rto_ms;
 	uint32_t rto_expire;
+	uint32_t snd_sws_ts;
 	IIP_TCP_CONN_STRUCT_EXTRA;
 	uint32_t probe_ts;
 	uint32_t probe_rto_ms;
@@ -5197,6 +5199,42 @@ static enum iip_rc ii_tcp_conn__zero_window_probe_check(IIP_MEM_P w, IIP_TCP_CON
 }
 
 /*@
+	requires \valid(w);
+	requires \valid(ring);
+	requires \separated(w, ring, queued_payload_len);
+	assigns *queued_payload_len;
+ */
+static enum iip_rc ii_tcp_conn_queued_payload_len(IIP_MEM_P w, struct ii_pb__ring *ring, uint16_t tx_space, uint32_t *queued_payload_len, bool *has_psh)
+{
+	uint32_t l = 0;
+	bool psh = false;
+	{
+		IIP_PKT_CNT_T cnt = ii_pb_ring_num_used(ring);
+		{
+			uint16_t i;
+			/*@
+			  loop invariant 0 <= i <= cnt < II_CONF_TCP_RING_SLOT_LEN;
+			  loop assigns i, l, psh;
+			  loop variant cnt - i;
+			 */
+			for (i = 0; i < cnt; i++) {
+				uint16_t slot_idx = ring->tail + i;
+				if (slot_idx >= II_CONF_TCP_RING_SLOT_LEN)
+					slot_idx %= II_CONF_TCP_RING_SLOT_LEN;
+				l += II_PB(ring->slot[slot_idx]).tcp.payload_len;
+				if (l <= tx_space) {
+					if (II_PB(ring->slot[slot_idx]).tcp.flags & II_TCP_FLAG_PSH)
+						psh = true;
+				}
+			}
+		}
+	}
+	*queued_payload_len = l;
+	*has_psh = psh;
+	return IIP_ERR_OK;
+}
+
+/*@
 	requires \valid(opaque);
 	requires \valid(w);
 	requires \separated(w, opaque);
@@ -5279,8 +5317,28 @@ static enum iip_rc ii_tcp_conn_work(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPA
 				II_TCP_CONN(conn_id).retx_bytes = retx_bytes;
 				II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_RETRANSMIT;
 			} else {
-				if (ii_tcp_conn_xmit_queued_data(w, conn_id, tx_space, opaque) != IIP_ERR_OK) {
-					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				if (tx_space < II_TCP_CONN(conn_id).mss / 2) { /* sender sws avoidance */
+					bool has_psh;
+					uint32_t queued_payload_len;
+					if (ii_tcp_conn_queued_payload_len(w, &II_TCP_CONN(conn_id).tx_ring, tx_space, &queued_payload_len, &has_psh)) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					if (queued_payload_len > tx_space) {
+						if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_SENDER_SWS)) {
+							II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_SENDER_SWS;
+							II_TCP_CONN(conn_id).snd_sws_ts = w->now_ms;
+						} else {
+							if (w->now_ms - II_TCP_CONN(conn_id).snd_sws_ts > 1000 /* 1 sec */)
+								II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_SENDER_SWS;
+						}
+					} else if (has_psh)
+						II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_SENDER_SWS;
+				} else
+					II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_SENDER_SWS;
+				if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_SENDER_SWS)) {
+					if (ii_tcp_conn_xmit_queued_data(w, conn_id, tx_space, opaque) != IIP_ERR_OK) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
 				}
 			}
 		}
