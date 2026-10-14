@@ -4293,7 +4293,7 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__trigger(IIP_MEM_P w, IIP_TCP_CON
 					ii_write_uint32(tcp_hdr +  4, ii_htonl(II_PB(pb_id).tcp.seq + seq_off));
 					ii_write_uint32(tcp_hdr +  8, ii_htonl(II_PB(pb_id).tcp.ack_seq));
 					ii_write_uint16(tcp_hdr + 12, ii_htons((tcp_flags & (xmit_len != tx_len ? ~II_TCP_FLAG_PSH : 0xffff)) | (((II_TCP_HDR_LEN_MINIMAL + tcp_opt_len) / 4) * 4096)));
-					ii_write_uint16(tcp_hdr + 14, ii_htons(ii_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, 7)));
+					ii_write_uint16(tcp_hdr + 14, ii_htons(ii_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, II_TCP_CONN(conn_id).ws)));
 					ii_write_uint16(tcp_hdr + 16, 0); /* csum */
 					ii_write_uint16(tcp_hdr + 18, ii_htons(II_PB(pb_id).tcp.urg_p));
 					{
@@ -5756,6 +5756,7 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 				0);
 		II_TCP_CONN(conn_id).diffserv = diffserv;
 		II_TCP_CONN(conn_id).peer_win = 0xffff;
+		II_TCP_CONN(conn_id).ws = 7;
 		if (fastopen_cookie_len) {
 			if (fastopen_cookie_len > sizeof(II_TCP_CONN(conn_id).fastopen_cookie.buf))
 				return -1;
@@ -6043,7 +6044,7 @@ static int iip_tcp_rxbuf_consumed(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_TCP_S
 		uint32_t l;
 		{
 			uint16_t emss;
-			if (ii_tcp_ipv4_ethernet_emss(w, conn_id, 40, &emss) != IIP_ERR_OK)
+			if (ii_tcp_ipv4_ethernet_emss(w, conn_id, 12, &emss) != IIP_ERR_OK)
 				return -1;
 			l = emss;
 		}
