@@ -3202,6 +3202,22 @@ static bool ii_tcp_paws(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id)
 
 /*@
 	requires \valid(w);
+	assigns \nothing;
+ */
+static bool ii_tcp_check_input_seq__zero_window_rst_urg(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id)
+{
+	if (!II_PB(pb_id).tcp.payload_len
+			&& ((II_PB(pb_id).tcp.flags & II_TCP_FLAG_RST) || (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_URGENT))
+			&& !(II_PB(pb_id).tcp.flags & (II_TCP_FLAG_SYN | II_TCP_FLAG_FIN))
+			&& II_PB(pb_id).tcp.seq == II_TCP_CONN(conn_id).seq_next_expected
+			&& ((II_PB(pb_id).tcp.flags & II_TCP_FLAG_RST) || (!(II_PB(pb_id).tcp.flags & II_TCP_FLAG_RST) && !ii_tcp_paws(w, conn_id, pb_id))))
+		return true;
+	else
+		return false;
+}
+
+/*@
+	requires \valid(w);
 	assigns II_PB(pb_id).tcp.inc_head, II_PB(pb_id).tcp.dec_tail, II_TCP_CONN(conn_id).flags;
  */
 static enum iip_rc ii_tcp_check_input_seq(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id)
@@ -3215,8 +3231,11 @@ static enum iip_rc ii_tcp_check_input_seq(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, I
 	if (II_TCP_CONN(conn_id).buf.used > II_TCP_CONN(conn_id).buf.capacity) {
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
-	if (!ii_tcp_rx_window(w, conn_id))
+	if (!ii_tcp_rx_window(w, conn_id)) {
+		if (ii_tcp_check_input_seq__zero_window_rst_urg(w, conn_id, pb_id))
+			return IIP_ERR_OK;
 		return IIP_ERR_INVALID_RX;
+	}
 	if (ii_tcp_seq_entirely_acked(w, conn_id, pb_id))
 		return IIP_ERR_INVALID_RX;
 	if (ii_tcp_seq_entirely_exceed_win(w, conn_id, pb_id))
