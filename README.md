@@ -87,9 +87,9 @@ static bool iip_ops_pkt_valid(IIP_PKT_P pkt_ref, IIP_OPAQUE_P opaque)
 }
 #define IIP_OPS_PKT_VALID() do { iip_ret_bool = iip_ops_pkt_valid(pkt, opaque); } while (0)
 
-/*@ logic uint8_t * f_iip_ops_pkt_get_data{L}(integer pkt_ref, IIP_OPAQUE_P opaque) = &opaque->pkt_buf[pkt_ref][2]; */
+/*@ logic uint8_t * f_iip_ops_pkt_get_data{L}(integer pkt_ref, IIP_OPAQUE_P opaque) = &opaque->pkt_buf[pkt_ref][4]; */
 /*@ logic integer f_iip_ops_pkt_get_len{L}(integer pkt_ref, IIP_OPAQUE_P opaque) = ((uint16_t) opaque->pkt_buf[pkt_ref][0] * 256) + opaque->pkt_buf[pkt_ref][1]; */
-/*@ logic integer f_iip_ops_pkt_get_capacity{L}(integer pkt_ref, IIP_OPAQUE_P opaque) = PKT_BUF_SIZE; */
+/*@ logic integer f_iip_ops_pkt_get_capacity{L}(integer pkt_ref, IIP_OPAQUE_P opaque) = (pkt_ref % 2 ? 0 : PKT_BUF_SIZE); */
 
 /*@
 	requires \valid_read(opaque);
@@ -123,6 +123,8 @@ static IIP_PKT_LEN_T iip_ops_pkt_get_len(IIP_PKT_P pkt_ref, IIP_OPAQUE_P opaque)
  */
 static int iip_ops_pkt_set_len(IIP_PKT_P pkt_ref, uint16_t len, IIP_OPAQUE_P opaque)
 {
+	if (pkt_ref % 2)
+		return -1;
 	opaque->pkt_buf[pkt_ref][0] = len / 256;
 	opaque->pkt_buf[pkt_ref][1] = len % 256;
 	return 0;
@@ -137,6 +139,8 @@ static int iip_ops_pkt_set_len(IIP_PKT_P pkt_ref, uint16_t len, IIP_OPAQUE_P opa
  */
 static uint16_t iip_ops_pkt_get_capacity(IIP_PKT_P pkt_ref, IIP_OPAQUE_P opaque)
 {
+	if (pkt_ref % 2)
+		return 0;
 	return PKT_BUF_SIZE;
 }
 #define IIP_OPS_PKT_GET_CAPACITY() do { iip_ret_len = iip_ops_pkt_get_capacity(pkt, opaque); } while (0)
@@ -160,23 +164,27 @@ static IIP_PKT_P iip_ops_pkt_scatter_gather_chain_get_next(IIP_PKT_P pkt_ref, II
  */
 static int iip_ops_pkt_scatter_gather_chain_append(IIP_PKT_P head_pkt_ref, IIP_PKT_P pkt_ref, IIP_OPAQUE_P opaque)
 {
-	IIP_PKT_P ref = head_pkt_ref, i;
-	/*@
-		loop invariant 0 <= i <= NUM_PKT;
-		loop invariant f_iip_ops_pkt_valid(ref, opaque);
-		loop assigns i, ref, opaque->pkt_buf[0 .. NUM_PKT - 1][2 .. 3];
-		loop variant NUM_PKT - i;
-	 */
-	for (i = 0; i < NUM_PKT; i++) {
-		IIP_PKT_P next = iip_ops_pkt_scatter_gather_chain_get_next(ref, opaque);
-		if (!iip_ops_pkt_valid(next, opaque)) {
-			opaque->pkt_buf[ref][2] = pkt_ref / 256;
-			opaque->pkt_buf[ref][3] = pkt_ref % 256;
-			break;
+	if (pkt_ref % 2)
+		return -1;
+	{
+		IIP_PKT_P ref = head_pkt_ref, i;
+		/*@
+			loop invariant 0 <= i <= NUM_PKT;
+			loop invariant f_iip_ops_pkt_valid(ref, opaque);
+			loop assigns i, ref, opaque->pkt_buf[0 .. NUM_PKT - 1][2 .. 3];
+			loop variant NUM_PKT - i;
+		 */
+		for (i = 0; i < NUM_PKT; i++) {
+			IIP_PKT_P next = iip_ops_pkt_scatter_gather_chain_get_next(ref, opaque);
+			if (!iip_ops_pkt_valid(next, opaque)) {
+				opaque->pkt_buf[ref][2] = pkt_ref / 256;
+				opaque->pkt_buf[ref][3] = pkt_ref % 256;
+				break;
+			}
+			ref = next;
 		}
-		ref = next;
+		return 0;
 	}
-	return 0;
 }
 #define IIP_OPS_PKT_SCATTER_GATHER_CHAIN_APPEND() do { iip_ret_int = iip_ops_pkt_scatter_gather_chain_append(head_pkt, pkt, opaque); } while (0)
 
@@ -217,7 +225,7 @@ static int iip_ops_pkt_alloc(IIP_PKT_P *pkt_ref, IIP_OPAQUE_P opaque)
  */
 static int iip_ops_pkt_free(IIP_PKT_P pkt_ref, IIP_OPAQUE_P opaque)
 {
-	if (!opaque->pkt_buf[pkt_ref][0] && !opaque->pkt_buf[pkt_ref][1])
+	if (pkt_ref % 2)
 		return -1;
 	opaque->pkt_buf[pkt_ref][0] = 0;
 	opaque->pkt_buf[pkt_ref][1] = 0;
@@ -241,19 +249,19 @@ static int iip_ops_pkt_free(IIP_PKT_P pkt_ref, IIP_OPAQUE_P opaque)
  */
 static void iip_ops_pkt_clone__copy_data(IIP_PKT_P pkt_ref, IIP_PKT_P cloned_pkt, IIP_OPAQUE_P opaque)
 {
-		uint16_t i;
-		/*@
-			loop invariant 0 <= i <= 2 + f_iip_ops_pkt_get_len(pkt_ref, opaque);
-			loop invariant \forall integer j; 0 <= j < i <= 2 + f_iip_ops_pkt_get_len(pkt_ref, opaque) ==>
-				opaque->pkt_buf[cloned_pkt][j] == opaque->pkt_buf[pkt_ref][j];
-			loop assigns i, opaque->pkt_buf[cloned_pkt][0 .. PKT_BUF_SIZE + 1] \from opaque->pkt_buf[pkt_ref][0 .. PKT_BUF_SIZE + 1];
-			loop variant 2 + f_iip_ops_pkt_get_len(pkt_ref, opaque) - i;
-		 */
-		for (i = 0; i < 2 + iip_ops_pkt_get_len(pkt_ref, opaque); i++)
-			opaque->pkt_buf[cloned_pkt][i] = opaque->pkt_buf[pkt_ref][i];
-		/*@ assert opaque->pkt_buf[cloned_pkt][0] == opaque->pkt_buf[pkt_ref][0]
-			&& opaque->pkt_buf[cloned_pkt][1] == opaque->pkt_buf[pkt_ref][1]; */
-		/*@ assert f_iip_ops_pkt_get_len(pkt_ref, opaque) == f_iip_ops_pkt_get_len(cloned_pkt, opaque); */
+	uint16_t i;
+	/*@
+		loop invariant 0 <= i <= 2 + f_iip_ops_pkt_get_len(pkt_ref, opaque);
+		loop invariant \forall integer j; 0 <= j < i <= 2 + f_iip_ops_pkt_get_len(pkt_ref, opaque) ==>
+			opaque->pkt_buf[cloned_pkt][j] == opaque->pkt_buf[pkt_ref][j];
+		loop assigns i, opaque->pkt_buf[cloned_pkt][0 .. PKT_BUF_SIZE + 1] \from opaque->pkt_buf[pkt_ref][0 .. PKT_BUF_SIZE + 1];
+		loop variant 2 + f_iip_ops_pkt_get_len(pkt_ref, opaque) - i;
+	 */
+	for (i = 0; i < 2 + iip_ops_pkt_get_len(pkt_ref, opaque); i++)
+		opaque->pkt_buf[cloned_pkt][i] = opaque->pkt_buf[pkt_ref][i];
+	/*@ assert opaque->pkt_buf[cloned_pkt][0] == opaque->pkt_buf[pkt_ref][0]
+		&& opaque->pkt_buf[cloned_pkt][1] == opaque->pkt_buf[pkt_ref][1]; */
+	/*@ assert f_iip_ops_pkt_get_len(pkt_ref, opaque) == f_iip_ops_pkt_get_len(cloned_pkt, opaque); */
 }
 
 /*@
@@ -321,6 +329,8 @@ static int iip_ops_ethernet_addr_match(const uint8_t ethernet_addr[ETH_ADDR_LEN]
  */
 static int iip_ops_ethernet_hdr_craft(uint8_t *buf, const uint8_t dst_ethernet_addr[ETH_ADDR_LEN], uint16_t proto_be, IIP_OPAQUE_P opaque)
 {
+	if (!proto_be)
+		return -1;
 	buf[ 0] = dst_ethernet_addr[0];
 	buf[ 1] = dst_ethernet_addr[1];
 	buf[ 2] = dst_ethernet_addr[2];
@@ -445,18 +455,18 @@ typedef unsigned long  uintptr_t;
 #define IIP_OPS_ARP_ETHERNET_REPLY() do { iip_ret_int = rx_pkt % 2 ? 1 : 0; } while (0)
 #define IIP_OPS_UDP_PAYLOAD() do { iip_ret_int = pb_id % 3 ? 1 : 0; } while (0)
 #define IIP_OPS_TCP_ACCEPT() do { iip_ret_bool = pb_id % 4 ? true : false; } while (0)
-#define IIP_OPS_TCP_CONNECTED() do { iip_ret_int = conn_id % 5 ? 1 : 0; if (conn_id) { II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_SENT; } } while (0)
-#define IIP_OPS_TCP_ACCEPTED() do { iip_ret_int = conn_id % 6 ? 1 : 0; if (conn_id) { II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_SENT; } } while (0)
+#define IIP_OPS_TCP_CONNECTED() do { iip_ret_int = conn_id % 5 ? 1 : 0; if (conn_id) { II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PUSHED; } } while (0)
+#define IIP_OPS_TCP_ACCEPTED() do { iip_ret_int = conn_id % 6 ? 1 : 0; if (conn_id) { II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PUSHED; } } while (0)
 #define IIP_OPS_TCP_URGENT() do { iip_ret_int = (conn_id % 7 ? 1 : 0); } while (0)
 #define IIP_OPS_TCP_FASTOPEN_REQUEST() do { iip_ret_int = (conn_id % 8 ? 1 : 0); } while (0)
 #define IIP_OPS_TCP_PAYLOAD() do { iip_ret_int = (conn_id % 9 ? 1 : 0); } while (0)
-#define IIP_OPS_TCP_STATE_CLOSE_WAIT() do { iip_ret_int = (conn_id % 10 ? 1 : 0); { II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_SENT; } } while (0)
+#define IIP_OPS_TCP_STATE_CLOSE_WAIT() do { iip_ret_int = (conn_id % 10 ? 1 : 0); { II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PUSHED; } } while (0)
 #define IIP_OPS_TCP_CLOSED() do { iip_ret_int = (conn_id % 11 ? 1 : 0); } while (0)
 #define IIP_OPS_TCP_IPV4_FASTOPEN_CHECK() do { iip_ret_bool = (conn_id % 12 ? 1 : 0); } while (0)
 #define IIP_OPS_TCP_IP_NEGATIVE_ADVICE() do { iip_ret_int = (conn_id % 13 ? 1 : 0); } while (0)
 
 #define SKIP_IIP_DEFINITION
-#include "../../iip/main.c"
+#include "../main.c"
 #undef SKIP_IIP_DEFINITION
 
 /*@
