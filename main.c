@@ -4154,13 +4154,16 @@ static enum iip_rc ii_tcp_conn_handle_in_order(IIP_MEM_P w, IIP_TCP_CONN_P conn_
 		default:
 			break;
 		}
-		if (syn || ack || rst) {
+		if (syn || rst) {
 			enum iip_rc rc = ii_tcp_tx_push_control(w, conn_id,
 					(syn ? II_TCP_FLAG_SYN : 0) | (ack ? II_TCP_FLAG_ACK : 0) | (rst ? II_TCP_FLAG_RST : 0));
 			if (rc != IIP_ERR_OK) {
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
-		}
+			if (ack)
+				II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_ACK_PENDING;
+		} else if (ack)
+			II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING;
 		return IIP_ERR_OK;
 	}
 }
@@ -5436,11 +5439,6 @@ static enum iip_rc ii_tcp_conn_work(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPA
 	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
-	if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_ACK_PENDING) {
-		if (ii_tcp_send_ack_immediate(w, conn_id, false, opaque) != IIP_ERR_OK) {
-			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-		}
-	}
 	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).rx_ring) != IIP_ERR_OK) {
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
@@ -5482,6 +5480,11 @@ static enum iip_rc ii_tcp_conn_work(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPA
 			}
 		}
 		II_TCP_CONN(conn_id).rx_ring.tail = II_TCP_CONN(conn_id).rx_ring.head;
+		if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_ACK_PENDING) {
+			if (ii_tcp_send_ack_immediate(w, conn_id, false, opaque) != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+		}
 		ii_tcp_release_acked(w, conn_id, opaque);
 		ii_extent_queue_shrink(&II_TCP_CONN(conn_id).sack, II_TCP_CONN(conn_id).acked_seq);
 		if (ii_tcp_conn__zero_window_probe_check(w, conn_id, opaque) != IIP_ERR_OK) {
