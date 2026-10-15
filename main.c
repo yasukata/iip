@@ -151,6 +151,7 @@ struct ii_extent_queue {
 #define II_TCP_CONN_FLAGS_OPT_SET_TS (1U << 11)
 #define II_TCP_CONN_FLAGS_RETRANSMIT (1U << 12)
 #define II_TCP_CONN_FLAGS_OPT_WS (1U << 13)
+#define II_TCP_CONN_FLAGS_NAGLE_DISABLED (1U << 14)
 
 #define II_DEFINE_RING(_obj_name, _type, _cnt) \
 struct ii_##_obj_name##__ring { \
