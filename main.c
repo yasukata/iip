@@ -550,6 +550,9 @@ static int iip_arp_ethernet_request(IIP_MEM_P w, uint8_t local_mac[II_ETH_ADDR_L
 #ifndef IIP_OPS_IPV4_TCP_INPUT_FILTER
 #define IIP_OPS_IPV4_TCP_INPUT_FILTER() do { iip_ret_bool = false; } while (0)
 #endif
+#ifndef IIP_OPS_TCP_ICMP_RECEIVED_ERROR
+#define IIP_OPS_TCP_ICMP_RECEIVED_ERROR() do { iip_ret_int = 0; } while (0)
+#endif
 
 #ifndef IIP_OPS_ARP_ETHERNET_REPLY
 #define IIP_OPS_ARP_ETHERNET_REPLY() do { iip_ret_int = 0; } while (0)
@@ -2310,6 +2313,107 @@ static enum iip_rc ii_icmp_echo_xmit_reply(IIP_MEM_P w, II_PB_P pb_id, const uin
 }
 
 /*@
+	requires \valid(w);
+	assigns w->tcp.conns_ht[0 .. IIP_CONF_TCP_CONN_HT_SIZE - 1];
+ */
+static IIP_TCP_CONN_P ii_ipv4_tcp_conn_lookup(IIP_MEM_P w,
+		uint32_t src_ipv4_be, uint16_t src_port_be,
+		uint32_t dst_ipv4_be, uint16_t dst_port_be)
+{
+	{
+		IIP_TCP_CONN_P r = w->tcp.conns_ht[(dst_ipv4_be + src_port_be + dst_port_be) % IIP_CONF_TCP_CONN_HT_SIZE];
+		if (r < II_CONF_POOL_NUM_TCP_CONN) {
+			if (src_ipv4_be == ii_htonl(w->tcp_conns.array[r].src_ip[0])
+					&& src_port_be == ii_htons(w->tcp_conns.array[r].src_port)
+					&& dst_ipv4_be == ii_htonl(w->tcp_conns.array[r].dst_ip[0])
+					&& dst_port_be == ii_htons(w->tcp_conns.array[r].dst_port)
+					&& II_TCP_CONN(r).state != II_TCP_STATE_CLOSED) {
+				return r;
+			}
+		}
+	}
+	{
+		IIP_TCP_CONN_P i;
+		/*@
+			loop invariant 0 <= i <= II_CONF_POOL_NUM_TCP_CONN;
+			loop assigns i;
+			loop variant II_CONF_POOL_NUM_TCP_CONN - i;
+		 */
+		for (i = 0; i < II_CONF_POOL_NUM_TCP_CONN; i++) {
+			if (src_ipv4_be == ii_htonl(w->tcp_conns.array[i].src_ip[0])
+					&& src_port_be == ii_htons(w->tcp_conns.array[i].src_port)
+					&& dst_ipv4_be == ii_htonl(w->tcp_conns.array[i].dst_ip[0])
+					&& dst_port_be == ii_htons(w->tcp_conns.array[i].dst_port)
+					&& II_TCP_CONN(i).state != II_TCP_STATE_CLOSED)
+				break;
+		}
+		if (i < II_CONF_POOL_NUM_TCP_CONN)
+			w->tcp.conns_ht[(dst_ipv4_be + src_port_be + dst_port_be) % IIP_CONF_TCP_CONN_HT_SIZE] = i;
+		return i;
+	}
+}
+
+/*@
+	requires \valid(opaque);
+	requires \valid(w);
+	requires \valid_read(buf + (0 .. buf_len - 1));
+	requires II_ICMP_HDR_LEN <= buf_len;
+	requires \separated(w, buf + (0 .. buf_len - 1), opaque);
+ */
+static enum iip_rc ii_icmp_echo_received_error(IIP_MEM_P w, const uint8_t *buf, uint16_t buf_len, IIP_OPAQUE_P opaque)
+{
+	if (buf_len < II_ICMP_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL)
+		return IIP_ERR_INVALID_RX;
+	{
+		const uint8_t *ipv4_hdr = &buf[II_ICMP_HDR_LEN];
+		{
+			uint8_t ipv4_hdr_len = ii_extract_ipv4_hdr_len(ipv4_hdr);
+			if (ii_extract_ipv4_hdr_len(ipv4_hdr) < II_IPV4_HDR_LEN_MINIMAL)
+				return IIP_ERR_INVALID_RX;
+			if (buf_len < II_ICMP_HDR_LEN + ipv4_hdr_len + 8)
+				return IIP_ERR_INVALID_RX;
+			{
+				uint8_t l4_hdr[8];
+				l4_hdr[0] = buf[II_ICMP_HDR_LEN + ipv4_hdr_len + 0];
+				l4_hdr[1] = buf[II_ICMP_HDR_LEN + ipv4_hdr_len + 1];
+				l4_hdr[2] = buf[II_ICMP_HDR_LEN + ipv4_hdr_len + 2];
+				l4_hdr[3] = buf[II_ICMP_HDR_LEN + ipv4_hdr_len + 3];
+				l4_hdr[4] = buf[II_ICMP_HDR_LEN + ipv4_hdr_len + 4];
+				l4_hdr[5] = buf[II_ICMP_HDR_LEN + ipv4_hdr_len + 5];
+				l4_hdr[6] = buf[II_ICMP_HDR_LEN + ipv4_hdr_len + 6];
+				l4_hdr[7] = buf[II_ICMP_HDR_LEN + ipv4_hdr_len + 7];
+				if (ii_extract_ipv4_proto(ipv4_hdr) == 6 /* tcp */
+						&& !ii_extract_ipv4_off(ipv4_hdr)) {
+					IIP_TCP_CONN_P conn_id = ii_ipv4_tcp_conn_lookup(w,
+							ii_extract_ipv4_src_be(ipv4_hdr),
+							ii_extract_tcp_src_be(l4_hdr),
+							ii_extract_ipv4_dst_be(ipv4_hdr),
+							ii_extract_tcp_dst_be(l4_hdr));
+					if (conn_id > II_CONF_POOL_NUM_TCP_CONN) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					if (conn_id < II_CONF_POOL_NUM_TCP_CONN) {
+						int iip_ret_int;
+						IIP_OPS_TCP_ICMP_RECEIVED_ERROR();
+						if (iip_ret_int) {
+							IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+						}
+					} else
+						return IIP_ERR_INVALID_RX;
+					{ /* unused */
+						(void) conn_id;
+					}
+				}
+			}
+		}
+	}
+	return IIP_ERR_OK;
+	{ /* unused */
+		(void) opaque;
+	}
+}
+
+/*@
 	requires 0 < buf_len;
 	requires \valid_read(buf + (0 .. buf_len - 1));
 	assigns \nothing;
@@ -2367,10 +2471,12 @@ static enum iip_rc ii_icmp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque
 				enum iip_rc rc;
 				switch (tmp[0]) {
 				case 0: /* reply */
+					rc = IIP_ERR_OK;
+					break;
 				case 3: /* error */
 				case 11: /* time exceeded */
 				case 12: /* parameter issue */
-					rc = IIP_ERR_OK;
+					rc = ii_icmp_echo_received_error(w, tmp, buf_len, opaque);
 					break;
 				case 8: /* echo */
 					rc = ii_icmp_echo_xmit_reply(w, pb_id, tmp, buf_len, opaque);
@@ -2917,47 +3023,6 @@ static enum iip_rc ii_pb_tcp_payload_len(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LEN
 		}
 		*payload_len = ipv4_payload_len - ii_pb_tcp_hdr_len(w, pb_id);
 		return IIP_ERR_OK;
-	}
-}
-
-/*@
-	requires \valid(w);
-	assigns w->tcp.conns_ht[0 .. IIP_CONF_TCP_CONN_HT_SIZE - 1];
- */
-static IIP_TCP_CONN_P ii_ipv4_tcp_conn_lookup(IIP_MEM_P w,
-		uint32_t src_ipv4_be, uint16_t src_port_be,
-		uint32_t dst_ipv4_be, uint16_t dst_port_be)
-{
-	{
-		IIP_TCP_CONN_P r = w->tcp.conns_ht[(dst_ipv4_be + src_port_be + dst_port_be) % IIP_CONF_TCP_CONN_HT_SIZE];
-		if (r < II_CONF_POOL_NUM_TCP_CONN) {
-			if (src_ipv4_be == ii_htonl(w->tcp_conns.array[r].src_ip[0])
-					&& src_port_be == ii_htons(w->tcp_conns.array[r].src_port)
-					&& dst_ipv4_be == ii_htonl(w->tcp_conns.array[r].dst_ip[0])
-					&& dst_port_be == ii_htons(w->tcp_conns.array[r].dst_port)
-					&& II_TCP_CONN(r).state != II_TCP_STATE_CLOSED) {
-				return r;
-			}
-		}
-	}
-	{
-		IIP_TCP_CONN_P i;
-		/*@
-			loop invariant 0 <= i <= II_CONF_POOL_NUM_TCP_CONN;
-			loop assigns i;
-			loop variant II_CONF_POOL_NUM_TCP_CONN - i;
-		 */
-		for (i = 0; i < II_CONF_POOL_NUM_TCP_CONN; i++) {
-			if (src_ipv4_be == ii_htonl(w->tcp_conns.array[i].src_ip[0])
-					&& src_port_be == ii_htons(w->tcp_conns.array[i].src_port)
-					&& dst_ipv4_be == ii_htonl(w->tcp_conns.array[i].dst_ip[0])
-					&& dst_port_be == ii_htons(w->tcp_conns.array[i].dst_port)
-					&& II_TCP_CONN(i).state != II_TCP_STATE_CLOSED)
-				break;
-		}
-		if (i < II_CONF_POOL_NUM_TCP_CONN)
-			w->tcp.conns_ht[(dst_ipv4_be + src_port_be + dst_port_be) % IIP_CONF_TCP_CONN_HT_SIZE] = i;
-		return i;
 	}
 }
 
