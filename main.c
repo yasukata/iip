@@ -5782,8 +5782,6 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 										} else {
 											mss_set = true;
 											II_TCP_CONN(conn_id).mss = mss;
-											if (536 > II_TCP_CONN(conn_id).mss)
-												II_TCP_CONN(conn_id).mss = 536;
 										}
 									}
 								} else
