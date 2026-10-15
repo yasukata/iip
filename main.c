@@ -1554,7 +1554,7 @@ static uint8_t ii_extract_ipv4_opt_len(const uint8_t *buf)
 
 /*@
 	requires \valid(addr + (0 .. II_ETH_ADDR_LEN - 1));
-	requires \valid_read(buf + (0 .. II_ETH_ADDR_LEN - 1));
+	requires \valid_read(buf + (6 .. 6 + II_ETH_ADDR_LEN - 1));
 	assigns addr[0] \from buf[ 6];
 	assigns addr[1] \from buf[ 7];
 	assigns addr[2] \from buf[ 8];
@@ -1574,7 +1574,7 @@ static void ii_extract_ethernet_src(uint8_t addr[II_ETH_ADDR_LEN], uint8_t *buf)
 
 /*@
 	requires \valid(addr + (0 .. II_ETH_ADDR_LEN - 1));
-	requires \valid_read(buf + (6 .. 6 + II_ETH_ADDR_LEN - 1));
+	requires \valid_read(buf + (0 .. II_ETH_ADDR_LEN - 1));
 	assigns addr[0] \from buf[0];
 	assigns addr[1] \from buf[1];
 	assigns addr[2] \from buf[2];
