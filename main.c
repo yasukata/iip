@@ -625,6 +625,9 @@ static int iip_arp_ethernet_request(IIP_MEM_P w, uint8_t local_mac[II_ETH_ADDR_L
 #ifndef II_HOOK_TX_IPV4_ETHERNET_ZERO_COPY
 #define II_HOOK_TX_IPV4_ETHERNET_ZERO_COPY() do { (void) opaque; } while (0)
 #endif
+#ifndef II_HOOK_TCP_IPV4_ETHERNET_CONNECT
+#define II_HOOK_TCP_IPV4_ETHERNET_CONNECT() do { (void) opaque; } while (0)
+#endif
 
 /*@ logic integer f_ntohs{L}(integer x) = (uint16_t)(((uint32_t) x % 256) * 256) | (((uint32_t) x / 256) % 256); */
 /*@ logic integer f_htons{L}(integer x) = f_ntohs{L}(x); */
@@ -5893,6 +5896,7 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 				dst_ipv4_be,
 				dst_port_be,
 				0);
+		II_HOOK_TCP_IPV4_ETHERNET_CONNECT();
 		II_TCP_CONN(conn_id).diffserv = diffserv;
 		II_TCP_CONN(conn_id).peer_win = 0xffff;
 		II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_WS;
