@@ -615,6 +615,9 @@ static int iip_arp_ethernet_request(IIP_MEM_P w, uint8_t local_mac[II_ETH_ADDR_L
 /* can be used for iss setting */
 #define IIP_OPS_TCP_CONN_INIT() do { } while (0)
 #endif
+#ifndef IIP_OPS_IPV4_OPT_SEND
+#define IIP_OPS_IPV4_OPT_SEND() do { iip_ret_int = 0; } while (0)
+#endif
 #ifndef II_HOOK_TX_IPV4_ETHERNET
 #define II_HOOK_TX_IPV4_ETHERNET() do { (void) opaque; } while (0)
 #endif
@@ -1885,12 +1888,13 @@ static enum iip_rc ii_ipv4_tx_csum(IIP_PKT_P tx_pkt, IIP_PKT_LEN_T off, IIP_PKT_
 	assigns buf[16 .. 19] \from ipv4_dst_be;
  */
 static void ii_ipv4_hdr_craft_minimal(uint8_t buf[II_IPV4_HDR_LEN_MINIMAL],
+		uint8_t hdr_len,
 		uint8_t tos, uint16_t payload_len, uint16_t id, uint16_t off, uint8_t flags,
 		uint8_t ttl, uint8_t proto, uint32_t ipv4_src_be, uint32_t ipv4_dst_be)
 {
-	buf[0] = (4 /* ivp4 */ << 4) | (II_IPV4_HDR_LEN_MINIMAL / 4);
+	buf[0] = (4 /* ivp4 */ << 4) | (hdr_len / 4);
 	buf[1] = tos;
-	ii_write_uint16(&buf[2], ii_htons(II_IPV4_HDR_LEN_MINIMAL + payload_len));
+	ii_write_uint16(&buf[2], ii_htons(hdr_len + payload_len));
 	ii_write_uint16(&buf[4], ii_htons(id));
 	ii_write_uint16(&buf[6], ii_htons(off / 8));
 	buf[ 6] |= flags;
@@ -1975,7 +1979,7 @@ static enum iip_rc ipv4_send_ethernet__prepare_tx_pkts(
 		const uint8_t **buf, uint16_t *buf_len, IIP_PKT_CNT_T cnt, uint16_t total_len,
 		IIP_PKT_P tx_pkts[II_CONF_IPV4_FRAG_CNT_MAX], uint16_t tx_len[II_CONF_IPV4_FRAG_CNT_MAX], uint16_t *tx_pkt_cnt,
 		uint8_t dst_mac[II_ETH_ADDR_LEN],
-		uint32_t dst_ipv4_be, uint32_t src_ipv4_be,
+		uint32_t default_dst_ipv4_be, uint32_t src_ipv4_be,
 		uint8_t proto, uint8_t diffserv, IIP_OPAQUE_P opaque)
 {
 	*tx_pkt_cnt = 0;
@@ -2012,35 +2016,59 @@ static enum iip_rc ipv4_send_ethernet__prepare_tx_pkts(
 			pkt_cnt++;
 			II_HOOK_TX_IPV4_ETHERNET();
 			{
-				uint16_t tx_bytes;
-				if (ii_call_pkt_get_capacity(tx_pkt, opaque) < (II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL)) {
-					is_err = 1;
-					break;
+				uint32_t dst_ipv4_be = default_dst_ipv4_be;
+				uint8_t ipv4_opt_len = 0;
+				uint8_t ipv4_opt[40];
+				{
+					int iip_ret_int;
+					IIP_OPS_IPV4_OPT_SEND();
+					if (iip_ret_int) {
+						is_err = 1;
+						break;
+					}
 				}
-				tx_bytes = ii_call_pkt_get_capacity(tx_pkt, opaque) - (II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL);
-				if (tx_bytes > total_len - xmit_len)
-					tx_bytes = total_len - xmit_len;
-				else
-					tx_bytes = tx_bytes & 0xfff8; /* aligned by 8 for fragmentation */
-				if (ii_iov_copy(buf, buf_len, cnt, xmit_len, ii_call_pkt_get_data(tx_pkt, opaque) + II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL, tx_bytes) != tx_bytes) {
-					is_err = 1;
-					break;
+				{
+					uint16_t tx_bytes;
+					if (ii_call_pkt_get_capacity(tx_pkt, opaque) < (II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + ipv4_opt_len)) {
+						is_err = 1;
+						break;
+					}
+					tx_bytes = ii_call_pkt_get_capacity(tx_pkt, opaque) - (II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + ipv4_opt_len);
+					if (tx_bytes > total_len - xmit_len)
+						tx_bytes = total_len - xmit_len;
+					else
+						tx_bytes = tx_bytes & 0xfff8; /* aligned by 8 for fragmentation */
+					if (ii_iov_copy(buf, buf_len, cnt, xmit_len, ii_call_pkt_get_data(tx_pkt, opaque) + II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + ipv4_opt_len, tx_bytes) != tx_bytes) {
+						is_err = 1;
+						break;
+					}
+					if (ii_call_ethernet_hdr_craft(ii_call_pkt_get_data(tx_pkt, opaque), dst_mac, ii_htons(0x0800) /* ipv4 */, opaque)) {
+						is_err = 1;
+						break;
+					}
+					ii_ipv4_hdr_craft_minimal(ii_call_pkt_get_data(tx_pkt, opaque) + II_ETH_HDR_LEN,
+							II_IPV4_HDR_LEN_MINIMAL + ipv4_opt_len, diffserv,
+							tx_bytes, 0 /* TODO: id randomization  */, xmit_len,
+							(xmit_len + tx_bytes == total_len ? 0 : 0x20 /* more flag */)
+							| ((xmit_len == 0 && tx_bytes == total_len) ? 0x40 /* DF */ : 0),
+							64, proto,
+							src_ipv4_be, dst_ipv4_be);
+					{
+						uint8_t i;
+						/*@
+							loop invariant 0 <= i <= ipv4_opt_len;
+							loop assigns i, *opaque;
+							loop variant ipv4_opt_len - i;
+						 */
+						for (i = 0; i < ipv4_opt_len; i++)
+							ii_call_pkt_get_data(tx_pkt, opaque)[II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + i] = ipv4_opt[i];
+					}
+					if (ii_ipv4_tx_csum(tx_pkt, II_ETH_HDR_LEN, II_IPV4_HDR_LEN_MINIMAL + ipv4_opt_len, opaque) != IIP_ERR_OK) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					tx_len[pkt_cnt - 1] = tx_bytes;
+					xmit_len += tx_bytes;
 				}
-				if (ii_call_ethernet_hdr_craft(ii_call_pkt_get_data(tx_pkt, opaque), dst_mac, ii_htons(0x0800) /* ipv4 */, opaque)) {
-					is_err = 1;
-					break;
-				}
-				ii_ipv4_hdr_craft_minimal(ii_call_pkt_get_data(tx_pkt, opaque) + II_ETH_HDR_LEN, diffserv,
-						tx_bytes, 0 /* TODO: id randomization  */, xmit_len,
-						(xmit_len + tx_bytes == total_len ? 0 : 0x20 /* more flag */)
-						| ((xmit_len == 0 && tx_bytes == total_len) ? 0x40 /* DF */ : 0),
-						64, proto,
-						src_ipv4_be, dst_ipv4_be);
-				if (ii_ipv4_tx_csum(tx_pkt, II_ETH_HDR_LEN, II_IPV4_HDR_LEN_MINIMAL, opaque) != IIP_ERR_OK) {
-					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-				}
-				tx_len[pkt_cnt - 1] = tx_bytes;
-				xmit_len += tx_bytes;
 			}
 		}
 		*tx_pkt_cnt = pkt_cnt;
@@ -2084,8 +2112,14 @@ static enum iip_rc ipv4_send_ethernet__xmit_tx_pkts(IIP_PKT_P tx_pkts[II_CONF_IP
 		if (!ii_call_pkt_valid(tx_pkts[i], opaque)) {
 			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 		}
-		if (ii_call_pkt_set_len(tx_pkts[i], II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + tx_len[i], opaque)) {
-			IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+		{
+			uint8_t ipv4_hdr_len = ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(tx_pkts[i], opaque) + II_ETH_HDR_LEN);
+			if (II_ETH_HDR_LEN + ipv4_hdr_len + tx_len[i] > ii_call_pkt_get_capacity(tx_pkts[i], opaque)) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+			if (ii_call_pkt_set_len(tx_pkts[i], II_ETH_HDR_LEN + ipv4_hdr_len + tx_len[i], opaque)) {
+				IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+			}
 		}
 		if (ii_call_ethernet_push(tx_pkts[i], opaque)) {
 			IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
@@ -2160,7 +2194,7 @@ static enum iip_rc ii_ipv4_send_ethernet(
  */
 static enum iip_rc ii_ipv4_send_ethernet_zero_copy(
 		uint8_t src_mac[II_ETH_ADDR_LEN], uint32_t src_ipv4_be,
-		uint8_t dst_mac[II_ETH_ADDR_LEN], uint32_t dst_ipv4_be, uint8_t proto, uint8_t diffserv,
+		uint8_t dst_mac[II_ETH_ADDR_LEN], uint32_t default_dst_ipv4_be, uint8_t proto, uint8_t diffserv,
 		const uint8_t **hdr_buf, IIP_PKT_LEN_T *hdr_buf_len, IIP_PKT_CNT_T cnt,
 		IIP_PKT_P tx_pkt, IIP_PKT_LEN_T payload_len, IIP_OPAQUE_P opaque)
 {
@@ -2200,47 +2234,76 @@ static enum iip_rc ii_ipv4_send_ethernet_zero_copy(
 					}
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 				}
-				if (II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + hdr_len > ii_call_pkt_get_capacity(head_pkt, opaque)) {
-					if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
+				{
+					uint32_t dst_ipv4_be = default_dst_ipv4_be;
+					uint8_t ipv4_opt_len = 0;
+					uint8_t ipv4_opt[40];
+					{
+						int iip_ret_int;
+						IIP_OPS_IPV4_OPT_SEND();
+						if (iip_ret_int) {
+							if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
+								IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+							}
+							if (ii_call_pkt_free(head_pkt, opaque)) {
+								IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+							}
+							IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+						}
+					}
+					if (II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + ipv4_opt_len + hdr_len > ii_call_pkt_get_capacity(head_pkt, opaque)) {
+						if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
+							IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+						}
+						if (ii_call_pkt_free(head_pkt, opaque)) {
+							IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+						}
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					if (ii_iov_copy(hdr_buf, hdr_buf_len, cnt, 0, ii_call_pkt_get_data(head_pkt, opaque) + II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + ipv4_opt_len, hdr_len) != hdr_len) {
+						if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
+							IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+						}
+						if (ii_call_pkt_free(head_pkt, opaque)) {
+							IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+						}
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					ii_ipv4_hdr_craft_minimal(ii_call_pkt_get_data(head_pkt, opaque) + II_ETH_HDR_LEN,
+							II_IPV4_HDR_LEN_MINIMAL + ipv4_opt_len, diffserv,
+							hdr_len + payload_len, 0 /* TODO: id randomization  */, 0,
+							0x40 /* DF */, 64, proto,
+							src_ipv4_be, dst_ipv4_be);
+					{
+						uint8_t i;
+						/*@
+							loop invariant 0 <= i <= ipv4_opt_len;
+							loop assigns i, *opaque;
+							loop variant ipv4_opt_len - i;
+						 */
+						for (i = 0; i < ipv4_opt_len; i++)
+							ii_call_pkt_get_data(head_pkt, opaque)[II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + i] = ipv4_opt[i];
+					}
+					if (ii_ipv4_tx_csum(head_pkt, II_ETH_HDR_LEN, II_IPV4_HDR_LEN_MINIMAL + ipv4_opt_len, opaque) != IIP_ERR_OK) {
+						if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
+							IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+						}
+						if (ii_call_pkt_free(head_pkt, opaque)) {
+							IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+						}
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					if (ii_call_pkt_set_len(head_pkt, II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + ipv4_opt_len + hdr_len, opaque)) {
+						if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
+							IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+						}
+						if (ii_call_pkt_free(head_pkt, opaque)) {
+							IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+						}
 						IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
 					}
-					if (ii_call_pkt_free(head_pkt, opaque)) {
-						IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
-					}
-					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					II_HOOK_TX_IPV4_ETHERNET_ZERO_COPY();
 				}
-				if (ii_iov_copy(hdr_buf, hdr_buf_len, cnt, 0, ii_call_pkt_get_data(head_pkt, opaque) + II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL, hdr_len) != hdr_len) {
-					if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
-						IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
-					}
-					if (ii_call_pkt_free(head_pkt, opaque)) {
-						IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
-					}
-					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-				}
-				ii_ipv4_hdr_craft_minimal(ii_call_pkt_get_data(head_pkt, opaque) + II_ETH_HDR_LEN, diffserv,
-						hdr_len + payload_len, 0 /* TODO: id randomization  */, 0,
-						0x40 /* DF */, 64, proto,
-						src_ipv4_be, dst_ipv4_be);
-				if (ii_ipv4_tx_csum(head_pkt, II_ETH_HDR_LEN, II_IPV4_HDR_LEN_MINIMAL, opaque) != IIP_ERR_OK) {
-					if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
-						IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
-					}
-					if (ii_call_pkt_free(head_pkt, opaque)) {
-						IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
-					}
-					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-				}
-				if (ii_call_pkt_set_len(head_pkt, II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL + hdr_len, opaque)) {
-					if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
-						IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
-					}
-					if (ii_call_pkt_free(head_pkt, opaque)) {
-						IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
-					}
-					IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
-				}
-				II_HOOK_TX_IPV4_ETHERNET_ZERO_COPY();
 			}
 			if (ii_call_pkt_scatter_gather_chain_append(head_pkt, cloned_tx_pkt, opaque)) {
 				if (ii_call_pkt_free(cloned_tx_pkt, opaque)) {
