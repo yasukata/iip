@@ -6874,7 +6874,8 @@ static int iip_arp_ethernet_request(IIP_MEM_P w, uint8_t local_mac[II_ETH_ADDR_L
 		if (ii_call_pkt_alloc(&out_pkt, opaque))
 			return -1;
 		if (ii_call_pkt_get_capacity(out_pkt, opaque) < II_ETH_HDR_LEN + II_ARP_HDR_LEN + 20) {
-			ii_call_pkt_free(out_pkt, opaque);
+			if (ii_call_pkt_free(out_pkt, opaque))
+				return -1;
 			return -1;
 		}
 		{
