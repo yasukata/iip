@@ -1989,7 +1989,8 @@ static enum iip_rc ipv4_send_ethernet__prepare_tx_pkts(
 {
 	*tx_pkt_cnt = 0;
 	{
-		IIP_PKT_CNT_T pkt_cnt = 0, xmit_len = 0;
+		IIP_PKT_CNT_T pkt_cnt = 0;
+		IIP_PKT_LEN_T xmit_len = 0;
 		uint8_t is_err = 0;
 		/*@
 			loop invariant 0 <= pkt_cnt <= II_CONF_IPV4_FRAG_CNT_MAX;
@@ -2009,7 +2010,7 @@ static enum iip_rc ipv4_send_ethernet__prepare_tx_pkts(
 			loop assigns tx_pkts[0 .. II_CONF_IPV4_FRAG_CNT_MAX - 1];
 			loop assigns tx_len[0 .. II_CONF_IPV4_FRAG_CNT_MAX - 1];
 			loop assigns *opaque;
-			loop variant total_len - xmit_len;
+			loop variant II_CONF_IPV4_FRAG_CNT_MAX - pkt_cnt;
 		 */
 		while (pkt_cnt < II_CONF_IPV4_FRAG_CNT_MAX && xmit_len < total_len) {
 			IIP_PKT_P tx_pkt;
@@ -2086,6 +2087,9 @@ static enum iip_rc ipv4_send_ethernet__prepare_tx_pkts(
 				loop variant pkt_cnt - i;
 			 */
 			for (i = 0; i < pkt_cnt; i++) {
+				if (!ii_call_pkt_valid(tx_pkts[i], opaque)) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				if (ii_call_pkt_free(tx_pkts[i], opaque)) {
 					IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
 				}
@@ -3678,6 +3682,7 @@ static enum iip_rc ii_tcp_conn_close_check(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 			uint8_t j;
 			/*@
 				loop invariant 0 <= j <= 4;
+				loop assigns j, *w, *opaque;
 				loop variant 4 - j;
 			 */
 			for (j = 0; j < 4; j++) {
@@ -3702,7 +3707,7 @@ static enum iip_rc ii_tcp_conn_close_check(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 						IIP_PKT_CNT_T i;
 						/*@
 						  loop invariant 0 <= i <= cnt;
-						  loop assigns i, *opaque;
+						  loop assigns i, *w, *opaque;
 						  loop variant cnt - i;
 						 */
 						for (i = 0; i < cnt; i++) {
@@ -4652,8 +4657,9 @@ static enum iip_rc ii_tcp_conn_xmit_queued_data(IIP_MEM_P w, IIP_TCP_CONN_P conn
 					if (tx_space - sent < l)
 						l = tx_space - sent;
 					if (ii_tcp_xmit_queued_data_one(w, conn_id, II_TCP_CONN(conn_id).tx_ring.slot[slot_idx],
-								II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.sent_bytes, l, opaque) != IIP_ERR_OK)
-						return IIP_ERR_OK;
+								II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.sent_bytes, l, opaque) != IIP_ERR_OK) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
 					if (II_TCP_CONN(conn_id).tx_ring.slot[slot_idx] >= II_CONF_POOL_NUM_PB) {
 						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 					}
@@ -5360,38 +5366,50 @@ static enum iip_rc ii_tcp_conn__zero_window_probe_check(IIP_MEM_P w, IIP_TCP_CON
 
 /*@
 	requires \valid(w);
-	requires \valid(ring);
-	requires \separated(w, ring, queued_payload_len);
-	assigns *queued_payload_len;
+	requires \valid(queued_payload_len);
+	requires \valid(has_psh);
+	requires \separated(w, queued_payload_len, has_psh);
+	assigns *queued_payload_len, *has_psh;
  */
-static enum iip_rc ii_tcp_conn_queued_payload_len(IIP_MEM_P w, struct ii_pb__ring *ring, uint16_t tx_space, uint32_t *queued_payload_len, bool *has_psh)
+static enum iip_rc ii_tcp_conn_tx_queue_payload_len(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint16_t tx_space, uint32_t *queued_payload_len, bool *has_psh)
 {
-	uint32_t l = 0;
-	bool psh = false;
+	if (conn_id >= II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).tx_ring) != IIP_ERR_OK) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
-		IIP_PKT_CNT_T cnt = ii_pb_ring_num_used(ring);
+		uint32_t l = 0;
+		bool psh = false;
 		{
-			uint16_t i;
-			/*@
-			  loop invariant 0 <= i <= cnt < II_CONF_TCP_RING_SLOT_LEN;
-			  loop assigns i, l, psh;
-			  loop variant cnt - i;
-			 */
-			for (i = 0; i < cnt; i++) {
-				uint16_t slot_idx = ring->tail + i;
-				if (slot_idx >= II_CONF_TCP_RING_SLOT_LEN)
-					slot_idx %= II_CONF_TCP_RING_SLOT_LEN;
-				l += II_PB(ring->slot[slot_idx]).tcp.payload_len;
-				if (l <= tx_space) {
-					if (II_PB(ring->slot[slot_idx]).tcp.flags & II_TCP_FLAG_PSH)
-						psh = true;
+			IIP_PKT_CNT_T cnt = ii_pb_ring_num_used(&II_TCP_CONN(conn_id).tx_ring);
+			{
+				uint16_t i;
+				/*@
+				  loop invariant 0 <= i <= cnt < II_CONF_TCP_RING_SLOT_LEN;
+				  loop assigns i, l, psh;
+				  loop variant cnt - i;
+				 */
+				for (i = 0; i < cnt; i++) {
+					uint16_t slot_idx = II_TCP_CONN(conn_id).tx_ring.tail + i;
+					if (slot_idx >= II_CONF_TCP_RING_SLOT_LEN)
+						slot_idx %= II_CONF_TCP_RING_SLOT_LEN;
+					if (II_TCP_CONN(conn_id).tx_ring.slot[slot_idx] >= II_CONF_POOL_NUM_PB) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					l += II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.payload_len;
+					if (l <= tx_space) {
+						if (II_PB(II_TCP_CONN(conn_id).tx_ring.slot[slot_idx]).tcp.flags & II_TCP_FLAG_PSH)
+							psh = true;
+					}
 				}
 			}
 		}
+		*queued_payload_len = l;
+		*has_psh = psh;
+		return IIP_ERR_OK;
 	}
-	*queued_payload_len = l;
-	*has_psh = psh;
-	return IIP_ERR_OK;
 }
 
 /*@
@@ -5533,7 +5551,7 @@ static enum iip_rc ii_tcp_conn_work(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPA
 				uint32_t queued_payload_len;
 				{
 					bool has_psh;
-					if (ii_tcp_conn_queued_payload_len(w, &II_TCP_CONN(conn_id).tx_ring, tx_space, &queued_payload_len, &has_psh)) {
+					if (ii_tcp_conn_tx_queue_payload_len(w, conn_id, tx_space, &queued_payload_len, &has_psh)) {
 						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 					}
 					if (tx_space < II_TCP_CONN(conn_id).mss / 2) { /* sender sws avoidance */
