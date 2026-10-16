@@ -391,6 +391,8 @@ static int iip_ops_ipv4_addr_match(uint32_t ipv4_addr_be, IIP_OPAQUE_P opaque)
 }
 #define IIP_OPS_IPV4_ADDR_MATCH() do { iip_ret_bool = iip_ops_ipv4_addr_match(ii_read_uint32(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN + II_ARP_HDR_LEN + 16), opaque); } while (0)
 
+#define IIP_OPS_NIC_FEATURE_OFFLOAD_TX_SCATTER_GATHER() do { iip_ret_bool = true; } while (0)
+
 #undef NUM_PKT
 #undef PKT_BUF_SIZE
 #undef ETH_ADDR_LEN
@@ -452,6 +454,7 @@ typedef unsigned long  uintptr_t;
 #define IIP_OPS_TCP_IPV4_FASTOPEN_CHECK() do { iip_ret_bool = (conn_id % 12 ? 1 : 0); } while (0)
 #define IIP_OPS_TCP_IP_NEGATIVE_ADVICE() do { iip_ret_int = (conn_id % 13 ? 1 : 0); } while (0)
 #define IIP_OPS_IPV4_OPT_SEND() do { if (dst_ipv4_be) { ipv4_opt_len = 4; ipv4_opt[0] = 0; ipv4_opt[1] = 1; ipv4_opt[2] = 2; ipv4_opt[3] = 3; } } while (0)
+#define IIP_OPS_IPV4_TCP_INPUT_FILTER() do { if (pb_id % 2) iip_ret_bool = true; else iip_ret_bool = false;  } while (0)
 
 #define SKIP_IIP_DEFINITION
 #include "../main.c"
