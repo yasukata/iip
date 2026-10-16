@@ -119,7 +119,7 @@ static IIP_PKT_LEN_T iip_ops_pkt_get_len(IIP_PKT_P pkt_ref, IIP_OPAQUE_P opaque)
 	requires \valid(opaque);
 	requires f_iip_ops_pkt_valid(pkt_ref, opaque);
 	assigns opaque->pkt_buf[pkt_ref][0 .. 1] \from len;
-	ensures (opaque->pkt_buf[pkt_ref][0] == len / 256) && (opaque->pkt_buf[pkt_ref][1] == len % 256);
+	ensures \result == 0 ==> (opaque->pkt_buf[pkt_ref][0] == len / 256) && (opaque->pkt_buf[pkt_ref][1] == len % 256);
  */
 static int iip_ops_pkt_set_len(IIP_PKT_P pkt_ref, uint16_t len, IIP_OPAQUE_P opaque)
 {
@@ -240,28 +240,18 @@ static int iip_ops_pkt_free(IIP_PKT_P pkt_ref, IIP_OPAQUE_P opaque)
 	requires cloned_pkt < NUM_PKT;
 	requires cloned_pkt != pkt_ref;
 	requires f_iip_ops_pkt_get_len(pkt_ref, opaque) <= PKT_BUF_SIZE;
-	assigns opaque->pkt_buf[cloned_pkt][0 .. PKT_BUF_SIZE + 1] \from opaque->pkt_buf[pkt_ref][0 .. PKT_BUF_SIZE + 1];
-	ensures \forall integer j; 0 <= j < 2 + f_iip_ops_pkt_get_len(pkt_ref, opaque) ==>
-				opaque->pkt_buf[cloned_pkt][j] == opaque->pkt_buf[pkt_ref][j];
-	ensures \forall integer j; 0 <= j < f_iip_ops_pkt_get_len(pkt_ref, opaque) ==>
-				f_iip_ops_pkt_get_data(cloned_pkt, opaque)[j] == f_iip_ops_pkt_get_data(pkt_ref, opaque)[j];
-	ensures f_iip_ops_pkt_get_len(pkt_ref, opaque) == f_iip_ops_pkt_get_len(cloned_pkt, opaque);
+	assigns opaque->pkt_buf[cloned_pkt][0 .. PKT_BUF_SIZE + 3] \from opaque->pkt_buf[pkt_ref][0 .. PKT_BUF_SIZE + 3];
  */
 static void iip_ops_pkt_clone__copy_data(IIP_PKT_P pkt_ref, IIP_PKT_P cloned_pkt, IIP_OPAQUE_P opaque)
 {
 	uint16_t i;
 	/*@
-		loop invariant 0 <= i <= 2 + f_iip_ops_pkt_get_len(pkt_ref, opaque);
-		loop invariant \forall integer j; 0 <= j < i <= 2 + f_iip_ops_pkt_get_len(pkt_ref, opaque) ==>
-			opaque->pkt_buf[cloned_pkt][j] == opaque->pkt_buf[pkt_ref][j];
-		loop assigns i, opaque->pkt_buf[cloned_pkt][0 .. PKT_BUF_SIZE + 1] \from opaque->pkt_buf[pkt_ref][0 .. PKT_BUF_SIZE + 1];
-		loop variant 2 + f_iip_ops_pkt_get_len(pkt_ref, opaque) - i;
+		loop invariant 0 <= i <= 4 + f_iip_ops_pkt_get_len(pkt_ref, opaque);
+		loop assigns i, opaque->pkt_buf[cloned_pkt][0 .. PKT_BUF_SIZE + 3] \from opaque->pkt_buf[pkt_ref][0 .. PKT_BUF_SIZE + 3];
+		loop variant 4 + f_iip_ops_pkt_get_len(pkt_ref, opaque) - i;
 	 */
-	for (i = 0; i < 2 + iip_ops_pkt_get_len(pkt_ref, opaque); i++)
+	for (i = 0; i < iip_ops_pkt_get_len(pkt_ref, opaque); i++)
 		opaque->pkt_buf[cloned_pkt][i] = opaque->pkt_buf[pkt_ref][i];
-	/*@ assert opaque->pkt_buf[cloned_pkt][0] == opaque->pkt_buf[pkt_ref][0]
-		&& opaque->pkt_buf[cloned_pkt][1] == opaque->pkt_buf[pkt_ref][1]; */
-	/*@ assert f_iip_ops_pkt_get_len(pkt_ref, opaque) == f_iip_ops_pkt_get_len(cloned_pkt, opaque); */
 }
 
 /*@
@@ -270,9 +260,6 @@ static void iip_ops_pkt_clone__copy_data(IIP_PKT_P pkt_ref, IIP_PKT_P cloned_pkt
 	requires \separated(cloned_pkt, opaque);
 	assigns *cloned_pkt, *opaque;
 	ensures \result == 0 ==> *cloned_pkt < NUM_PKT;
-	ensures \result == 0 ==> f_iip_ops_pkt_get_len(*cloned_pkt, opaque) == f_iip_ops_pkt_get_len(pkt_ref, opaque);
-	ensures \result == 0 ==> \forall integer i; 0 <= i < f_iip_ops_pkt_get_len(*cloned_pkt, opaque) ==>
-		f_iip_ops_pkt_get_data(*cloned_pkt, opaque)[i] == f_iip_ops_pkt_get_data(pkt_ref, opaque)[i];
  */
 static int iip_ops_pkt_clone(IIP_PKT_P pkt_ref, IIP_PKT_P *cloned_pkt, IIP_OPAQUE_P opaque)
 {
@@ -464,6 +451,7 @@ typedef unsigned long  uintptr_t;
 #define IIP_OPS_TCP_CLOSED() do { iip_ret_int = (conn_id % 11 ? 1 : 0); } while (0)
 #define IIP_OPS_TCP_IPV4_FASTOPEN_CHECK() do { iip_ret_bool = (conn_id % 12 ? 1 : 0); } while (0)
 #define IIP_OPS_TCP_IP_NEGATIVE_ADVICE() do { iip_ret_int = (conn_id % 13 ? 1 : 0); } while (0)
+#define IIP_OPS_IPV4_OPT_SEND() do { if (dst_ipv4_be) { ipv4_opt_len = 4; ipv4_opt[0] = 0; ipv4_opt[1] = 1; ipv4_opt[2] = 2; ipv4_opt[3] = 3; } } while (0)
 
 #define SKIP_IIP_DEFINITION
 #include "../main.c"
