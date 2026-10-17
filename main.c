@@ -152,6 +152,7 @@ struct ii_extent_queue {
 #define II_TCP_CONN_FLAGS_RETRANSMIT (1U << 12)
 #define II_TCP_CONN_FLAGS_OPT_WS (1U << 13)
 #define II_TCP_CONN_FLAGS_NAGLE_DISABLED (1U << 14)
+#define II_TCP_CONN_FLAGS_CLOSE_RST (1U << 15)
 
 #define II_DEFINE_RING(_obj_name, _type, _cnt) \
 struct ii_##_obj_name##__ring { \
@@ -3898,6 +3899,7 @@ static void ii_tcp_conn_handle_rst(IIP_MEM_P w, IIP_TCP_CONN_P conn_id)
 			&& !(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN)) /* passive open */
 		II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_SKIP_TCP_CLOSE_CALLBACK;
 	if (II_TCP_CONN(conn_id).state != II_TCP_STATE_CLOSED) {
+		II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_CLOSE_RST;
 		ii_tcp_conn_set_state(w, conn_id, II_TCP_STATE_CLOSED);
 		ii_tcp_conn_enter_close_phase(w, conn_id);
 	}
