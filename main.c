@@ -521,7 +521,7 @@ int printf_nothing(const char *format, ...) { (void) format; return 0; }
 #define IIP_OPS_PKT_GET_LEN() do { iip_ret_len = 0; } while (0)
 #endif
 #ifndef IIP_OPS_PKT_SET_LEN
-#define IIP_OPS_PKT_SET_LEN() do { iip_ret_int = 0; } while (0)
+#define IIP_OPS_PKT_SET_LEN() do { iip_ret_int = 0; (void) len; } while (0)
 #endif
 #ifndef IIP_OPS_PKT_SCATTER_GATHER_APPEND
 #define IIP_OPS_PKT_SCATTER_GATHER_APPEND() do { iip_ret_int = 0; } while (0)
@@ -567,7 +567,7 @@ int printf_nothing(const char *format, ...) { (void) format; return 0; }
 #define IIP_OPS_TCP_CLOSED() do { iip_ret_int = 0; } while (0)
 #endif
 #ifndef IIP_OPS_TCP_CONNECTED
-#define IIP_OPS_TCP_CONNECTED() do { iip_ret_int = 0; } while (0)
+#define IIP_OPS_TCP_CONNECTED() do { iip_ret_int = 0; (void) opaque; } while (0)
 #endif
 #ifndef IIP_OPS_TCP_ACCEPTED
 #define IIP_OPS_TCP_ACCEPTED() do { iip_ret_int = 0; } while (0)
@@ -579,7 +579,7 @@ int printf_nothing(const char *format, ...) { (void) format; return 0; }
 #define IIP_OPS_TCP_FASTOPEN_REQUEST() do { iip_ret_int = 0; } while (0)
 #endif
 #ifndef IIP_OPS_TCP_PAYLOAD
-#define IIP_OPS_TCP_PAYLOAD() do { iip_ret_int = 0; } while (0)
+#define IIP_OPS_TCP_PAYLOAD() do { iip_ret_int = 0; (void) opaque; } while (0)
 #endif
 #ifndef IIP_OPS_TCP_STATE_CLOSE_WAIT
 #define IIP_OPS_TCP_STATE_CLOSE_WAIT() do { iip_ret_int = 0; } while (0)
