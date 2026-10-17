@@ -5856,15 +5856,17 @@ static enum iip_rc ii_tcp_rx_push(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P p
  */
 static void ii_tcp_pb_init__base(IIP_MEM_P w, II_PB_P pb_id, uint8_t tcp_hdr[II_TCP_HDR_LEN_MINIMAL])
 {
-	{
-		struct ii_pb clear_pb = { 0 };
-		II_PB(pb_id).tcp = clear_pb.tcp;
-	}
+	II_PB(pb_id).tcp.info_flags = 0;
 	II_PB(pb_id).tcp.seq = ii_ntohl(ii_read_uint32(&tcp_hdr[4]));
 	II_PB(pb_id).tcp.ack_seq = ii_ntohl(ii_read_uint32(&tcp_hdr[8]));
 	II_PB(pb_id).tcp.flags = ii_ntohs(ii_read_uint16(&tcp_hdr[12]));
 	II_PB(pb_id).tcp.win = ii_ntohs(ii_read_uint16(&tcp_hdr[14]));
+	II_PB(pb_id).tcp.payload_len = 0;
+	II_PB(pb_id).tcp.sent_bytes = 0;
+	II_PB(pb_id).tcp.inc_head = 0;
+	II_PB(pb_id).tcp.dec_tail = 0;
 	II_PB(pb_id).tcp.urg_p = ii_ntohs(ii_read_uint16(&tcp_hdr[18]));
+	II_PB(pb_id).tcp.opt.ts[0] = II_PB(pb_id).tcp.opt.ts[1] = 0;
 	if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_URG)
 		II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_URGENT;
 }
