@@ -572,6 +572,12 @@ g++ -Werror -Wextra -Wall -pedantic -std=c++98 -nostartfiles -nodefaultlibs -nos
 
 Note that the program above is just for checking whether ```main.c``` can be compiled or not, and the generated binary ```a.out``` is not runnable.
 
+## update history
+
+- current: API and data structure changes for compatibility with RFC and formal verification with Frama-C.
+- [d741349](https://github.com/yasukata/iip/tree/d741349ebc5696754988254a911b825ead5d666f): minor API change and enhancement in compatibility with RFC
+- [2849f82](https://github.com/yasukata/iip/tree/2849f822fab6cb118982d2ce622f0f8e1d7f2b31): basic implementation
+
 ## more information
 
 ### paper
