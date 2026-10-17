@@ -455,6 +455,7 @@ typedef unsigned long  uintptr_t;
 #define IIP_OPS_TCP_IP_NEGATIVE_ADVICE() do { iip_ret_int = (conn_id % 13 ? 1 : 0); } while (0)
 #define IIP_OPS_IPV4_OPT_SEND() do { if (dst_ipv4_be) { ipv4_opt_len = 4; ipv4_opt[0] = 0; ipv4_opt[1] = 1; ipv4_opt[2] = 2; ipv4_opt[3] = 3; } } while (0)
 #define IIP_OPS_IPV4_TCP_INPUT_FILTER() do { if (pb_id % 2) iip_ret_bool = true; else iip_ret_bool = false;  } while (0)
+#define IIP_OPS_UDP_ACCEPT() do { iip_ret_bool = pb_id % 4 ? true : false; } while (0)
 
 #define SKIP_IIP_DEFINITION
 #include "../main.c"
