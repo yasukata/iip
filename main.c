@@ -5461,7 +5461,17 @@ static enum iip_rc ii_tcp_send_ack_immediate(IIP_MEM_P w, IIP_TCP_CONN_P conn_id
 	{
 		uint8_t xmit_len = 0;
 		uint8_t tcp_opt_len = 0;
-		uint8_t tcp_hdr[II_TCP_HDR_LEN_MINIMAL];
+		uint8_t tcp_hdr[II_TCP_HDR_LEN_MINIMAL + 12];
+		if (II_CONF_TCP_OPT_TS_OK
+				&& (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_OPT_SET_TS)) { /* time stamp */
+			tcp_hdr[II_TCP_HDR_LEN_MINIMAL + 0] = 1; /* nop */
+			tcp_hdr[II_TCP_HDR_LEN_MINIMAL + 1] = 1; /* nop */
+			tcp_hdr[II_TCP_HDR_LEN_MINIMAL + 2] = 8;
+			tcp_hdr[II_TCP_HDR_LEN_MINIMAL + 3] = 10;
+			ii_write_uint32(tcp_hdr + II_TCP_HDR_LEN_MINIMAL + 4, ii_htonl(w->tcp.pkt_ts));
+			ii_write_uint32(tcp_hdr + II_TCP_HDR_LEN_MINIMAL + 8, ii_htonl(II_TCP_CONN(conn_id).ts));
+			tcp_opt_len = 12;
+		}
 		ii_write_uint16(tcp_hdr +  0, ii_htons(II_TCP_CONN(conn_id).src_port));
 		ii_write_uint16(tcp_hdr +  2, ii_htons(II_TCP_CONN(conn_id).dst_port));
 		ii_write_uint32(tcp_hdr +  4, ii_htonl(II_TCP_CONN(conn_id).sent_seq - (keep_alive ? 1 : 0)));
@@ -5483,7 +5493,7 @@ static enum iip_rc ii_tcp_send_ack_immediate(IIP_MEM_P w, IIP_TCP_CONN_P conn_id
 				buf_ptr[0] = pseudo_hdr_ipv4;
 				len[0] = sizeof(pseudo_hdr_ipv4);
 				buf_ptr[1] = tcp_hdr;
-				len[1] = sizeof(tcp_hdr);
+				len[1] = II_TCP_HDR_LEN_MINIMAL + tcp_opt_len;
 				ii_write_uint16(tcp_hdr + 16, ii_htons(ii_csum16(buf_ptr, len, 2, 0)));
 				if (ii_ipv4_send_ethernet(II_TCP_CONN(conn_id).src_mac, ii_htonl(II_TCP_CONN(conn_id).src_ip[0]),
 							II_TCP_CONN(conn_id).dst_mac, ii_htonl(II_TCP_CONN(conn_id).dst_ip[0]), 6 /* tcp */, II_TCP_CONN(conn_id).diffserv,
