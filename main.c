@@ -7482,7 +7482,9 @@ static enum iip_rc ii_periodic_timer__ipv4_fragment_expiration(IIP_MEM_P w, IIP_
 					if (ii_icmp_error_send(w, pb_id, 11 /* time exceeded */, 1 /* fragmentation */, opaque) != IIP_ERR_OK) {
 						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 					}
-					ii_free_pb(&w->pbs, pb_id);
+					if (ii_free_pb(&w->pbs, pb_id) != IIP_ERR_OK) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
 				}
 				if (ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[i], opaque) != IIP_ERR_OK) {
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
