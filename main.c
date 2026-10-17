@@ -6247,19 +6247,41 @@ static enum iip_rc ii_ipv4_udp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 	if (pb_id >= II_CONF_POOL_NUM_PB) {
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
-	if (ii_udp_rx_csum_check(w, pb_id, opaque) != IIP_ERR_OK)
-		return IIP_ERR_INVALID_RX;
+	if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	{
-		int iip_ret_int;
-		IIP_OPS_UDP_PAYLOAD();
-		if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK) {
-			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		uint8_t udp_hdr[II_UDP_HDR_LEN];
+		{
+			IIP_PKT_LEN_T copied_len;
+			if (ii_pb_payload_copy(w, pb_id,
+						II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN),
+						udp_hdr, II_UDP_HDR_LEN, &copied_len, opaque) != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+			if (copied_len != II_UDP_HDR_LEN) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 		}
-		else if (iip_ret_int) {
-			IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+		{
+			uint16_t csum = ii_read_uint16(&udp_hdr[6]);
+			if (csum) {
+				if (ii_udp_rx_csum_check(w, pb_id, opaque) != IIP_ERR_OK)
+					return IIP_ERR_INVALID_RX;
+			}
 		}
-		else
-			return IIP_ERR_OK;
+		{
+			int iip_ret_int;
+			IIP_OPS_UDP_PAYLOAD();
+			if (ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+			else if (iip_ret_int) {
+				IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+			}
+			else
+				return IIP_ERR_OK;
+		}
 	}
 }
 
