@@ -6333,8 +6333,14 @@ static enum iip_rc iip_udp_ipv4_ethernet_send_copy(IIP_MEM_P w,
 			{
 				bool iip_ret_bool;
 				IIP_OPS_UDP_TX_SKIP_SW_CHECKSUM();
-				if (!iip_ret_bool)
+				if (!iip_ret_bool) {
 					ii_write_uint16(&udp_hdr[6], ii_htons(ii_csum16(buf_ptr, len, 3, 0)));
+					{
+						uint16_t csum = ii_read_uint16(&udp_hdr[6]);
+						if (!csum)
+							ii_write_uint16(&udp_hdr[6], 0xffff);
+					}
+				}
 			}
 			{
 				return ii_ipv4_send_ethernet(src_mac, src_ipv4_be, dst_mac, dst_ipv4_be, 17 /* udp */, diffserv, &buf_ptr[1], &len[1], 2, opaque);
