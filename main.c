@@ -3931,6 +3931,8 @@ static enum iip_rc ii_tcp_conn_handle_in_order__syn_sent(IIP_MEM_P w, IIP_TCP_CO
 					/*@ assert II_PB(syn_pb_id).tcp.flags & II_TCP_FLAG_SYN; */
 #endif
 					II_PB(syn_pb_id).tcp.flags &= ~II_TCP_FLAG_SYN;
+					II_PB(syn_pb_id).tcp.flags |= II_TCP_FLAG_ACK;
+					II_PB(syn_pb_id).tcp.ack_seq = II_TCP_CONN(conn_id).ack_seq;
 					II_PB(syn_pb_id).tcp.seq += 1; /* forward for the accepted syn */
 				}
 				{ /* retransmit all */
