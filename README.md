@@ -500,6 +500,78 @@ $ frama-c -cpp-extra-args=-D_ENABLE_FRAMA_C_CHECK,-CC -wp-prover alt-ergo,cvc4,c
   Smoke Tests:      14 / 14
 ```
 
+## compilation test
+
+This section describes how to check if iip complies with C89/C++98.
+
+Please first create a directory named ```compilation``` and enter it.
+
+```
+mkdir compilation
+```
+
+```
+cd compilation
+```
+
+Please save the code below as a file named ```main.c``` in the directory ```compilation```.
+
+<details>
+
+<summary>please click here to show main.c</summary>
+
+```c
+typedef char           int8_t;
+typedef short          int16_t;
+typedef int            int32_t;
+typedef long           int64_t;
+typedef unsigned char  uint8_t;
+typedef unsigned short uint16_t;
+typedef unsigned int   uint32_t;
+typedef unsigned long  uint64_t;
+
+typedef unsigned long  uintptr_t;
+
+#define UINT16_MAX 0xffff
+#define UINT32_MAX 0xffffffff
+
+#define bool int
+#define true 1
+#define false 0
+
+#define IIP_TCP_OPAQUE_P uintptr_t
+
+#define IIP_PKT_P uint32_t
+#define IIP_OPAQUE_P uint32_t
+
+#define IIP_TCP_CONN_STRUCT_EXTRA int data
+
+#include "../main.c"
+
+void _start(void) {
+	(void) iip_run;
+	(void) iip_arp_ethernet_request;
+	(void) iip_tcp_rxbuf_consumed;
+	(void) iip_tcp_ipv4_ethernet_connect;
+	(void) iip_tcp_close;
+	(void) iip_tcp_send;
+}
+```
+
+</details>
+
+The following commands will produce ```a.out```.
+
+```
+gcc -Werror -Wextra -Wall -pedantic -std=c89 -nostartfiles -nodefaultlibs -nostdlib -nostdinc main.c
+```
+
+```
+g++ -Werror -Wextra -Wall -pedantic -std=c++98 -nostartfiles -nodefaultlibs -nostdlib -nostdinc main.c
+```
+
+Note that the program above is just for checking whether ```main.c``` can be compiled or not, and the generated binary ```a.out``` is not runnable.
+
 ## more information
 
 ### paper
