@@ -492,7 +492,8 @@ static int iip_arp_ethernet_request(IIP_MEM_P w, uint8_t local_mac[II_ETH_ADDR_L
 #ifndef SKIP_IIP_IMPLEMENTATION
 
 #ifndef IIP_OPS_DEBUG_PRINTF
-#define IIP_OPS_DEBUG_PRINTF(_fmt, ...) do { } while (0)
+int printf_nothing(const char *format, ...) { (void) format; return 0; }
+#define IIP_OPS_DEBUG_PRINTF printf_nothing
 #endif
 #ifndef IIP_OPS_ERROR_FATAL_EXT
 #define IIP_OPS_ERROR_FATAL_EXT() do { } while (0)
@@ -3413,7 +3414,7 @@ static enum iip_rc ii_tcp_rx_push__pending(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 									enum iip_rc rc = ii_pb_ring_insert(&II_TCP_CONN(conn_id).pending_ring, pb_id, slot_idx);
 									if (rc != IIP_ERR_OK) {
 										if (rc == IIP_ERR_FATAL_SYS) {
-											IIP_OPS_DEBUG_PRINTF("[%s:%u]: IPv4 pending queue fatal error\n", __func__, __LINE__);
+											IIP_OPS_DEBUG_PRINTF("IPv4 pending queue fatal error\n");
 											IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 										} else if (rc == IIP_ERR_FATAL_MEM)
 											queue_full = true;
@@ -3426,7 +3427,7 @@ static enum iip_rc ii_tcp_rx_push__pending(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 							enum iip_rc rc = ii_pb_ring_insert(&II_TCP_CONN(conn_id).pending_ring, pb_id, II_TCP_CONN(conn_id).pending_ring.head);
 							if (rc != IIP_ERR_OK) {
 								if (rc == IIP_ERR_FATAL_SYS) {
-									IIP_OPS_DEBUG_PRINTF("[%s:%u]: IPv4 pending queue fatal error\n", __func__, __LINE__);
+									IIP_OPS_DEBUG_PRINTF("IPv4 pending queue fatal error\n");
 									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 								} else if (rc == IIP_ERR_FATAL_MEM)
 									queue_full = true;
@@ -3435,7 +3436,7 @@ static enum iip_rc ii_tcp_rx_push__pending(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 					}
 				}
 				if (queue_full) {
-					IIP_OPS_DEBUG_PRINTF("[%s:%u]: IPv4 pending queue is full (%u), so discard all entries\n", __func__, __LINE__, II_CONF_TCP_RING_SLOT_LEN);
+					IIP_OPS_DEBUG_PRINTF("IPv4 pending queue is full (%u), so discard all entries\n", II_CONF_TCP_RING_SLOT_LEN);
 					if (ii_pb_ring_validation(&II_TCP_CONN(conn_id).pending_ring) != IIP_ERR_OK) {
 						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 					}
@@ -4813,7 +4814,7 @@ static void ii_tcp_conn_input_one__check_dup_ack(IIP_MEM_P w, IIP_TCP_CONN_P con
 		if (II_TCP_CONN(conn_id).dup_ack_received == 3) {
 			II_TCP_CONN(conn_id).dup_ack_received = 0;
 			ii_tcp_loss_detected(w, conn_id);
-			IIP_OPS_DEBUG_PRINTF("[%s:%u]: loss detected because of dup ack\n", __func__, __LINE__);
+			IIP_OPS_DEBUG_PRINTF("loss detected because of dup ack\n");
 		}
 	}
 }
@@ -5100,7 +5101,7 @@ static enum iip_rc ii_tcp_conn_queue_retx_data__trigger(IIP_MEM_P w, struct ii_e
 			if (le != eq->extent[i].v && !ii_seq_ordered(le, eq->extent[i].v)) {
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
-			IIP_OPS_DEBUG_PRINTF("[%s:%u]: TCP (conn %u) retransmission seq %u (len %u)\n", __func__, __LINE__, conn_id, eq->extent[i].v, eq->extent[i].v - le);
+			IIP_OPS_DEBUG_PRINTF("TCP (conn %u) retransmission seq %u (len %u)\n", conn_id, eq->extent[i].v, eq->extent[i].v - le);
 			{
 				uint32_t len = eq->extent[i].v - le;
 				if (len > tx_space - retx_b)
@@ -5298,7 +5299,7 @@ static enum iip_rc ii_tcp_conn_retx_timeout_check(IIP_MEM_P w, IIP_TCP_CONN_P co
 					if (ii_tcp_loss_detected(w, conn_id) != IIP_ERR_OK) {
 						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 					}
-					IIP_OPS_DEBUG_PRINTF("[%s:%u]: loss detected because of timeout\n", __func__, __LINE__);
+					IIP_OPS_DEBUG_PRINTF("loss detected because of timeout\n");
 				}
 			} else {
 				ii_tcp_conn_set_state(w, conn_id, II_TCP_STATE_CLOSED);
@@ -5827,7 +5828,7 @@ static enum iip_rc ii_tcp_rx_push(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P p
 						}
 					}
 				} else {
-					IIP_OPS_DEBUG_PRINTF("[%s:%u]: TCP unexpected seq %u (expected %u)\n", __func__, __LINE__, II_TCP_CONN(conn_id).seq_next_expected, ii_tcp_seq_le_raw(w, push_pb_id));
+					IIP_OPS_DEBUG_PRINTF("TCP unexpected seq %u (expected %u)\n", II_TCP_CONN(conn_id).seq_next_expected, ii_tcp_seq_le_raw(w, push_pb_id));
 					II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING; /* send ack for packet loss detection */
 					return ii_tcp_rx_push__pending(w, conn_id, push_pb_id, opaque);
 				}
@@ -6023,7 +6024,7 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 													if (ii_tcp_loss_detected(w, conn_id) != IIP_ERR_OK) {
 														IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 													}
-													IIP_OPS_DEBUG_PRINTF("[%s:%u]: loss detected because of sack\n", __func__, __LINE__);
+													IIP_OPS_DEBUG_PRINTF("loss detected because of sack\n");
 												}
 											}
 										}
