@@ -2575,7 +2575,7 @@ static enum iip_rc ii_icmp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque
 	requires \separated(w, opaque);
 	assigns *w, *opaque;
  */
-static enum iip_rc ii_icmp_error_send(IIP_MEM_P w, II_PB_P pb_id, uint8_t error_type, uint8_t error_code, IIP_OPAQUE_P opaque)
+static enum iip_rc ii_icmp_error_send(IIP_MEM_P w, II_PB_P pb_id, uint8_t error_type, uint8_t error_code, uint8_t rest0, IIP_OPAQUE_P opaque)
 {
 	if (pb_id >= II_CONF_POOL_NUM_PB) {
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
@@ -2612,7 +2612,7 @@ static enum iip_rc ii_icmp_error_send(IIP_MEM_P w, II_PB_P pb_id, uint8_t error_
 				icmp_hdr[1] = error_code;
 				icmp_hdr[2] = 0; /* csum_be */
 				icmp_hdr[3] = 0; /* csum_be */
-				icmp_hdr[4] = 0; /* rest */
+				icmp_hdr[4] = rest0; /* rest */
 				icmp_hdr[5] = 0; /* rest */
 				icmp_hdr[6] = 0; /* rest */
 				icmp_hdr[7] = 0; /* rest */
@@ -6426,7 +6426,7 @@ static enum iip_rc ii_ipv4_udp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 				}
 			}
 		} else {
-			if (ii_icmp_error_send(w, pb_id, 3 /* unreachable */, 3 /* closed udp port */, opaque) != IIP_ERR_OK) {
+			if (ii_icmp_error_send(w, pb_id, 3 /* unreachable */, 3 /* closed udp port */, 0, opaque) != IIP_ERR_OK) {
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
 		}
@@ -6993,18 +6993,23 @@ static enum iip_rc ii_ipv4_rx_csum_check(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQ
 
 /*@
 	requires 0 < buf_len ==> \valid_read(buf + (0 .. buf_len - 1));
-	assigns \nothing;
+	requires \valid(send_icmp_error);
+	requires \valid(err_p);
+	requires \separated(send_icmp_error, err_p);
+	assigns *send_icmp_error, *err_p;
  */
-static enum iip_rc ii_ipv4_opt_validation(uint8_t *buf, uint16_t buf_len, uint16_t ipv4_opt_len)
+static enum iip_rc ii_ipv4_opt_validation(uint8_t *buf, uint16_t buf_len, uint16_t ipv4_opt_len, bool *send_icmp_error, uint8_t *err_p)
 {
+	*send_icmp_error = false;
 	if (ipv4_opt_len > buf_len || ipv4_opt_len > 40)
 		return IIP_ERR_INVALID_RX;
 	{
+		uint8_t err_ptr;
 		uint16_t i, is_err;
 		/*@
 			loop invariant 0 <= i <= ipv4_opt_len;
 			loop invariant 0 <= is_err <= 1;
-			loop assigns i, is_err;
+			loop assigns i, is_err, err_ptr;
 			loop variant ipv4_opt_len - i;
 		 */
 		for (i = 0, is_err = 0; i < ipv4_opt_len && !is_err; i++) {
@@ -7017,16 +7022,20 @@ static enum iip_rc ii_ipv4_opt_validation(uint8_t *buf, uint16_t buf_len, uint16
 			default:
 				if ((uint32_t) i + 1 < ipv4_opt_len) {
 					uint8_t opt_len = buf[i + 1];
-					if (opt_len < 2 || i + opt_len > ipv4_opt_len)
+					if (opt_len < 2 || i + opt_len > ipv4_opt_len) {
 						is_err = 1;
-					else
+						err_ptr = II_IPV4_HDR_LEN_MINIMAL + i + 1;
+					} else
 						i = i + opt_len - 1;
-				} else
+				} else {
 					is_err = 1;
+					err_ptr = II_IPV4_HDR_LEN_MINIMAL + i;
+				}
 			}
 		}
 		if (is_err) {
-			/* TODO: send icmp error */
+			*send_icmp_error = true;
+			*err_p = err_ptr;
 			return IIP_ERR_INVALID_RX;
 		}
 	}
@@ -7066,9 +7075,32 @@ static enum iip_rc ii_ipv4_input(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opa
 		if (ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN) < II_IPV4_HDR_LEN_MINIMAL) {
 			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 		}
-		if (!(buf_len > II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL
-					&& ii_ipv4_opt_validation(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL, buf_len - II_ETH_HDR_LEN - II_IPV4_HDR_LEN_MINIMAL, ii_extract_ipv4_opt_len(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN)) == IIP_ERR_OK))
+		if (buf_len < II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL)
 			return IIP_ERR_INVALID_RX;
+		{
+			bool send_icmp_error;
+			uint8_t err_ptr;
+			if (ii_ipv4_opt_validation(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL, buf_len - II_ETH_HDR_LEN - II_IPV4_HDR_LEN_MINIMAL, ii_extract_ipv4_opt_len(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN), &send_icmp_error, &err_ptr) != IIP_ERR_OK) {
+				if (send_icmp_error && !ii_extract_ipv4_off(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN)) {
+					II_PB_P pb_id;
+					{
+						enum iip_rc rc = ii_alloc_pb(&w->pbs, &pb_id);
+						if (rc != IIP_ERR_OK) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
+					}
+					II_PB(pb_id).part_pkt[0] = rx_pkt;
+					II_PB(pb_id).cnt = 1;
+					if (ii_icmp_error_send(w, pb_id, 12 /* parameter problem */, 0, err_ptr, opaque) != IIP_ERR_OK) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					if (ii_free_pb(&w->pbs, pb_id) != IIP_ERR_OK) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+				}
+				return IIP_ERR_INVALID_RX;
+			}
+		}
 		if (ii_extract_ipv4_off(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN) || ii_extract_ipv4_more_flag(ii_call_pkt_get_data(rx_pkt, opaque) + II_ETH_HDR_LEN))
 			return ii_ipv4_frag_push(w, rx_pkt, opaque);
 		else
@@ -7479,7 +7511,7 @@ static enum iip_rc ii_periodic_timer__ipv4_fragment_expiration(IIP_MEM_P w, IIP_
 						}
 					}
 					II_PB(pb_id) = w->ipv4_frag[i];
-					if (ii_icmp_error_send(w, pb_id, 11 /* time exceeded */, 1 /* fragmentation */, opaque) != IIP_ERR_OK) {
+					if (ii_icmp_error_send(w, pb_id, 11 /* time exceeded */, 1 /* fragmentation */, 0, opaque) != IIP_ERR_OK) {
 						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 					}
 					if (ii_free_pb(&w->pbs, pb_id) != IIP_ERR_OK) {
