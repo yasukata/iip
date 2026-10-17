@@ -6096,10 +6096,6 @@ static void ii_ipv4_tcp_conn_init(IIP_MEM_P w, IIP_TCP_CONN_P conn_id,
 		uint8_t dst_mac[II_ETH_ADDR_LEN], uint32_t dst_ipv4_be, uint16_t dst_port_be,
 		uint32_t seq_next_expected_be)
 {
-	{
-		struct ii_tcp_conn clear_conn = { 0 };
-		II_TCP_CONN(conn_id) = clear_conn;
-	}
 	II_TCP_CONN(conn_id).src_mac[0] = src_mac[0];
 	II_TCP_CONN(conn_id).src_mac[1] = src_mac[1];
 	II_TCP_CONN(conn_id).src_mac[2] = src_mac[2];
@@ -6116,21 +6112,51 @@ static void ii_ipv4_tcp_conn_init(IIP_MEM_P w, IIP_TCP_CONN_P conn_id,
 	II_TCP_CONN(conn_id).dst_ip[0] = ii_ntohl(dst_ipv4_be);
 	II_TCP_CONN(conn_id).src_port = ii_ntohs(src_port_be);
 	II_TCP_CONN(conn_id).dst_port = ii_ntohs(dst_port_be);
+	II_TCP_CONN(conn_id).flags = 0;
 	II_TCP_CONN(conn_id).state = II_TCP_STATE_SYN_RECVD;
+	II_TCP_CONN(conn_id).dup_ack_received = 0;
+	II_TCP_CONN(conn_id).retrans_cnt = 0;
+	II_TCP_CONN(conn_id).retrans_r1 = 3;
+	II_TCP_CONN(conn_id).retrans_r2 = 12; /* retransmission must continue longer than 180 seconds */
+	II_TCP_CONN(conn_id).ws = 0;
+	II_TCP_CONN(conn_id).diffserv = 0;
 	II_TCP_CONN(conn_id).mss = IIP_CONF_TCP_INIT_MSS;
 	II_TCP_CONN(conn_id).path_mtu = 1360; /* TODO */
 	II_TCP_CONN(conn_id).seq_next_expected = ii_ntohl(seq_next_expected_be);
+	II_TCP_CONN(conn_id).ack_seq_pushed = 0;
+	II_TCP_CONN(conn_id).ack_seq_xmitted = 0;
 	II_TCP_CONN(conn_id).iss = w->tcp.iss;
-	II_TCP_CONN(conn_id).sent_seq = II_TCP_CONN(conn_id).seq = II_TCP_CONN(conn_id).acked_seq = II_TCP_CONN(conn_id).iss;
+	II_TCP_CONN(conn_id).ts = 0;
+	II_TCP_CONN(conn_id).retx_bytes = 0;
+	II_TCP_CONN(conn_id).seq = II_TCP_CONN(conn_id).iss;
+	II_TCP_CONN(conn_id).ack_seq = 0;
+	II_TCP_CONN(conn_id).acked_seq = II_TCP_CONN(conn_id).iss;
+	II_TCP_CONN(conn_id).peer_win = 0;
+	II_TCP_CONN(conn_id).max_peer_win = 0;
+	II_TCP_CONN(conn_id).sent_seq = II_TCP_CONN(conn_id).iss;
+	II_TCP_CONN(conn_id).sent_seq_when_loss_detected = 0;
+	II_TCP_CONN(conn_id).fin_ack_seq = 0;
+	II_TCP_CONN(conn_id).time_wait_ts_ms = 0;
+	II_TCP_CONN(conn_id).keepalive_ts = 0;
 	II_TCP_CONN(conn_id).keepalive_interval_ms = 7200000;
-	II_TCP_CONN(conn_id).buf.capacity = IIP_CONF_TCP_RX_BUF_CAPACITY;
-	II_TCP_CONN(conn_id).sack.cnt = 0;
-	II_TCP_CONN(conn_id).cc.win = 10;
-	II_TCP_CONN(conn_id).cc.ssthresh = 65535;
-	II_TCP_CONN(conn_id).retrans_r1 = 3;
-	II_TCP_CONN(conn_id).retrans_r2 = 12; /* retransmission must continue longer than 180 seconds */
 	II_TCP_CONN(conn_id).rto_ms = 0;
 	II_TCP_CONN(conn_id).rto_expire = UINT16_MAX;
+	II_TCP_CONN(conn_id).snd_sws_ts = 0;
+	II_TCP_CONN(conn_id).probe_ts = 0;
+	II_TCP_CONN(conn_id).probe_rto_ms = 0;
+	II_TCP_CONN(conn_id).rx_ring.head = II_TCP_CONN(conn_id).rx_ring.tail = 0;
+	II_TCP_CONN(conn_id).tx_ring.head = II_TCP_CONN(conn_id).tx_ring.tail = 0;
+	II_TCP_CONN(conn_id).sent_ring.head = II_TCP_CONN(conn_id).sent_ring.tail = 0;
+	II_TCP_CONN(conn_id).pending_ring.head = II_TCP_CONN(conn_id).pending_ring.tail = 0;
+	II_TCP_CONN(conn_id).sack.cnt = 0;
+	II_TCP_CONN(conn_id).buf.capacity = IIP_CONF_TCP_RX_BUF_CAPACITY;
+	II_TCP_CONN(conn_id).buf.used = 0;
+	II_TCP_CONN(conn_id).buf.adv_cnt = 0;
+	II_TCP_CONN(conn_id).rtt.srtt = 0;
+	II_TCP_CONN(conn_id).rtt.rttvar = 0;
+	II_TCP_CONN(conn_id).cc.win = 10;
+	II_TCP_CONN(conn_id).cc.ssthresh = 65535;
+	II_TCP_CONN(conn_id).fastopen_cookie.len = 0;
 	IIP_OPS_TCP_CONN_INIT();
 }
 
