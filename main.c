@@ -3205,7 +3205,8 @@ static uint32_t ii_tcp_rx_window(IIP_MEM_P w, IIP_TCP_CONN_P conn_id)
 static bool ii_tcp_seq_entirely_exceed_win(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id)
 {
 	if (ii_tcp_rx_window(w, conn_id) == 0
-			|| ii_seq_ordered(ii_tcp_rx_window(w, conn_id), ii_tcp_seq_le(w, conn_id, pb_id))) {
+			|| ii_seq_ordered(ii_tcp_rx_window(w, conn_id), ii_tcp_seq_le(w, conn_id, pb_id))
+			|| ii_tcp_rx_window(w, conn_id) == ii_tcp_seq_le(w, conn_id, pb_id)) {
 		/*
 		 *      le          re
 		 *       |-----------|
