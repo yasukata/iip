@@ -480,7 +480,7 @@ static int iip_run(IIP_MEM_P w, IIP_PKT_P pkt[], IIP_PKT_CNT_T cnt, uint32_t *ne
 static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 		uint8_t src_mac[II_ETH_ADDR_LEN], uint32_t src_ipv4_be, uint16_t src_port_be,
 		uint8_t dst_mac[II_ETH_ADDR_LEN], uint32_t dst_ipv4_be, uint16_t dst_port_be,
-		IIP_PKT_P *pkt, IIP_PKT_CNT_T cnt, uint8_t *fastopen_cookie_buf, uint8_t fastopen_cookie_len, uint8_t diffserv,
+		IIP_PKT_P *pkt, IIP_PKT_CNT_T cnt, uint8_t *fastopen_cookie_buf, uint8_t fastopen_cookie_len,
 		IIP_OPAQUE_P opaque);
 static enum iip_rc iip_tcp_close(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPAQUE_P opaque);
 static int iip_tcp_send(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_PKT_P pkts[], IIP_PKT_CNT_T cnt, IIP_OPAQUE_P opaque);
@@ -6180,7 +6180,7 @@ static void ii_ipv4_tcp_conn_init(IIP_MEM_P w, IIP_TCP_CONN_P conn_id,
 static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 		uint8_t src_mac[II_ETH_ADDR_LEN], uint32_t src_ipv4_be, uint16_t src_port_be,
 		uint8_t dst_mac[II_ETH_ADDR_LEN], uint32_t dst_ipv4_be, uint16_t dst_port_be,
-		IIP_PKT_P *pkt, IIP_PKT_CNT_T cnt, uint8_t *fastopen_cookie_buf, uint8_t fastopen_cookie_len, uint8_t diffserv,
+		IIP_PKT_P *pkt, IIP_PKT_CNT_T cnt, uint8_t *fastopen_cookie_buf, uint8_t fastopen_cookie_len,
 		IIP_OPAQUE_P opaque)
 {
 	IIP_TCP_CONN_P conn_id;
@@ -6198,7 +6198,6 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 				dst_port_be,
 				0);
 		II_HOOK_TCP_IPV4_ETHERNET_CONNECT();
-		II_TCP_CONN(conn_id).diffserv = diffserv;
 		II_TCP_CONN(conn_id).peer_win = 0xffff;
 		II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_WS;
 		II_TCP_CONN(conn_id).ws = 7;
