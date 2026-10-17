@@ -3919,17 +3919,11 @@ static enum iip_rc ii_tcp_conn_handle_in_order__syn_sent(IIP_MEM_P w, IIP_TCP_CO
 				 * remove syn and reconstruct the first packet
 				 * since syn will not be sent anymore, we directly overwrite the original packet for further retransmissions
 				 */
-#if 0
-				/*@ assert II_TCP_CONN(conn_id).sent_ring.head != II_TCP_CONN(conn_id).sent_ring.tail; */
-#endif
 				{ /* assuming only the first packet has syn */
 					II_PB_P syn_pb_id = II_TCP_CONN(conn_id).sent_ring.slot[II_TCP_CONN(conn_id).sent_ring.tail];
 					if (syn_pb_id >= II_CONF_POOL_NUM_PB) {
 						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 					}
-#if 0
-					/*@ assert II_PB(syn_pb_id).tcp.flags & II_TCP_FLAG_SYN; */
-#endif
 					II_PB(syn_pb_id).tcp.flags &= ~II_TCP_FLAG_SYN;
 					II_PB(syn_pb_id).tcp.flags |= II_TCP_FLAG_ACK;
 					II_PB(syn_pb_id).tcp.ack_seq = II_TCP_CONN(conn_id).ack_seq;
