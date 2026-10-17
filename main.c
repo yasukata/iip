@@ -5998,6 +5998,8 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 		}
 		if ((II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) && !mss_set)
 			II_TCP_CONN(conn_id).mss = 536;
+		if (ii_tcp_hdr_has_syn(w, pb_id) && II_PB(pb_id).tcp.payload_len && !(II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_FASTOPEN_VALID))
+			II_PB(pb_id).tcp.dec_tail = II_PB(pb_id).tcp.payload_len;
 		return IIP_ERR_OK;
 	}
 }
