@@ -4544,19 +4544,28 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__trigger(IIP_MEM_P w, IIP_TCP_CON
 									if (!iip_ret_bool)
 										ii_write_uint16(tcp_hdr + 16, ii_htons(ii_csum16(buf_ptr, len, 3 + i, 0)));
 								}
-								if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque)) {
-									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-								}
 								{
-									bool iip_ret_bool;
-									IIP_OPS_NIC_FEATURE_OFFLOAD_TX_SCATTER_GATHER();
-									if (iip_ret_bool && II_PB(pb_id).cnt == 1 && xmit_len == ii_call_pkt_get_len(II_PB(pb_id).part_pkt[0], opaque)) {
-										if (ii_ipv4_send_ethernet_zero_copy(II_TCP_CONN(conn_id).src_mac, ii_htonl(II_TCP_CONN(conn_id).src_ip[0]),
-													II_TCP_CONN(conn_id).dst_mac, ii_htonl(II_TCP_CONN(conn_id).dst_ip[0]), 6 /* tcp */, II_TCP_CONN(conn_id).diffserv,
-													&buf_ptr[1], &len[1], 2, II_PB(pb_id).part_pkt[0], II_PB(pb_id).tcp.payload_len, opaque) != IIP_ERR_OK) {
-											IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									bool sent = false;
+									{
+										bool iip_ret_bool;
+										IIP_OPS_NIC_FEATURE_OFFLOAD_TX_SCATTER_GATHER();
+										if (iip_ret_bool) {
+											if (II_PB(pb_id).cnt == 1) {
+												if (!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque)) {
+													IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+												}
+												if (xmit_len == ii_call_pkt_get_len(II_PB(pb_id).part_pkt[0], opaque)) {
+													if (ii_ipv4_send_ethernet_zero_copy(II_TCP_CONN(conn_id).src_mac, ii_htonl(II_TCP_CONN(conn_id).src_ip[0]),
+																II_TCP_CONN(conn_id).dst_mac, ii_htonl(II_TCP_CONN(conn_id).dst_ip[0]), 6 /* tcp */, II_TCP_CONN(conn_id).diffserv,
+																&buf_ptr[1], &len[1], 2, II_PB(pb_id).part_pkt[0], II_PB(pb_id).tcp.payload_len, opaque) != IIP_ERR_OK) {
+														IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+													}
+													sent = true;
+												}
+											}
 										}
-									} else {
+									}
+									if (!sent) {
 										if (ii_ipv4_send_ethernet(II_TCP_CONN(conn_id).src_mac, ii_htonl(II_TCP_CONN(conn_id).src_ip[0]),
 													II_TCP_CONN(conn_id).dst_mac, ii_htonl(II_TCP_CONN(conn_id).dst_ip[0]), 6 /* tcp */, II_TCP_CONN(conn_id).diffserv,
 													&buf_ptr[1], &len[1], 2 + i, opaque) != IIP_ERR_OK) {
