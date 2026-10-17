@@ -440,6 +440,7 @@ struct ii_tcp_conn {
 	struct {
 		uint32_t win;
 		uint32_t ssthresh;
+		uint32_t acked_bytes;
 	} cc;
 	struct {
 		uint8_t len;
@@ -3686,6 +3687,7 @@ static enum iip_rc ii_tcp_loss_detected(IIP_MEM_P w, IIP_TCP_CONN_P conn_id)
 	if (II_TCP_CONN(conn_id).cc.ssthresh < 2)
 		II_TCP_CONN(conn_id).cc.ssthresh = 2;
 	II_TCP_CONN(conn_id).cc.win = 1;
+	II_TCP_CONN(conn_id).cc.acked_bytes = 0;
 	II_TCP_CONN(conn_id).sent_seq_when_loss_detected = II_TCP_CONN(conn_id).seq;
 	II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_PEER_RX_FAILED;
 	return IIP_ERR_OK;
@@ -3745,6 +3747,8 @@ static enum iip_rc ii_tcp_conn_update_info(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 		II_TCP_CONN(conn_id).retrans_cnt = 0;
 		II_TCP_CONN(conn_id).acked_seq = II_PB(pb_id).tcp.ack_seq;
 		II_TCP_CONN(conn_id).dup_ack_received = 0;
+		if (II_PB(pb_id).tcp.payload_len && II_TCP_CONN(conn_id).cc.ssthresh > II_TCP_CONN(conn_id).cc.win)
+			II_TCP_CONN(conn_id).cc.win = (II_TCP_CONN(conn_id).cc.win < 65535U ? II_TCP_CONN(conn_id).cc.win + 1 : II_TCP_CONN(conn_id).cc.win);
 		if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED) {
 			if (II_PB(pb_id).tcp.ack_seq == II_TCP_CONN(conn_id).sent_seq_when_loss_detected || ii_seq_ordered(II_PB(pb_id).tcp.ack_seq, II_TCP_CONN(conn_id).sent_seq_when_loss_detected)) {
 				II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_PEER_RX_FAILED;
@@ -4336,12 +4340,33 @@ static enum iip_rc ii_tcp_release_acked(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP
 					II_PB_P pb_id = II_TCP_CONN(conn_id).sent_ring.slot[slot_idx];
 					if (II_TCP_CONN(conn_id).sent_seq - II_TCP_CONN(conn_id).acked_seq
 							<= II_TCP_CONN(conn_id).sent_seq - (II_PB(pb_id).tcp.seq + (ii_tcp_hdr_has_syn(w, pb_id) ? 1 : 0) + (ii_tcp_hdr_has_fin(w, pb_id) ? 1 : 0) + II_PB(pb_id).tcp.payload_len)) { /* A or B */
-						if (II_PB(pb_id).tcp.payload_len) {
-							if (!(II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_SACKED)) { /* increase window size for congestion control */
-								if (II_TCP_CONN(conn_id).cc.ssthresh <= II_TCP_CONN(conn_id).cc.win)
-									II_TCP_CONN(conn_id).cc.win = (II_TCP_CONN(conn_id).cc.win < 65535U ? II_TCP_CONN(conn_id).cc.win + 1 : II_TCP_CONN(conn_id).cc.win);
-								else
-									II_TCP_CONN(conn_id).cc.win = (II_TCP_CONN(conn_id).cc.win < 65535U / 2 ? II_TCP_CONN(conn_id).cc.win * 2 : 65535U);
+						if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
+							if (II_TCP_CONN(conn_id).cc.ssthresh <= II_TCP_CONN(conn_id).cc.win) {
+								if (II_PB(pb_id).tcp.payload_len) {
+									if (II_PB(pb_id).tcp.payload_len < II_PB(pb_id).tcp.inc_head + II_PB(pb_id).tcp.dec_tail) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
+									if (!II_TCP_CONN(conn_id).mss) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
+									if (!II_TCP_CONN(conn_id).cc.win) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
+									{
+										uint64_t acked = II_TCP_CONN(conn_id).cc.acked_bytes + II_PB(pb_id).tcp.payload_len - (II_PB(pb_id).tcp.inc_head + II_PB(pb_id).tcp.dec_tail);
+										/*@
+										  loop invariant 0 <= acked;
+										  loop invariant II_TCP_CONN(conn_id).mss * II_TCP_CONN(conn_id).cc.win != 0;
+										  loop assigns acked, II_TCP_CONN(conn_id).cc.win;
+										  loop variant acked;
+										 */
+										while (acked >= (uint64_t) II_TCP_CONN(conn_id).mss * II_TCP_CONN(conn_id).cc.win) {
+											acked -= (uint64_t) II_TCP_CONN(conn_id).mss * II_TCP_CONN(conn_id).cc.win;
+											II_TCP_CONN(conn_id).cc.win = (II_TCP_CONN(conn_id).cc.win < 65535U ? II_TCP_CONN(conn_id).cc.win + 1 : 65535U);
+										}
+										II_TCP_CONN(conn_id).cc.acked_bytes = acked;
+									}
+								}
 							}
 						}
 						ii_free_pb_and_pkt(w, pb_id, opaque);
@@ -6158,6 +6183,7 @@ static void ii_ipv4_tcp_conn_init(IIP_MEM_P w, IIP_TCP_CONN_P conn_id,
 	II_TCP_CONN(conn_id).rtt.rttvar = 0;
 	II_TCP_CONN(conn_id).cc.win = 10;
 	II_TCP_CONN(conn_id).cc.ssthresh = 65535;
+	II_TCP_CONN(conn_id).cc.acked_bytes = 0;
 	II_TCP_CONN(conn_id).fastopen_cookie.len = 0;
 	IIP_OPS_TCP_CONN_INIT();
 }
