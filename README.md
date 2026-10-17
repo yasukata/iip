@@ -1,14 +1,12 @@
 # iip: an integratable TCP/IP stack
 
-iip is an integratable TCP/IP stack implementation aiming to allow for easy integration and good performance simultaneously.
+iip is a formally-verifiable, fast and portable TCP/IP stack.
+
+The entire codebase of iip is [formally verifiable](#formal-verification-with-frama-c) with Frama-C and its Weakest Precondition (WP) plugin.
+
+iip [complies with C89/C++98](#compilation-test) so that it can be compiled and used for a wide range of platforms and use cases.
 
 **WARNING: The authors will not bear any responsibility if the implementations, provided by the authors, cause any problems.**
-
-## development status
-
-The implementation in this repository is currently undergoing refactoring. The goals are to improve its API and enable formal verification of the entire TCP/IP stack with Frama-C and its Weakest Precondition (WP) plugin.
-
-Many features implemented in earlier versions have not yet been ported. If you need a feature that is not available in the current version, consider using the earlier revision at [d741349](https://github.com/yasukata/iip/tree/d741349ebc5696754988254a911b825ead5d666f).
 
 ## other building blocks
 
