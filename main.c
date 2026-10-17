@@ -5459,7 +5459,6 @@ static enum iip_rc ii_tcp_send_ack_immediate(IIP_MEM_P w, IIP_TCP_CONN_P conn_id
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
 	{
-		uint8_t xmit_len = 0;
 		uint8_t tcp_opt_len = 0;
 		uint8_t tcp_hdr[II_TCP_HDR_LEN_MINIMAL + 12];
 		if (II_CONF_TCP_OPT_TS_OK
@@ -5486,10 +5485,10 @@ static enum iip_rc ii_tcp_send_ack_immediate(IIP_MEM_P w, IIP_TCP_CONN_P conn_id
 			ii_write_uint32(pseudo_hdr_ipv4 + 4, ii_htonl(II_TCP_CONN(conn_id).dst_ip[0]));
 			pseudo_hdr_ipv4[8] = 0;
 			pseudo_hdr_ipv4[9] = 6;
-			ii_write_uint16(pseudo_hdr_ipv4 + 10, ii_htons(II_TCP_HDR_LEN_MINIMAL + tcp_opt_len + xmit_len));
+			ii_write_uint16(pseudo_hdr_ipv4 + 10, ii_htons(II_TCP_HDR_LEN_MINIMAL + tcp_opt_len));
 			{
-				const uint8_t *buf_ptr[3 + II_CONF_IPV4_FRAG_CNT_MAX];
-				IIP_PKT_LEN_T len[3 + II_CONF_IPV4_FRAG_CNT_MAX];
+				const uint8_t *buf_ptr[2];
+				IIP_PKT_LEN_T len[2];
 				buf_ptr[0] = pseudo_hdr_ipv4;
 				len[0] = sizeof(pseudo_hdr_ipv4);
 				buf_ptr[1] = tcp_hdr;
