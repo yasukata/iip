@@ -494,6 +494,9 @@ static int iip_arp_ethernet_request(IIP_MEM_P w, uint8_t local_mac[II_ETH_ADDR_L
 #ifndef SKIP_IIP_IMPLEMENTATION
 
 #ifndef IIP_OPS_DEBUG_PRINTF
+/*@
+	assigns \nothing;
+ */
 int printf_nothing(const char *format, ...) { (void) format; return 0; }
 #define IIP_OPS_DEBUG_PRINTF printf_nothing
 #endif
