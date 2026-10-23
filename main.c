@@ -6321,53 +6321,66 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 		IIP_PKT_P *pkt, IIP_PKT_CNT_T cnt, uint8_t *fastopen_cookie_buf, uint8_t fastopen_cookie_len,
 		IIP_OPAQUE_P opaque)
 {
-	IIP_TCP_CONN_P conn_id;
 	{
-		enum iip_rc rc = ii_alloc_tcp_conn(&w->tcp_conns, &conn_id);
-		if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
-			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-		}
-		ii_ipv4_tcp_conn_init(w, conn_id,
-				src_mac,
-				src_ipv4_be,
-				src_port_be,
-				dst_mac,
-				dst_ipv4_be,
-				dst_port_be,
-				0);
-		II_HOOK_TCP_IPV4_ETHERNET_CONNECT();
-		II_TCP_CONN(conn_id).peer_win = 0xffff;
-		II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_WS;
-		II_TCP_CONN(conn_id).ws = 7;
-		II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
-		if (fastopen_cookie_len) {
-			if (fastopen_cookie_len > sizeof(II_TCP_CONN(conn_id).fastopen_cookie.buf))
-				return -1;
-			{
-				uint8_t i;
-				/*@
-				  loop invariant 0 <= i <= fastopen_cookie_len <= sizeof(II_TCP_CONN(conn_id).fastopen_cookie.buf);
-				  loop assigns i, II_TCP_CONN(conn_id).fastopen_cookie.buf[0 .. sizeof(II_TCP_CONN(conn_id).fastopen_cookie.buf) - 1];
-				  loop variant fastopen_cookie_len - i;
-				 */
-				for (i = 0; i < fastopen_cookie_len; i++)
-					II_TCP_CONN(conn_id).fastopen_cookie.buf[i] = fastopen_cookie_buf[i];
-				II_TCP_CONN(conn_id).fastopen_cookie.len = fastopen_cookie_len;
-				if (cnt > II_CONF_IPV4_FRAG_CNT_MAX)
+		uint32_t dst = ii_ntohl(dst_ipv4_be);
+		if (dst == 0xffffffff) /* limited broadcast */
+			return -1;
+		if (dst >> 24 == 0) /* 0.0.0.0/8 */
+			return -1;
+		if (dst >> 28 == 0xe) /* multicast Class D */
+			return -1;
+		if (dst >> 28 == 0xf) /* Class E */
+			return -1;
+	}
+	{
+		IIP_TCP_CONN_P conn_id;
+		{
+			enum iip_rc rc = ii_alloc_tcp_conn(&w->tcp_conns, &conn_id);
+			if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+			ii_ipv4_tcp_conn_init(w, conn_id,
+					src_mac,
+					src_ipv4_be,
+					src_port_be,
+					dst_mac,
+					dst_ipv4_be,
+					dst_port_be,
+					0);
+			II_HOOK_TCP_IPV4_ETHERNET_CONNECT();
+			II_TCP_CONN(conn_id).peer_win = 0xffff;
+			II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_WS;
+			II_TCP_CONN(conn_id).ws = 7;
+			II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
+			if (fastopen_cookie_len) {
+				if (fastopen_cookie_len > sizeof(II_TCP_CONN(conn_id).fastopen_cookie.buf))
 					return -1;
-				if (ii_tcp_send(w, conn_id, II_TCP_FLAG_SYN, pkt, cnt, opaque) != IIP_ERR_OK) {
+				{
+					uint8_t i;
+					/*@
+					  loop invariant 0 <= i <= fastopen_cookie_len <= sizeof(II_TCP_CONN(conn_id).fastopen_cookie.buf);
+					  loop assigns i, II_TCP_CONN(conn_id).fastopen_cookie.buf[0 .. sizeof(II_TCP_CONN(conn_id).fastopen_cookie.buf) - 1];
+					  loop variant fastopen_cookie_len - i;
+					 */
+					for (i = 0; i < fastopen_cookie_len; i++)
+						II_TCP_CONN(conn_id).fastopen_cookie.buf[i] = fastopen_cookie_buf[i];
+					II_TCP_CONN(conn_id).fastopen_cookie.len = fastopen_cookie_len;
+					if (cnt > II_CONF_IPV4_FRAG_CNT_MAX)
+						return -1;
+					if (ii_tcp_send(w, conn_id, II_TCP_FLAG_SYN, pkt, cnt, opaque) != IIP_ERR_OK) {
+						II_TCP_CONN(conn_id).state = 0;
+						return -1;
+					}
+				}
+			} else {
+				if (ii_tcp_tx_push_control(w, conn_id, II_TCP_FLAG_SYN) != IIP_ERR_OK) {
 					II_TCP_CONN(conn_id).state = 0;
 					return -1;
 				}
 			}
-		} else {
-			if (ii_tcp_tx_push_control(w, conn_id, II_TCP_FLAG_SYN) != IIP_ERR_OK) {
-				II_TCP_CONN(conn_id).state = 0;
-				return -1;
-			}
+			ii_tcp_conn_set_state(w, conn_id, II_TCP_STATE_SYN_SENT);
+			return 0;
 		}
-		ii_tcp_conn_set_state(w, conn_id, II_TCP_STATE_SYN_SENT);
-		return 0;
 	}
 }
 
