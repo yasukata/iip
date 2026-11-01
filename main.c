@@ -3237,7 +3237,7 @@ static enum iip_rc ii_pb_tcp_payload_len(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LEN
  */
 static uint32_t ii_tcp_rx_window(IIP_MEM_P w, IIP_TCP_CONN_P conn_id)
 {
-	return II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used;
+	return ii_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, II_TCP_CONN(conn_id).ws);
 }
 
 /*@ logic integer f_tcp_seq_entirely_exceed_win{L}(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id) = ((f_tcp_rx_window(w, conn_id) == 0) || (f_seq_ordered((uint32_t) f_tcp_rx_window(w, conn_id), (uint32_t) f_tcp_seq_le(w, conn_id, pb_id))) || f_tcp_rx_window(w, conn_id) == f_tcp_seq_le(w, conn_id, pb_id)) ? true : false; */
