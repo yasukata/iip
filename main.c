@@ -6484,6 +6484,12 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 								&& ii_tcp_hdr_has_rst(w, pb_id)
 								&& !ii_tcp_hdr_has_ack(w, pb_id))
 							return IIP_ERR_OK;
+						if (II_TCP_CONN(conn_id).state != II_TCP_STATE_SYN_SENT
+								&& II_TCP_CONN(conn_id).state != II_TCP_STATE_SYN_RECVD
+								&& !ii_tcp_hdr_has_rst(w, pb_id)) {
+							II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING;
+							return IIP_ERR_INVALID_RX;
+						}
 					} else { /* not found */
 						if (IE_UNLIKELY(ii_tcp_hdr_has_rst(w, pb_id)))
 							return IIP_ERR_OK; /* do nothing */
@@ -6522,7 +6528,8 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 							}
 						}
 					}
-					if (conn_id < II_CONF_POOL_NUM_TCP_CONN)
+					if (conn_id < II_CONF_POOL_NUM_TCP_CONN &&
+							(II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_SENT || II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_RECVD))
 						II_TCP_CONN(conn_id).seq_next_expected = ii_tcp_seq_le_raw(w, pb_id);
 				}
 				if (IE_UNLIKELY(conn_id == II_CONF_POOL_NUM_TCP_CONN)) {
