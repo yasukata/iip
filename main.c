@@ -5925,6 +5925,14 @@ static enum iip_rc ii_tcp_rx_push(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P p
 				}
 				if (ii_tcp_retransmitted_syn_ack(w, conn_id, pb_id))
 					II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING; /* send ack */
+				if (IE_UNLIKELY(ii_seq_ordered(II_TCP_CONN(conn_id).sent_seq, II_PB(push_pb_id).tcp.ack_seq)
+							&& II_TCP_CONN(conn_id).state != II_TCP_STATE_SYN_SENT
+							&& II_TCP_CONN(conn_id).state != II_TCP_STATE_SYN_RECVD
+							&& !ii_tcp_hdr_has_syn(w, pb_id)
+							&& !ii_tcp_hdr_has_rst(w, pb_id))) {
+					II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING;
+					return IIP_ERR_INVALID_RX;
+				}
 				if (ii_tcp_check_input_seq(w, conn_id, push_pb_id) != IIP_ERR_OK) {
 					if (!(II_PB(push_pb_id).tcp.flags & II_TCP_FLAG_RST))
 						II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING; /* send ack */
