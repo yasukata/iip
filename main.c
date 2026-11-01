@@ -6487,8 +6487,6 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 				}
 				if (conn_id < II_CONF_POOL_NUM_TCP_CONN && II_TCP_CONN(conn_id).state == II_TCP_STATE_CLOSED)
 					return IIP_ERR_OK; /* do nothing */
-				if (IE_UNLIKELY(!ii_tcp_hdr_has_ack(w, pb_id) && !ii_tcp_hdr_has_syn(w, pb_id) && !ii_tcp_hdr_has_rst(w, pb_id)))
-					return IIP_ERR_INVALID_RX;
 				if (ii_tcp_hdr_has_syn(w, pb_id)) {
 					if (IE_UNLIKELY(ii_tcp_hdr_has_fin(w, pb_id) && !ii_tcp_hdr_has_rst(w, pb_id)))
 						return IIP_ERR_INVALID_RX;
@@ -6563,6 +6561,8 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 					}
 					return IIP_ERR_INVALID_RX;
 				}
+				if (IE_UNLIKELY(!ii_tcp_hdr_has_ack(w, pb_id) && !ii_tcp_hdr_has_syn(w, pb_id) && !ii_tcp_hdr_has_rst(w, pb_id)))
+					return IIP_ERR_INVALID_RX;
 				II_PB(pb_id).tcp.rx_cnt = II_TCP_CONN(conn_id).rx_cnt++;
 				if (ii_ipv4_tcp_input__parse_opt(w, conn_id, pb_id, opaque) != IIP_ERR_OK)
 					return IIP_ERR_INVALID_RX;
