@@ -3960,14 +3960,13 @@ static void ii_tcp_conn_handle_rst(IIP_MEM_P w, IIP_TCP_CONN_P conn_id)
 /*@
 	requires \valid(w);
 	requires \valid(ack);
-	requires \valid(rst);
-	requires \separated(w, ack, rst);
+	requires \separated(w, ack);
 	requires pb_id < II_CONF_POOL_NUM_PB;
 	requires conn_id < II_CONF_POOL_NUM_TCP_CONN;
 	assigns *w;
-	assigns *ack, *rst;
+	assigns *ack;
  */
-static void ii_tcp_conn_handle_in_order__fin_wait1(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id, uint8_t *ack, uint8_t *rst)
+static void ii_tcp_conn_handle_in_order__fin_wait1(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id, uint8_t *ack)
 {
 	if (ii_tcp_hdr_has_ack(w, pb_id)) {
 		if (II_PB(pb_id).tcp.ack_seq == II_TCP_CONN(conn_id).fin_ack_seq) {
@@ -3978,15 +3977,8 @@ static void ii_tcp_conn_handle_in_order__fin_wait1(IIP_MEM_P w, IIP_TCP_CONN_P c
 			} else
 				ii_tcp_conn_set_state(w, conn_id, II_TCP_STATE_FIN_WAIT2);
 		} else if (ii_tcp_hdr_has_fin(w, pb_id)) {
-			/*
-			 * this is the case where the peer also sent fin mostly at the same time,
-			 * and especially here is for close initiators sending fin-ack
-			 * rather than than only fin
-			 */
 			*ack = 1;
-			*rst = 1;
-			ii_tcp_conn_set_state(w, conn_id, II_TCP_STATE_TIME_WAIT);
-			II_TCP_CONN(conn_id).time_wait_ts_ms = w->now_ms;
+			ii_tcp_conn_set_state(w, conn_id, II_TCP_STATE_CLOSING);
 		}
 	} else {
 		if (ii_tcp_hdr_has_fin(w, pb_id)) {
@@ -4021,7 +4013,8 @@ static void ii_tcp_conn_handle_in_order__fin_wait2(IIP_MEM_P w, IIP_TCP_CONN_P c
  */
 static void ii_tcp_conn_handle_in_order__closing(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id)
 {
-	if (ii_tcp_hdr_has_ack(w, pb_id)) {
+	if (ii_tcp_hdr_has_ack(w, pb_id)
+			&& II_TCP_CONN(conn_id).fin_ack_seq == II_PB(pb_id).tcp.ack_seq) {
 		ii_tcp_conn_set_state(w, conn_id, II_TCP_STATE_TIME_WAIT);
 		II_TCP_CONN(conn_id).time_wait_ts_ms = w->now_ms;
 	}
@@ -4282,7 +4275,7 @@ static enum iip_rc ii_tcp_conn_handle_in_order(IIP_MEM_P w, IIP_TCP_CONN_P conn_
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
 	{
-		uint8_t syn = 0, ack = 0, rst = 0, fastopen_cookie = 0;
+		uint8_t syn = 0, ack = 0, fastopen_cookie = 0;
 		switch (II_TCP_CONN(conn_id).state) {
 		case II_TCP_STATE_FIN_WAIT1:
 			{
@@ -4348,9 +4341,9 @@ static enum iip_rc ii_tcp_conn_handle_in_order(IIP_MEM_P w, IIP_TCP_CONN_P conn_
 		default:
 			break;
 		}
-		if (syn || rst) {
+		if (syn) {
 			enum iip_rc rc = ii_tcp_tx_push_control(w, conn_id,
-					(syn ? II_TCP_FLAG_SYN : 0) | (ack ? II_TCP_FLAG_ACK : 0) | (rst ? II_TCP_FLAG_RST : 0));
+					(syn ? II_TCP_FLAG_SYN : 0) | (ack ? II_TCP_FLAG_ACK : 0));
 			if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
