@@ -5970,7 +5970,11 @@ static enum iip_rc ii_tcp_rx_push(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P p
 							break;
 						}
 					}
-					II_TCP_CONN(conn_id).seq_next_expected = ii_tcp_seq_re_raw(w, push_pb_id);
+					if (II_TCP_CONN(conn_id).state != II_TCP_STATE_CLOSING
+							&& II_TCP_CONN(conn_id).state != II_TCP_STATE_LAST_ACK
+							&& II_TCP_CONN(conn_id).state != II_TCP_STATE_TIME_WAIT
+							&& II_TCP_CONN(conn_id).state != II_TCP_STATE_CLOSE_WAIT)
+						II_TCP_CONN(conn_id).seq_next_expected = ii_tcp_seq_re_raw(w, push_pb_id);
 					{
 						enum iip_rc rc = ii_pb_ring_push(&II_TCP_CONN(conn_id).rx_ring, push_pb_id);
 						if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
