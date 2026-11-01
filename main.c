@@ -6485,8 +6485,34 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 				if (IE_UNLIKELY(conn_id > II_CONF_POOL_NUM_TCP_CONN)) {
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 				}
-				if (conn_id < II_CONF_POOL_NUM_TCP_CONN && II_TCP_CONN(conn_id).state == II_TCP_STATE_CLOSED)
-					return IIP_ERR_OK; /* do nothing */
+				if (conn_id < II_CONF_POOL_NUM_TCP_CONN) {
+					if (II_TCP_CONN(conn_id).state == II_TCP_STATE_CLOSED)
+						return IIP_ERR_OK; /* do nothing */
+					if (II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_SENT) {
+						if (ii_tcp_hdr_has_ack(w, pb_id)) { /* check invalid ack */
+							if (!(ii_seq_ordered(II_TCP_CONN(conn_id).iss, II_PB(pb_id).tcp.ack_seq)
+									&& (II_PB(pb_id).tcp.ack_seq == II_TCP_CONN(conn_id).sent_seq
+										|| ii_seq_ordered(II_PB(pb_id).tcp.ack_seq, II_TCP_CONN(conn_id).sent_seq)))) { /* this has to be checked before the subsequent procedure for syn handling */
+								if (IE_UNLIKELY(!ii_tcp_hdr_has_rst(w, pb_id))) {
+									uint8_t src_mac[II_ETH_ADDR_LEN];
+									uint8_t dst_mac[II_ETH_ADDR_LEN];
+									ii_extract_ethernet_src(src_mac, ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque));
+									ii_extract_ethernet_dst(dst_mac, ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque));
+									if (IE_UNLIKELY(ii_tcp_send_rst_immediate(
+													dst_mac, dst_ipv4_be, ii_extract_tcp_dst_be(tcp_hdr),
+													src_mac, src_ipv4_be, ii_extract_tcp_src_be(tcp_hdr),
+													ii_tcp_hdr_has_ack(w, pb_id) ? ii_extract_tcp_ack_seq_be(tcp_hdr) : 0,
+													ii_tcp_hdr_has_ack(w, pb_id) ? 0 : ii_htonl(ii_tcp_seq_re_raw(w, pb_id)),
+													!ii_tcp_hdr_has_ack(w, pb_id),
+													opaque) != IIP_ERR_OK)) {
+										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+									}
+								}
+								return IIP_ERR_INVALID_RX;
+							}
+						}
+					}
+				}
 				if (ii_tcp_hdr_has_syn(w, pb_id)) {
 					if (IE_UNLIKELY(ii_tcp_hdr_has_fin(w, pb_id) && !ii_tcp_hdr_has_rst(w, pb_id)))
 						return IIP_ERR_INVALID_RX;
