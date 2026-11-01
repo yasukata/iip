@@ -4218,7 +4218,9 @@ static enum iip_rc ii_tcp_conn_handle_in_order__syn_recvd(IIP_MEM_P w, IIP_TCP_C
 static enum iip_rc ii_tcp_conn_handle_in_order__established(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id, uint8_t *ack, IIP_OPAQUE_P opaque)
 {
 	II_TCP_CONN(conn_id).keepalive_ts = w->now_ms;
-	if (II_TCP_CONN(conn_id).state == II_TCP_STATE_ESTABLISHED /* state can be updated in callback before fall through */
+	if ((II_TCP_CONN(conn_id).state == II_TCP_STATE_ESTABLISHED /* state can be updated in callback before fall through */
+			|| II_TCP_CONN(conn_id).state == II_TCP_STATE_FIN_WAIT1
+			|| II_TCP_CONN(conn_id).state == II_TCP_STATE_FIN_WAIT2)
 			&& ii_tcp_hdr_has_ack(w, pb_id) && II_PB(pb_id).tcp.payload_len) {
 		II_TCP_CONN(conn_id).buf.used += II_PB(pb_id).tcp.payload_len - II_PB(pb_id).tcp.inc_head - II_PB(pb_id).tcp.dec_tail;
 		II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_ACK_PUSHED;
@@ -4232,19 +4234,21 @@ static enum iip_rc ii_tcp_conn_handle_in_order__established(IIP_MEM_P w, IIP_TCP
 		if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_ACK_PUSHED))
 			*ack = 1;
 	}
-	if (ii_tcp_hdr_has_fin(w, pb_id)) {
-		*ack = 1;
-		ii_tcp_conn_set_state(w, conn_id, II_TCP_STATE_CLOSE_WAIT);
-		II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_ACK_PUSHED;
-		{
-			int iip_ret_int;
-			IIP_OPS_TCP_STATE_CLOSE_WAIT();
-			if (IE_UNLIKELY(iip_ret_int)) {
-				IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+	if (II_TCP_CONN(conn_id).state == II_TCP_STATE_ESTABLISHED) {
+		if (ii_tcp_hdr_has_fin(w, pb_id)) {
+			*ack = 1;
+			ii_tcp_conn_set_state(w, conn_id, II_TCP_STATE_CLOSE_WAIT);
+			II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_ACK_PUSHED;
+			{
+				int iip_ret_int;
+				IIP_OPS_TCP_STATE_CLOSE_WAIT();
+				if (IE_UNLIKELY(iip_ret_int)) {
+					IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+				}
 			}
+			if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_ACK_PUSHED)
+				*ack = 0;
 		}
-		if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_ACK_PUSHED)
-			*ack = 0;
 	}
 	return IIP_ERR_OK;
 }
@@ -4281,9 +4285,21 @@ static enum iip_rc ii_tcp_conn_handle_in_order(IIP_MEM_P w, IIP_TCP_CONN_P conn_
 		uint8_t syn = 0, ack = 0, rst = 0, fastopen_cookie = 0;
 		switch (II_TCP_CONN(conn_id).state) {
 		case II_TCP_STATE_FIN_WAIT1:
-			ii_tcp_conn_handle_in_order__fin_wait1(w, conn_id, pb_id, &ack, &rst);
+			{
+				enum iip_rc rc = ii_tcp_conn_handle_in_order__established(w, conn_id, pb_id, &ack, opaque);
+				if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+			}
+			ii_tcp_conn_handle_in_order__fin_wait1(w, conn_id, pb_id, &ack);
 			break;
 		case II_TCP_STATE_FIN_WAIT2:
+			{
+				enum iip_rc rc = ii_tcp_conn_handle_in_order__established(w, conn_id, pb_id, &ack, opaque);
+				if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+			}
 			ii_tcp_conn_handle_in_order__fin_wait2(w, conn_id, pb_id, &ack);
 			break;
 		case II_TCP_STATE_CLOSING:
