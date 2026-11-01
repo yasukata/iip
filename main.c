@@ -5940,12 +5940,18 @@ static enum iip_rc ii_tcp_rx_push(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P p
 							&& !ii_tcp_hdr_has_syn(w, pb_id)
 							&& !ii_tcp_hdr_has_rst(w, pb_id))) {
 					II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING;
-					return IIP_ERR_INVALID_RX;
+					if (IE_UNLIKELY(ii_free_pb_and_pkt(w, push_pb_id, opaque) != IIP_ERR_OK)) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					continue;
 				}
 				if (ii_tcp_check_input_seq(w, conn_id, push_pb_id) != IIP_ERR_OK) {
 					if (!(II_PB(push_pb_id).tcp.flags & II_TCP_FLAG_RST))
 						II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING; /* send ack */
-					return IIP_ERR_INVALID_RX;
+					if (IE_UNLIKELY(ii_free_pb_and_pkt(w, push_pb_id, opaque) != IIP_ERR_OK)) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					continue;
 				}
 				if (II_TCP_CONN(conn_id).seq_next_expected == ii_tcp_seq_le_raw(w, push_pb_id)) {
 					if ((II_PB(push_pb_id).tcp.info_flags & II_PB_FLAGS_TCP_URGENT) && !(II_PB(push_pb_id).tcp.flags & II_TCP_FLAG_RST)) {
