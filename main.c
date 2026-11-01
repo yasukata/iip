@@ -5731,14 +5731,14 @@ static enum iip_rc ii_tcp_send_ack_immediate(IIP_MEM_P w, IIP_TCP_CONN_P conn_id
 static enum iip_rc ii_tcp_send_rst_immediate(
 		uint8_t src_mac[II_ETH_ADDR_LEN], uint32_t ipv4_src_be, uint16_t src_port_be,
 		uint8_t dst_mac[II_ETH_ADDR_LEN], uint32_t ipv4_dst_be, uint16_t dst_port_be,
-		uint32_t ack_seq_be, IIP_OPAQUE_P opaque)
+		uint32_t seq_be, uint32_t ack_seq_be, uint8_t ack, IIP_OPAQUE_P opaque)
 {
 	uint8_t tcp_hdr[II_TCP_HDR_LEN_MINIMAL];
 	ii_write_uint16(tcp_hdr +  0, src_port_be);
 	ii_write_uint16(tcp_hdr +  2, dst_port_be);
-	ii_write_uint32(tcp_hdr +  4, ack_seq_be);
-	ii_write_uint32(tcp_hdr +  8, 0);
-	ii_write_uint16(tcp_hdr + 12, ii_htons(II_TCP_FLAG_RST | ((II_TCP_HDR_LEN_MINIMAL / 4) * 4096)));
+	ii_write_uint32(tcp_hdr +  4, seq_be);
+	ii_write_uint32(tcp_hdr +  8, ack_seq_be);
+	ii_write_uint16(tcp_hdr + 12, ii_htons((ack ? II_TCP_FLAG_ACK : 0) | II_TCP_FLAG_RST | ((II_TCP_HDR_LEN_MINIMAL / 4) * 4096)));
 	ii_write_uint16(tcp_hdr + 14, 0);
 	ii_write_uint16(tcp_hdr + 16, 0); /* csum */
 	ii_write_uint16(tcp_hdr + 18, 0); /* urg_p */
@@ -6554,7 +6554,10 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 						if (IE_UNLIKELY(ii_tcp_send_rst_immediate(
 									dst_mac, dst_ipv4_be, ii_extract_tcp_dst_be(tcp_hdr),
 									src_mac, src_ipv4_be, ii_extract_tcp_src_be(tcp_hdr),
-									ii_extract_tcp_ack_seq_be(tcp_hdr), opaque) != IIP_ERR_OK)) {
+									ii_tcp_hdr_has_ack(w, pb_id) ? ii_extract_tcp_ack_seq_be(tcp_hdr) : 0,
+									ii_tcp_hdr_has_ack(w, pb_id) ? 0 : ii_htonl(ii_tcp_seq_re_raw(w, pb_id)),
+									!ii_tcp_hdr_has_ack(w, pb_id),
+									opaque) != IIP_ERR_OK)) {
 							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 						}
 					}
