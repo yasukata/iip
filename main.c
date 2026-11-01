@@ -4629,7 +4629,7 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__trigger(IIP_MEM_P w, IIP_TCP_CON
 					ii_write_uint32(tcp_hdr +  4, ii_htonl(II_PB(pb_id).tcp.seq + seq_off));
 					ii_write_uint32(tcp_hdr +  8, ii_htonl(II_PB(pb_id).tcp.ack_seq));
 					ii_write_uint16(tcp_hdr + 12, ii_htons((tcp_flags & (xmit_len != tx_len ? ~II_TCP_FLAG_PSH : 0xffff)) | (((II_TCP_HDR_LEN_MINIMAL + tcp_opt_len) / 4) * 4096)));
-					ii_write_uint16(tcp_hdr + 14, ii_htons(ii_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, II_TCP_CONN(conn_id).ws)));
+					ii_write_uint16(tcp_hdr + 14, ii_htons(ii_tcp_rx_window(w, conn_id)));
 					ii_write_uint16(tcp_hdr + 16, 0); /* csum */
 					ii_write_uint16(tcp_hdr + 18, ii_htons(II_PB(pb_id).tcp.urg_p));
 					{
@@ -5681,7 +5681,7 @@ static enum iip_rc ii_tcp_send_ack_immediate(IIP_MEM_P w, IIP_TCP_CONN_P conn_id
 		ii_write_uint32(tcp_hdr +  4, ii_htonl(II_TCP_CONN(conn_id).sent_seq - (keep_alive ? 1 : 0)));
 		ii_write_uint32(tcp_hdr +  8, ii_htonl(II_TCP_CONN(conn_id).ack_seq));
 		ii_write_uint16(tcp_hdr + 12, ii_htons(II_TCP_FLAG_ACK | (((II_TCP_HDR_LEN_MINIMAL + tcp_opt_len) / 4) * 4096)));
-		ii_write_uint16(tcp_hdr + 14, ii_htons(ii_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, II_TCP_CONN(conn_id).ws)));
+		ii_write_uint16(tcp_hdr + 14, ii_htons(ii_tcp_rx_window(w, conn_id)));
 		ii_write_uint16(tcp_hdr + 16, 0); /* csum */
 		ii_write_uint16(tcp_hdr + 18, 0); /* urg_p */
 		{
