@@ -6506,7 +6506,6 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 							return IIP_ERR_OK; /* do nothing */
 						else if (IE_UNLIKELY(ii_tcp_hdr_has_ack(w, pb_id))) {
 							IIP_OPS_DEBUG_PRINTF("WARNING: got syn-ack for non-existing connection, maybe RSS sterring would be wrong\n");
-							return IIP_ERR_INVALID_RX; /* do nothing */
 						} else {
 							bool iip_ret_bool;
 							IIP_OPS_TCP_ACCEPT();
