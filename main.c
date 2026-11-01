@@ -6543,6 +6543,13 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 						II_TCP_CONN(conn_id).seq_next_expected = ii_tcp_seq_le_raw(w, pb_id);
 				}
 				if (IE_UNLIKELY(conn_id == II_CONF_POOL_NUM_TCP_CONN)) {
+					if (IE_UNLIKELY(!ii_tcp_hdr_has_ack(w, pb_id) && !ii_tcp_hdr_has_syn(w, pb_id) && !ii_tcp_hdr_has_rst(w, pb_id))) {
+						bool iip_ret_bool;
+						IIP_OPS_TCP_ACCEPT();
+						if (iip_ret_bool) {
+							return IIP_ERR_INVALID_RX;
+						}
+					}
 					if (IE_UNLIKELY(!ii_tcp_hdr_has_rst(w, pb_id))) {
 						uint8_t src_mac[II_ETH_ADDR_LEN];
 						uint8_t dst_mac[II_ETH_ADDR_LEN];
