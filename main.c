@@ -6511,6 +6511,8 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 								return IIP_ERR_INVALID_RX;
 							}
 						}
+						if (!ii_tcp_hdr_has_syn(w, pb_id) && !ii_tcp_hdr_has_rst(w, pb_id))
+							return IIP_ERR_INVALID_RX;
 					}
 				}
 				if (ii_tcp_hdr_has_syn(w, pb_id)) {
