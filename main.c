@@ -5812,77 +5812,79 @@ static enum iip_rc ii_tcp_conn_work(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPA
 	if (IE_UNLIKELY(conn_id >= II_CONF_POOL_NUM_TCP_CONN)) {
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
-	if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_ACK_PENDING) {
-		if (IE_UNLIKELY(ii_tcp_send_ack_immediate(w, conn_id, false, opaque) != IIP_ERR_OK)) {
-			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-		}
-	}
-	ii_tcp_release_acked(w, conn_id, opaque);
-	ii_extent_queue_shrink(&II_TCP_CONN(conn_id).sack, II_TCP_CONN(conn_id).acked_seq);
-	if (IE_UNLIKELY(ii_tcp_conn__zero_window_probe_check(w, conn_id, opaque) != IIP_ERR_OK)) {
-		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-	}
-	if (IE_UNLIKELY(ii_tcp_conn_retx_timeout_check(w, conn_id) != IIP_ERR_OK)) {
-		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-	}
-	if ((II_TCP_CONN(conn_id).tx_ring.head != II_TCP_CONN(conn_id).tx_ring.tail)
-			|| (II_TCP_CONN(conn_id).sent_ring.head != II_TCP_CONN(conn_id).sent_ring.tail)) {
-		uint32_t tx_space;
-		if (IE_UNLIKELY(ii_tcp_conn_tx_space(w, conn_id, &tx_space) != IIP_ERR_OK)) {
-			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-		}
-		if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED
-				&& II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_RETRANSMIT) {
-			uint32_t retx_bytes;
-			if (IE_UNLIKELY(ii_tcp_conn_retx(w, conn_id, tx_space, &retx_bytes, opaque) != IIP_ERR_OK)) {
+	if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_CLOSE_RST)) {
+		if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_ACK_PENDING) {
+			if (IE_UNLIKELY(ii_tcp_send_ack_immediate(w, conn_id, false, opaque) != IIP_ERR_OK)) {
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
-			if (IE_UNLIKELY(tx_space < retx_bytes)) {
+		}
+		ii_tcp_release_acked(w, conn_id, opaque);
+		ii_extent_queue_shrink(&II_TCP_CONN(conn_id).sack, II_TCP_CONN(conn_id).acked_seq);
+		if (IE_UNLIKELY(ii_tcp_conn__zero_window_probe_check(w, conn_id, opaque) != IIP_ERR_OK)) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
+		if (IE_UNLIKELY(ii_tcp_conn_retx_timeout_check(w, conn_id) != IIP_ERR_OK)) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
+		if ((II_TCP_CONN(conn_id).tx_ring.head != II_TCP_CONN(conn_id).tx_ring.tail)
+				|| (II_TCP_CONN(conn_id).sent_ring.head != II_TCP_CONN(conn_id).sent_ring.tail)) {
+			uint32_t tx_space;
+			if (IE_UNLIKELY(ii_tcp_conn_tx_space(w, conn_id, &tx_space) != IIP_ERR_OK)) {
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
-			II_TCP_CONN(conn_id).retx_bytes = retx_bytes;
-			II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_RETRANSMIT;
-		} else {
-			uint32_t queued_payload_len;
-			{
-				bool has_psh;
-				if (IE_UNLIKELY(ii_tcp_conn_tx_queue_payload_len(w, conn_id, tx_space, &queued_payload_len, &has_psh))) {
+			if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED
+					&& II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_RETRANSMIT) {
+				uint32_t retx_bytes;
+				if (IE_UNLIKELY(ii_tcp_conn_retx(w, conn_id, tx_space, &retx_bytes, opaque) != IIP_ERR_OK)) {
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 				}
-				if (tx_space < II_TCP_CONN(conn_id).mss / 2) { /* sender sws avoidance */
-					if (queued_payload_len > tx_space) {
-						if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_SENDER_SWS)) {
-							II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_SENDER_SWS;
-							II_TCP_CONN(conn_id).snd_sws_ts = w->now_ms;
-						} else {
-							if (w->now_ms - II_TCP_CONN(conn_id).snd_sws_ts > 1000 /* 1 sec */)
-								II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_SENDER_SWS;
-						}
-					} else if (has_psh)
-						II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_SENDER_SWS;
-				} else
-					II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_SENDER_SWS;
-			}
-			if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_SENDER_SWS)) {
-				bool pending_by_nagle = false;
-				if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_NAGLE_DISABLED)) { /* nagle check */
-					switch (II_TCP_CONN(conn_id).state) {
-					case II_TCP_STATE_ESTABLISHED:
-					case II_TCP_STATE_CLOSE_WAIT:
-						if (II_TCP_CONN(conn_id).sent_ring.head != II_TCP_CONN(conn_id).sent_ring.tail) { /* having unacked data */
-							uint16_t emss;
-							if (IE_UNLIKELY(ii_tcp_ipv4_ethernet_emss(w, conn_id, 12, &emss) != IIP_ERR_OK)) {
-								IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-							}
-							if (queued_payload_len < emss)
-								pending_by_nagle = true;
-						}
-						break;
-					}
+				if (IE_UNLIKELY(tx_space < retx_bytes)) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 				}
-				if (!pending_by_nagle) {
-					if (IE_UNLIKELY(ii_tcp_conn_xmit_queued_data(w, conn_id, tx_space, opaque) != IIP_ERR_OK)) {
+				II_TCP_CONN(conn_id).retx_bytes = retx_bytes;
+				II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_RETRANSMIT;
+			} else {
+				uint32_t queued_payload_len;
+				{
+					bool has_psh;
+					if (IE_UNLIKELY(ii_tcp_conn_tx_queue_payload_len(w, conn_id, tx_space, &queued_payload_len, &has_psh))) {
 						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					if (tx_space < II_TCP_CONN(conn_id).mss / 2) { /* sender sws avoidance */
+						if (queued_payload_len > tx_space) {
+							if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_SENDER_SWS)) {
+								II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_SENDER_SWS;
+								II_TCP_CONN(conn_id).snd_sws_ts = w->now_ms;
+							} else {
+								if (w->now_ms - II_TCP_CONN(conn_id).snd_sws_ts > 1000 /* 1 sec */)
+									II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_SENDER_SWS;
+							}
+						} else if (has_psh)
+							II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_SENDER_SWS;
+					} else
+						II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_SENDER_SWS;
+				}
+				if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_SENDER_SWS)) {
+					bool pending_by_nagle = false;
+					if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_NAGLE_DISABLED)) { /* nagle check */
+						switch (II_TCP_CONN(conn_id).state) {
+						case II_TCP_STATE_ESTABLISHED:
+						case II_TCP_STATE_CLOSE_WAIT:
+							if (II_TCP_CONN(conn_id).sent_ring.head != II_TCP_CONN(conn_id).sent_ring.tail) { /* having unacked data */
+								uint16_t emss;
+								if (IE_UNLIKELY(ii_tcp_ipv4_ethernet_emss(w, conn_id, 12, &emss) != IIP_ERR_OK)) {
+									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+								}
+								if (queued_payload_len < emss)
+									pending_by_nagle = true;
+							}
+							break;
+						}
+					}
+					if (!pending_by_nagle) {
+						if (IE_UNLIKELY(ii_tcp_conn_xmit_queued_data(w, conn_id, tx_space, opaque) != IIP_ERR_OK)) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
 					}
 				}
 			}
