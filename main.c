@@ -2686,13 +2686,19 @@ static enum iip_rc ii_icmp_error_send(IIP_MEM_P w, II_PB_P pb_id, uint8_t error_
 #define ROUND_UP(_v, _r) ((((_v) / (_r)) + ((_v) % (_r) ? 1 : 0)) * (_r))
 
 /*@
+	logic integer f_div_loop{L}(integer w, integer cnt) = cnt <= 0 ? w : f_div_loop(w, cnt - 1) / 2;
+	logic integer f_tcp_compute_win{L}(integer w, integer ws) = UINT16_MAX <= f_div_loop(w, ws) ? UINT16_MAX : f_div_loop(w, ws);
+*/
+/*@
 	assigns \nothing;
+	ensures \result == f_tcp_compute_win(w, ws);
  */
 static uint16_t ii_tcp_compute_win(uint32_t w, uint8_t ws)
 {
 	uint8_t i;
 	/*@
 		loop invariant 0 <= i <= ws;
+		loop invariant w == f_div_loop(\at(w, Pre), i);
 		loop assigns i, w;
 		loop variant ws - i;
 	 */
@@ -3233,7 +3239,7 @@ static enum iip_rc ii_pb_tcp_payload_len(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LEN
 	}
 }
 
-/*@ logic integer f_tcp_rx_window{L}(IIP_MEM_P w, IIP_TCP_CONN_P conn_id) = (uint32_t)(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used); */
+/*@ logic integer f_tcp_rx_window{L}(IIP_MEM_P w, IIP_TCP_CONN_P conn_id) = f_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, II_TCP_CONN(conn_id).ws); */
 /*@
 	requires \valid(w);
 	requires conn_id < II_CONF_POOL_NUM_TCP_CONN;
