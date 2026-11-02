@@ -3832,7 +3832,7 @@ static enum iip_rc ii_tcp_conn_update_info(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 		II_TCP_CONN(conn_id).retrans_cnt = 0;
 		II_TCP_CONN(conn_id).acked_seq = II_PB(pb_id).tcp.ack_seq;
 		II_TCP_CONN(conn_id).dup_ack_received = 0;
-		if (II_PB(pb_id).tcp.payload_len && II_TCP_CONN(conn_id).cc.ssthresh > II_TCP_CONN(conn_id).cc.win)
+		if (II_TCP_CONN(conn_id).cc.ssthresh > II_TCP_CONN(conn_id).cc.win)
 			II_TCP_CONN(conn_id).cc.win = (II_TCP_CONN(conn_id).cc.win < 65535U ? II_TCP_CONN(conn_id).cc.win + 1 : II_TCP_CONN(conn_id).cc.win);
 		if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED) {
 			if (II_PB(pb_id).tcp.ack_seq == II_TCP_CONN(conn_id).sent_seq_when_loss_detected || ii_seq_ordered(II_PB(pb_id).tcp.ack_seq, II_TCP_CONN(conn_id).sent_seq_when_loss_detected)) {
