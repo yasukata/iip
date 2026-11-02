@@ -4935,6 +4935,7 @@ static void ii_tcp_conn_input_one__check_dup_ack(IIP_MEM_P w, IIP_TCP_CONN_P con
 		if (II_TCP_CONN(conn_id).dup_ack_received == 3) {
 			II_TCP_CONN(conn_id).dup_ack_received = 0;
 			ii_tcp_loss_detected(w, conn_id);
+			II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_RETRANSMIT;
 			IIP_OPS_DEBUG_PRINTF("loss detected because of dup ack\n");
 		}
 	}
