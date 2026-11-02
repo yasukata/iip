@@ -2886,7 +2886,10 @@ static bool ii_tcp_seq_expected(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_
  */
 static bool ii_tcp_seq_entirely_acked(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id)
 {
-	if (!II_PB(pb_id).tcp.payload_len && (ii_tcp_seq_re_raw(w, pb_id) == II_TCP_CONN(conn_id).seq_next_expected))
+	if (!II_PB(pb_id).tcp.payload_len
+			&& !ii_tcp_hdr_has_syn(w, pb_id)
+			&& !ii_tcp_hdr_has_fin(w, pb_id)
+			&& (ii_tcp_seq_re_raw(w, pb_id) == II_TCP_CONN(conn_id).seq_next_expected))
 		return false;
 	if (ii_tcp_seq_re_raw(w, pb_id) == II_TCP_CONN(conn_id).seq_next_expected
 			|| ii_seq_ordered(ii_tcp_seq_re_raw(w, pb_id), II_TCP_CONN(conn_id).seq_next_expected)) {
@@ -5898,9 +5901,15 @@ static enum iip_rc ii_tcp_rx_push(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P p
 					continue;
 				}
 				if (ii_tcp_check_input_seq(w, conn_id, push_pb_id) != IIP_ERR_OK) {
-					if (!(II_PB(push_pb_id).tcp.flags & II_TCP_FLAG_RST))
+					if (!ii_tcp_hdr_has_rst(w, push_pb_id)) {
 						II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING; /* send ack */
+						if (II_TCP_CONN(conn_id).state == II_TCP_STATE_TIME_WAIT
+								&& ii_tcp_hdr_has_fin(w, push_pb_id)
+								&& ii_tcp_seq_re_raw(w, push_pb_id) == II_TCP_CONN(conn_id).seq_next_expected)
+							II_TCP_CONN(conn_id).time_wait_ts_ms = w->now_ms;
+					}
 					if (IE_UNLIKELY(ii_free_pb_and_pkt(w, push_pb_id, opaque) != IIP_ERR_OK)) {
+
 						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 					}
 					continue;
