@@ -160,6 +160,7 @@ struct ii_extent_queue {
 #define II_TCP_CONN_FLAGS_NAGLE_DISABLED (1U << 14)
 #define II_TCP_CONN_FLAGS_CLOSE_RST (1U << 15)
 #define II_TCP_CONN_FLAGS_WIN_UPDATED (1U << 16)
+#define II_TCP_CONN_FLAGS_CLOSE_API_SKIP (1U << 17)
 
 #define II_DEFINE_RING(_obj_name, _type, _cnt) \
 struct ii_##_obj_name##__ring { \
@@ -3863,10 +3864,12 @@ static enum iip_rc ii_tcp_conn_close_check(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
 	if (IE_UNLIKELY(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_CLOSING)) {
-		int iip_ret_int;
-		IIP_OPS_TCP_CLOSED();
-		if (IE_UNLIKELY(iip_ret_int)) {
-			IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+		if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_CLOSE_API_SKIP)) {
+			int iip_ret_int;
+			IIP_OPS_TCP_CLOSED();
+			if (IE_UNLIKELY(iip_ret_int)) {
+				IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+			}
 		}
 		II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_CLOSING;
 		{
@@ -6394,8 +6397,12 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 			II_TCP_CONN(conn_id).ws = 7;
 			II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
 			if (fastopen_cookie_len) {
-				if (fastopen_cookie_len > sizeof(II_TCP_CONN(conn_id).fastopen_cookie.buf))
+				if (fastopen_cookie_len > sizeof(II_TCP_CONN(conn_id).fastopen_cookie.buf)) {
+					II_TCP_CONN(conn_id).state = II_TCP_STATE_CLOSED;
+					II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_CLOSING | II_TCP_CONN_FLAGS_CLOSE_API_SKIP;
+					ii_tcp_conn_close_check(w, conn_id, opaque);
 					return -1;
+				}
 				{
 					uint8_t i;
 					/*@
@@ -6406,16 +6413,24 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 					for (i = 0; i < fastopen_cookie_len; i++)
 						II_TCP_CONN(conn_id).fastopen_cookie.buf[i] = fastopen_cookie_buf[i];
 					II_TCP_CONN(conn_id).fastopen_cookie.len = fastopen_cookie_len;
-					if (cnt > II_CONF_IPV4_FRAG_CNT_MAX)
+					if (cnt > II_CONF_IPV4_FRAG_CNT_MAX) {
+						II_TCP_CONN(conn_id).state = II_TCP_STATE_CLOSED;
+						II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_CLOSING | II_TCP_CONN_FLAGS_CLOSE_API_SKIP;
+						ii_tcp_conn_close_check(w, conn_id, opaque);
 						return -1;
+					}
 					if (ii_tcp_send(w, conn_id, II_TCP_FLAG_SYN, pkt, cnt, opaque) != IIP_ERR_OK) {
-						II_TCP_CONN(conn_id).state = 0;
+						II_TCP_CONN(conn_id).state = II_TCP_STATE_CLOSED;
+						II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_CLOSING | II_TCP_CONN_FLAGS_CLOSE_API_SKIP;
+						ii_tcp_conn_close_check(w, conn_id, opaque);
 						return -1;
 					}
 				}
 			} else {
 				if (ii_tcp_tx_push_control(w, conn_id, II_TCP_FLAG_SYN) != IIP_ERR_OK) {
-					II_TCP_CONN(conn_id).state = 0;
+					II_TCP_CONN(conn_id).state = II_TCP_STATE_CLOSED;
+					II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_CLOSING | II_TCP_CONN_FLAGS_CLOSE_API_SKIP;
+					ii_tcp_conn_close_check(w, conn_id, opaque);
 					return -1;
 				}
 			}
@@ -6563,6 +6578,8 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 								}
 								if (IE_UNLIKELY(!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))) {
+									II_TCP_CONN(conn_id).state = II_TCP_STATE_CLOSED;
+									II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_CLOSING | II_TCP_CONN_FLAGS_CLOSE_API_SKIP;
 									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 								}
 								ii_ipv4_tcp_conn_init(w, conn_id,
