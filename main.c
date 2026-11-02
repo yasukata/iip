@@ -3815,26 +3815,6 @@ static enum iip_rc ii_tcp_conn_update_info(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 		else
 			II_TCP_CONN(conn_id).ts = w->tcp.pkt_ts;
 	}
-	if (!out_of_order && valid_ack /* advance or same */) {
-		if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_WIN_UPDATED)
-				|| ((II_TCP_CONN(conn_id).acked_seq == II_PB(pb_id).tcp.ack_seq ||
-						ii_seq_ordered(II_TCP_CONN(conn_id).acked_seq, II_PB(pb_id).tcp.ack_seq))
-					&& (II_PB(pb_id).tcp.ack_seq == II_TCP_CONN(conn_id).sent_seq
-						|| ii_seq_ordered(II_PB(pb_id).tcp.ack_seq, II_TCP_CONN(conn_id).sent_seq)))) {
-			if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_WIN_UPDATED)
-					|| ii_seq_ordered(II_TCP_CONN(conn_id).peer_win_seq, II_PB(pb_id).tcp.seq)
-					|| (II_TCP_CONN(conn_id).peer_win_seq == II_PB(pb_id).tcp.seq
-						&&  (II_TCP_CONN(conn_id).peer_win_ack == II_PB(pb_id).tcp.ack_seq
-							|| ii_seq_ordered(II_TCP_CONN(conn_id).peer_win_ack, II_PB(pb_id).tcp.ack_seq)))) {
-				II_TCP_CONN(conn_id).peer_win = II_PB(pb_id).tcp.win;
-				if (II_TCP_CONN(conn_id).max_peer_win < II_TCP_CONN(conn_id).peer_win)
-					II_TCP_CONN(conn_id).max_peer_win = II_TCP_CONN(conn_id).peer_win;
-				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_WIN_UPDATED;
-				II_TCP_CONN(conn_id).peer_win_seq = II_PB(pb_id).tcp.seq;
-				II_TCP_CONN(conn_id).peer_win_ack = II_PB(pb_id).tcp.ack_seq;
-			}
-		}
-	}
 	if (valid_ack == 2 /* advance */) {
 		II_TCP_CONN(conn_id).retrans_cnt = 0;
 		II_TCP_CONN(conn_id).acked_seq = II_PB(pb_id).tcp.ack_seq;
