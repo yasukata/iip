@@ -159,6 +159,7 @@ struct ii_extent_queue {
 #define II_TCP_CONN_FLAGS_OPT_WS (1U << 13)
 #define II_TCP_CONN_FLAGS_NAGLE_DISABLED (1U << 14)
 #define II_TCP_CONN_FLAGS_CLOSE_RST (1U << 15)
+#define II_TCP_CONN_FLAGS_WIN_UPDATED (1U << 16)
 
 #define II_DEFINE_RING(_obj_name, _type, _cnt) \
 struct ii_##_obj_name##__ring { \
@@ -396,7 +397,7 @@ struct ii_tcp_conn {
 	uint32_t dst_ip[4];
 	uint16_t src_port;
 	uint16_t dst_port;
-	uint16_t flags;
+	uint32_t flags;
 	uint8_t state;
 	uint8_t dup_ack_received;
 	uint8_t retrans_cnt;
@@ -417,6 +418,8 @@ struct ii_tcp_conn {
 	uint32_t ack_seq;
 	uint32_t acked_seq;
 	uint16_t peer_win;
+	uint32_t peer_win_seq;
+	uint32_t peer_win_ack;
 	uint16_t max_peer_win;
 	uint32_t sent_seq;
 	uint32_t sent_seq_when_loss_detected;
@@ -3758,7 +3761,24 @@ static enum iip_rc ii_tcp_conn_update_info(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
 	if (!out_of_order) {
-		II_TCP_CONN(conn_id).peer_win = II_PB(pb_id).tcp.win;
+		if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_WIN_UPDATED)
+				|| ((II_TCP_CONN(conn_id).acked_seq == II_PB(pb_id).tcp.ack_seq ||
+						ii_seq_ordered(II_TCP_CONN(conn_id).acked_seq, II_PB(pb_id).tcp.ack_seq))
+					&& (II_PB(pb_id).tcp.ack_seq == II_TCP_CONN(conn_id).sent_seq
+						|| ii_seq_ordered(II_PB(pb_id).tcp.ack_seq, II_TCP_CONN(conn_id).sent_seq)))) {
+			if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_WIN_UPDATED)
+					|| ii_seq_ordered(II_TCP_CONN(conn_id).peer_win_seq, II_PB(pb_id).tcp.seq)
+					|| (II_TCP_CONN(conn_id).peer_win_seq == II_PB(pb_id).tcp.seq
+						&& (II_TCP_CONN(conn_id).peer_win_ack == II_PB(pb_id).tcp.ack_seq
+							|| ii_seq_ordered(II_TCP_CONN(conn_id).peer_win_ack, II_PB(pb_id).tcp.ack_seq)))) {
+				II_TCP_CONN(conn_id).peer_win = II_PB(pb_id).tcp.win;
+				if (II_TCP_CONN(conn_id).max_peer_win < II_TCP_CONN(conn_id).peer_win)
+					II_TCP_CONN(conn_id).max_peer_win = II_TCP_CONN(conn_id).peer_win;
+				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_WIN_UPDATED;
+				II_TCP_CONN(conn_id).peer_win_seq = II_PB(pb_id).tcp.seq;
+				II_TCP_CONN(conn_id).peer_win_ack = II_PB(pb_id).tcp.ack_seq;
+			}
+		}
 		if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED) && ii_tcp_hdr_has_ack(w, pb_id)) {
 			uint32_t nticks;
 			if (II_CONF_TCP_OPT_TS_OK && (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_OPT_HAS_TS))
@@ -3789,9 +3809,24 @@ static enum iip_rc ii_tcp_conn_update_info(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 			II_TCP_CONN(conn_id).ts = w->tcp.pkt_ts;
 	}
 	if (!out_of_order && valid_ack /* advance or same */) {
-		II_TCP_CONN(conn_id).peer_win = II_PB(pb_id).tcp.win;
-		if (II_TCP_CONN(conn_id).max_peer_win < II_TCP_CONN(conn_id).peer_win)
-			II_TCP_CONN(conn_id).max_peer_win = II_TCP_CONN(conn_id).peer_win;
+		if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_WIN_UPDATED)
+				|| ((II_TCP_CONN(conn_id).acked_seq == II_PB(pb_id).tcp.ack_seq ||
+						ii_seq_ordered(II_TCP_CONN(conn_id).acked_seq, II_PB(pb_id).tcp.ack_seq))
+					&& (II_PB(pb_id).tcp.ack_seq == II_TCP_CONN(conn_id).sent_seq
+						|| ii_seq_ordered(II_PB(pb_id).tcp.ack_seq, II_TCP_CONN(conn_id).sent_seq)))) {
+			if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_WIN_UPDATED)
+					|| ii_seq_ordered(II_TCP_CONN(conn_id).peer_win_seq, II_PB(pb_id).tcp.seq)
+					|| (II_TCP_CONN(conn_id).peer_win_seq == II_PB(pb_id).tcp.seq
+						&&  (II_TCP_CONN(conn_id).peer_win_ack == II_PB(pb_id).tcp.ack_seq
+							|| ii_seq_ordered(II_TCP_CONN(conn_id).peer_win_ack, II_PB(pb_id).tcp.ack_seq)))) {
+				II_TCP_CONN(conn_id).peer_win = II_PB(pb_id).tcp.win;
+				if (II_TCP_CONN(conn_id).max_peer_win < II_TCP_CONN(conn_id).peer_win)
+					II_TCP_CONN(conn_id).max_peer_win = II_TCP_CONN(conn_id).peer_win;
+				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_WIN_UPDATED;
+				II_TCP_CONN(conn_id).peer_win_seq = II_PB(pb_id).tcp.seq;
+				II_TCP_CONN(conn_id).peer_win_ack = II_PB(pb_id).tcp.ack_seq;
+			}
+		}
 	}
 	if (valid_ack == 2 /* advance */) {
 		II_TCP_CONN(conn_id).retrans_cnt = 0;
@@ -6272,6 +6307,8 @@ static void ii_ipv4_tcp_conn_init(IIP_MEM_P w, IIP_TCP_CONN_P conn_id,
 	II_TCP_CONN(conn_id).ack_seq = 0;
 	II_TCP_CONN(conn_id).acked_seq = II_TCP_CONN(conn_id).iss;
 	II_TCP_CONN(conn_id).peer_win = 0;
+	II_TCP_CONN(conn_id).peer_win_seq = 0;
+	II_TCP_CONN(conn_id).peer_win_ack = 0;
 	II_TCP_CONN(conn_id).max_peer_win = 0;
 	II_TCP_CONN(conn_id).sent_seq = II_TCP_CONN(conn_id).iss;
 	II_TCP_CONN(conn_id).sent_seq_when_loss_detected = 0;
