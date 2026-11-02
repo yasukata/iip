@@ -4365,9 +4365,7 @@ static enum iip_rc ii_tcp_conn_handle_in_order(IIP_MEM_P w, IIP_TCP_CONN_P conn_
 			break;
 		}
 		if (syn) {
-			enum iip_rc rc = ii_tcp_tx_push_control(w, conn_id,
-					(syn ? II_TCP_FLAG_SYN : 0) | (ack ? II_TCP_FLAG_ACK : 0));
-			if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
+			if (IE_UNLIKELY(ii_tcp_tx_push_control(w, conn_id, II_TCP_FLAG_SYN | (ack ? II_TCP_FLAG_ACK : 0)) != IIP_ERR_OK)) {
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
 			if (ack)
