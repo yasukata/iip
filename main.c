@@ -6542,9 +6542,8 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 									if (IE_UNLIKELY(ii_tcp_send_rst_immediate(
 													dst_mac, dst_ipv4_be, ii_extract_tcp_dst_be(tcp_hdr),
 													src_mac, src_ipv4_be, ii_extract_tcp_src_be(tcp_hdr),
-													ii_tcp_hdr_has_ack(w, pb_id) ? ii_extract_tcp_ack_seq_be(tcp_hdr) : 0,
-													ii_tcp_hdr_has_ack(w, pb_id) ? 0 : ii_htonl(ii_tcp_seq_re_raw(w, pb_id)),
-													!ii_tcp_hdr_has_ack(w, pb_id),
+													ii_extract_tcp_ack_seq_be(tcp_hdr),
+													0, 0,
 													opaque) != IIP_ERR_OK)) {
 										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 									}
