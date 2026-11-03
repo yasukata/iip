@@ -6589,6 +6589,298 @@ static enum iip_rc ii_tcp_rx_csum_check(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P
 /*@
 	requires \valid(opaque);
 	requires \valid(w);
+	requires \valid(tcp_hdr + (0 .. II_TCP_HDR_LEN_MINIMAL - 1));
+	requires \separated(w, tcp_hdr + (0 .. II_TCP_HDR_LEN_MINIMAL - 1), opaque);
+	assigns *opaque;
+ */
+static enum iip_rc ii_ipv4_tcp_input__inner3_found(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id,
+		uint32_t dst_ipv4_be, uint32_t src_ipv4_be, uint8_t *tcp_hdr, IIP_OPAQUE_P opaque)
+{
+	if (IE_UNLIKELY(pb_id >= II_CONF_POOL_NUM_PB)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (IE_UNLIKELY(conn_id >= II_CONF_POOL_NUM_TCP_CONN)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (IE_UNLIKELY(!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_SENT
+			|| (II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_RECVD && !ii_tcp_hdr_has_syn(w, pb_id))) {
+		if (ii_tcp_hdr_has_ack(w, pb_id)) { /* check invalid ack */
+			if (!(ii_seq_ordered(II_TCP_CONN(conn_id).acked_seq, II_PB(pb_id).tcp.ack_seq)
+						&& (II_PB(pb_id).tcp.ack_seq == II_TCP_CONN(conn_id).sent_seq
+							|| ii_seq_ordered(II_PB(pb_id).tcp.ack_seq, II_TCP_CONN(conn_id).sent_seq)))) { /* this has to be checked before the subsequent procedure for syn handling */
+				if (IE_UNLIKELY(!ii_tcp_hdr_has_rst(w, pb_id))) {
+					uint8_t src_mac[II_ETH_ADDR_LEN];
+					uint8_t dst_mac[II_ETH_ADDR_LEN];
+					ii_extract_ethernet_src(src_mac, ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque));
+					ii_extract_ethernet_dst(dst_mac, ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque));
+					if (IE_UNLIKELY(ii_tcp_send_rst_immediate(
+									dst_mac, dst_ipv4_be, ii_extract_tcp_dst_be(tcp_hdr),
+									src_mac, src_ipv4_be, ii_extract_tcp_src_be(tcp_hdr),
+									ii_extract_tcp_ack_seq_be(tcp_hdr),
+									0, 0,
+									opaque) != IIP_ERR_OK)) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+				}
+				return IIP_ERR_INVALID_RX;
+			}
+		}
+	}
+	if (II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_SENT) {
+		if (!ii_tcp_hdr_has_syn(w, pb_id) && !ii_tcp_hdr_has_rst(w, pb_id))
+			return IIP_ERR_INVALID_RX;
+	}
+	return IIP_ERR_OK;
+}
+
+/*@
+	requires \valid(opaque);
+	requires \valid(w);
+	requires \valid(conn_id_ret);
+	requires \valid(tcp_hdr + (0 .. II_TCP_HDR_LEN_MINIMAL - 1));
+	requires \separated(w, tcp_hdr + (0 .. II_TCP_HDR_LEN_MINIMAL - 1), opaque);
+	assigns *w, *conn_id_ret;
+ */
+static enum iip_rc ii_ipv4_tcp_input__inner3_has_syn(IIP_MEM_P w, IIP_TCP_CONN_P *conn_id_ret, II_PB_P pb_id,
+		uint32_t dst_ipv4_be, uint32_t src_ipv4_be, uint8_t *tcp_hdr, IIP_OPAQUE_P opaque)
+{
+	if (IE_UNLIKELY(pb_id >= II_CONF_POOL_NUM_PB)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (IE_UNLIKELY(!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	{
+		bool iip_ret_bool;
+		IIP_OPS_TCP_ACCEPT();
+		if (iip_ret_bool) {
+			IIP_TCP_CONN_P conn_id;
+			enum iip_rc rc = ii_alloc_tcp_conn(&w->tcp_conns, &conn_id);
+			if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+			if (IE_UNLIKELY(!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))) {
+				II_TCP_CONN(conn_id).state = II_TCP_STATE_CLOSED;
+				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_CLOSING | II_TCP_CONN_FLAGS_CLOSE_API_SKIP;
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+			ii_ipv4_tcp_conn_init(w, conn_id,
+					ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + 0,
+					dst_ipv4_be,
+					ii_read_uint16(&tcp_hdr[2]),
+					ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + 6,
+					src_ipv4_be,
+					ii_read_uint16(&tcp_hdr[0]),
+					ii_read_uint32(&tcp_hdr[4]));
+			if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_OPT_HAS_WS)
+				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_WS;
+			else {
+				II_TCP_CONN(conn_id).flags &= II_TCP_CONN_FLAGS_OPT_WS;
+				II_TCP_CONN(conn_id).ws = 0;
+			}
+			if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_OPT_HAS_TS)
+				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
+			else
+				II_TCP_CONN(conn_id).flags &= II_TCP_CONN_FLAGS_OPT_SET_TS;
+			*conn_id_ret = conn_id;
+		}
+	}
+	return IIP_ERR_OK;
+}
+
+/*@
+	requires \valid(opaque);
+	requires \valid(w);
+	requires \valid(tcp_hdr + (0 .. II_TCP_HDR_LEN_MINIMAL - 1));
+	requires \separated(w, tcp_hdr + (0 .. II_TCP_HDR_LEN_MINIMAL - 1), opaque);
+	assigns *opaque;
+ */
+static enum iip_rc ii_ipv4_tcp_input__inner3_full(IIP_MEM_P w, II_PB_P pb_id,
+		uint32_t dst_ipv4_be, uint32_t src_ipv4_be, uint8_t *tcp_hdr, IIP_OPAQUE_P opaque)
+{
+	if (IE_UNLIKELY(pb_id >= II_CONF_POOL_NUM_PB)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (IE_UNLIKELY(!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (IE_UNLIKELY(!ii_tcp_hdr_has_ack(w, pb_id) && !ii_tcp_hdr_has_syn(w, pb_id) && !ii_tcp_hdr_has_rst(w, pb_id))) {
+		bool iip_ret_bool;
+		IIP_OPS_TCP_ACCEPT();
+		if (iip_ret_bool) {
+			return IIP_ERR_INVALID_RX;
+		}
+	}
+	if (IE_UNLIKELY(!ii_tcp_hdr_has_rst(w, pb_id))) {
+		uint8_t src_mac[II_ETH_ADDR_LEN];
+		uint8_t dst_mac[II_ETH_ADDR_LEN];
+		ii_extract_ethernet_src(src_mac, ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque));
+		ii_extract_ethernet_dst(dst_mac, ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque));
+		if (IE_UNLIKELY(ii_tcp_send_rst_immediate(
+						dst_mac, dst_ipv4_be, ii_extract_tcp_dst_be(tcp_hdr),
+						src_mac, src_ipv4_be, ii_extract_tcp_src_be(tcp_hdr),
+						ii_tcp_hdr_has_ack(w, pb_id) ? ii_extract_tcp_ack_seq_be(tcp_hdr) : 0,
+						ii_tcp_hdr_has_ack(w, pb_id) ? 0 : ii_htonl(ii_tcp_seq_re_raw(w, pb_id)),
+						!ii_tcp_hdr_has_ack(w, pb_id),
+						opaque) != IIP_ERR_OK)) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
+	}
+	return IIP_ERR_INVALID_RX;
+}
+
+/*@
+	requires \valid(opaque);
+	requires \valid(w);
+	requires \valid(tcp_hdr + (0 .. II_TCP_HDR_LEN_MINIMAL - 1));
+	requires \separated(w, tcp_hdr + (0 .. II_TCP_HDR_LEN_MINIMAL - 1), opaque);
+	assigns *w, *opaque;
+ */
+static enum iip_rc ii_ipv4_tcp_input__inner3(IIP_MEM_P w, II_PB_P pb_id,
+		uint32_t dst_ipv4_be, uint32_t src_ipv4_be, uint8_t *tcp_hdr, IIP_OPAQUE_P opaque)
+{
+	if (IE_UNLIKELY(pb_id >= II_CONF_POOL_NUM_PB)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (IE_UNLIKELY(!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	{
+		IIP_TCP_CONN_P conn_id = ii_ipv4_tcp_conn_lookup(w,
+					ii_extract_ipv4_dst_be(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN),
+					ii_extract_tcp_dst_be(tcp_hdr),
+					ii_extract_ipv4_src_be(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN),
+					ii_extract_tcp_src_be(tcp_hdr));
+		if (IE_UNLIKELY(conn_id > II_CONF_POOL_NUM_TCP_CONN)) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
+		if (conn_id < II_CONF_POOL_NUM_TCP_CONN) {
+			if (II_TCP_CONN(conn_id).state == II_TCP_STATE_CLOSED)
+				return IIP_ERR_OK; /* do nothing */
+			else {
+				enum iip_rc rc = ii_ipv4_tcp_input__inner3_found(w, conn_id, pb_id,
+						dst_ipv4_be, src_ipv4_be, tcp_hdr, opaque);
+				if (IE_UNLIKELY(rc != IIP_ERR_OK))
+					return rc;
+			}
+		}
+		if (ii_tcp_hdr_has_syn(w, pb_id)) {
+			if (IE_UNLIKELY(ii_tcp_hdr_has_fin(w, pb_id) && !ii_tcp_hdr_has_rst(w, pb_id)))
+				return IIP_ERR_INVALID_RX;
+			if (conn_id < II_CONF_POOL_NUM_TCP_CONN) {
+				if (II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_SENT
+						&& ii_tcp_hdr_has_rst(w, pb_id)
+						&& !ii_tcp_hdr_has_ack(w, pb_id))
+					return IIP_ERR_INVALID_RX;
+				if (II_TCP_CONN(conn_id).state != II_TCP_STATE_SYN_SENT
+						&& II_TCP_CONN(conn_id).state != II_TCP_STATE_SYN_RECVD
+						&& !ii_tcp_hdr_has_rst(w, pb_id)) {
+					II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING;
+					return IIP_ERR_INVALID_RX;
+				}
+			} else { /* not found */
+				if (IE_UNLIKELY(ii_tcp_hdr_has_rst(w, pb_id)))
+					return IIP_ERR_INVALID_RX;
+				else if (IE_UNLIKELY(ii_tcp_hdr_has_ack(w, pb_id))) {
+					IIP_OPS_DEBUG_PRINTF("WARNING: got syn-ack for non-existing connection, maybe RSS sterring would be wrong\n");
+				} else {
+					IIP_TCP_CONN_P conn_id_ret = conn_id;
+					{
+						enum iip_rc rc = ii_ipv4_tcp_input__inner3_has_syn(w, &conn_id_ret, pb_id,
+								dst_ipv4_be, src_ipv4_be, tcp_hdr, opaque);
+						if (IE_UNLIKELY(rc != IIP_ERR_OK))
+							return rc;
+					}
+					conn_id = conn_id_ret;
+					if (IE_UNLIKELY(conn_id > II_CONF_POOL_NUM_TCP_CONN)) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+				}
+			}
+			if (conn_id < II_CONF_POOL_NUM_TCP_CONN &&
+					(II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_SENT || II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_RECVD))
+				II_TCP_CONN(conn_id).seq_next_expected = ii_tcp_seq_le_raw(w, pb_id);
+		}
+		if (IE_UNLIKELY(conn_id == II_CONF_POOL_NUM_TCP_CONN))
+			return ii_ipv4_tcp_input__inner3_full(w, pb_id, dst_ipv4_be, src_ipv4_be, tcp_hdr, opaque);
+		if (IE_UNLIKELY(!ii_tcp_hdr_has_ack(w, pb_id) && !ii_tcp_hdr_has_syn(w, pb_id) && !ii_tcp_hdr_has_rst(w, pb_id)))
+			return IIP_ERR_INVALID_RX;
+		II_PB(pb_id).tcp.rx_cnt = II_TCP_CONN(conn_id).rx_cnt++;
+		if (ii_ipv4_tcp_input__parse_opt(w, conn_id, pb_id, opaque) != IIP_ERR_OK)
+			return IIP_ERR_INVALID_RX;
+		return ii_tcp_rx_push(w, conn_id, pb_id, opaque);
+	}
+}
+
+/*@
+	requires \valid(opaque);
+	requires \valid(w);
+	requires \separated(w, opaque);
+	assigns *w, *opaque;
+ */
+static enum iip_rc ii_ipv4_tcp_input__inner2(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque)
+{
+	if (IE_UNLIKELY(pb_id >= II_CONF_POOL_NUM_PB)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (IE_UNLIKELY(!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	{
+		uint32_t src_ipv4_be = ii_extract_ipv4_src_be(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN);
+		uint32_t dst_ipv4_be = ii_extract_ipv4_dst_be(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN);
+		{
+			uint8_t tcp_hdr[II_TCP_HDR_LEN_MINIMAL];
+			{
+				IIP_PKT_LEN_T copied_len;
+				if (IE_UNLIKELY(ii_pb_payload_copy(w, pb_id, II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN), tcp_hdr, sizeof(tcp_hdr), &copied_len, opaque) != IIP_ERR_OK)) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+				if (copied_len != sizeof(tcp_hdr))
+					return IIP_ERR_INVALID_RX;
+			}
+			ii_tcp_pb_init__base(w, pb_id, tcp_hdr);
+			if (ii_tcp_pb_init__payload_len(w, pb_id, opaque) != IIP_ERR_OK)
+				return IIP_ERR_INVALID_RX;
+			return ii_ipv4_tcp_input__inner3(w, pb_id,
+					dst_ipv4_be, src_ipv4_be, tcp_hdr, opaque);
+		}
+	}
+}
+
+/*@
+	requires \valid(opaque);
+	requires \valid(w);
+	requires \separated(w, opaque);
+	assigns *w, *opaque;
+ */
+static enum iip_rc ii_ipv4_tcp_input__inner1(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque)
+{
+	if (IE_UNLIKELY(pb_id >= II_CONF_POOL_NUM_PB)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (IE_UNLIKELY(!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	{
+		enum iip_rc rc = ii_tcp_rx_csum_check(w, pb_id, opaque);
+		if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
+			if (rc == IIP_ERR_INVALID_RX)
+				return IIP_ERR_INVALID_RX;
+			else {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+		}
+	}
+	return ii_ipv4_tcp_input__inner2(w, pb_id, opaque);	
+}
+
+/*@
+	requires \valid(opaque);
+	requires \valid(w);
 	requires \separated(w, opaque);
 	assigns *w, *opaque;
  */
@@ -6611,164 +6903,7 @@ static enum iip_rc ii_ipv4_tcp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 				return IIP_ERR_INVALID_RX;
 		}
 	}
-	{
-		enum iip_rc rc = ii_tcp_rx_csum_check(w, pb_id, opaque);
-		if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
-			if (rc == IIP_ERR_INVALID_RX)
-				return IIP_ERR_INVALID_RX;
-			else {
-				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-			}
-		}
-	}
-	{
-		uint32_t src_ipv4_be = ii_extract_ipv4_src_be(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN);
-		uint32_t dst_ipv4_be = ii_extract_ipv4_dst_be(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN);
-		{
-			uint8_t tcp_hdr[II_TCP_HDR_LEN_MINIMAL];
-			{
-				IIP_PKT_LEN_T copied_len;
-				if (IE_UNLIKELY(ii_pb_payload_copy(w, pb_id, II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN), tcp_hdr, sizeof(tcp_hdr), &copied_len, opaque) != IIP_ERR_OK)) {
-					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-				}
-				if (copied_len != sizeof(tcp_hdr))
-					return IIP_ERR_INVALID_RX;
-			}
-			ii_tcp_pb_init__base(w, pb_id, tcp_hdr);
-			if (ii_tcp_pb_init__payload_len(w, pb_id, opaque) != IIP_ERR_OK)
-				return IIP_ERR_INVALID_RX;
-			{
-				IIP_TCP_CONN_P conn_id = ii_ipv4_tcp_conn_lookup(w,
-							ii_extract_ipv4_dst_be(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN),
-							ii_extract_tcp_dst_be(tcp_hdr),
-							ii_extract_ipv4_src_be(ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + II_ETH_HDR_LEN),
-							ii_extract_tcp_src_be(tcp_hdr));
-				if (IE_UNLIKELY(conn_id > II_CONF_POOL_NUM_TCP_CONN)) {
-					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-				}
-				if (conn_id < II_CONF_POOL_NUM_TCP_CONN) {
-					if (II_TCP_CONN(conn_id).state == II_TCP_STATE_CLOSED)
-						return IIP_ERR_OK; /* do nothing */
-					if (II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_SENT
-							|| (II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_RECVD && !ii_tcp_hdr_has_syn(w, pb_id))) {
-						if (ii_tcp_hdr_has_ack(w, pb_id)) { /* check invalid ack */
-							if (!(ii_seq_ordered(II_TCP_CONN(conn_id).acked_seq, II_PB(pb_id).tcp.ack_seq)
-									&& (II_PB(pb_id).tcp.ack_seq == II_TCP_CONN(conn_id).sent_seq
-										|| ii_seq_ordered(II_PB(pb_id).tcp.ack_seq, II_TCP_CONN(conn_id).sent_seq)))) { /* this has to be checked before the subsequent procedure for syn handling */
-								if (IE_UNLIKELY(!ii_tcp_hdr_has_rst(w, pb_id))) {
-									uint8_t src_mac[II_ETH_ADDR_LEN];
-									uint8_t dst_mac[II_ETH_ADDR_LEN];
-									ii_extract_ethernet_src(src_mac, ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque));
-									ii_extract_ethernet_dst(dst_mac, ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque));
-									if (IE_UNLIKELY(ii_tcp_send_rst_immediate(
-													dst_mac, dst_ipv4_be, ii_extract_tcp_dst_be(tcp_hdr),
-													src_mac, src_ipv4_be, ii_extract_tcp_src_be(tcp_hdr),
-													ii_extract_tcp_ack_seq_be(tcp_hdr),
-													0, 0,
-													opaque) != IIP_ERR_OK)) {
-										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-									}
-								}
-								return IIP_ERR_INVALID_RX;
-							}
-						}
-					}
-					if (II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_SENT) {
-						if (!ii_tcp_hdr_has_syn(w, pb_id) && !ii_tcp_hdr_has_rst(w, pb_id))
-							return IIP_ERR_INVALID_RX;
-					}
-				}
-				if (ii_tcp_hdr_has_syn(w, pb_id)) {
-					if (IE_UNLIKELY(ii_tcp_hdr_has_fin(w, pb_id) && !ii_tcp_hdr_has_rst(w, pb_id)))
-						return IIP_ERR_INVALID_RX;
-					if (conn_id < II_CONF_POOL_NUM_TCP_CONN) {
-						if (II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_SENT
-								&& ii_tcp_hdr_has_rst(w, pb_id)
-								&& !ii_tcp_hdr_has_ack(w, pb_id))
-							return IIP_ERR_OK;
-						if (II_TCP_CONN(conn_id).state != II_TCP_STATE_SYN_SENT
-								&& II_TCP_CONN(conn_id).state != II_TCP_STATE_SYN_RECVD
-								&& !ii_tcp_hdr_has_rst(w, pb_id)) {
-							II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING;
-							return IIP_ERR_INVALID_RX;
-						}
-					} else { /* not found */
-						if (IE_UNLIKELY(ii_tcp_hdr_has_rst(w, pb_id)))
-							return IIP_ERR_OK; /* do nothing */
-						else if (IE_UNLIKELY(ii_tcp_hdr_has_ack(w, pb_id))) {
-							IIP_OPS_DEBUG_PRINTF("WARNING: got syn-ack for non-existing connection, maybe RSS sterring would be wrong\n");
-						} else {
-							bool iip_ret_bool;
-							IIP_OPS_TCP_ACCEPT();
-							if (iip_ret_bool) {
-								enum iip_rc rc = ii_alloc_tcp_conn(&w->tcp_conns, &conn_id);
-								if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
-									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-								}
-								if (IE_UNLIKELY(!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0], opaque))) {
-									II_TCP_CONN(conn_id).state = II_TCP_STATE_CLOSED;
-									II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_CLOSING | II_TCP_CONN_FLAGS_CLOSE_API_SKIP;
-									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-								}
-								ii_ipv4_tcp_conn_init(w, conn_id,
-										ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + 0,
-										dst_ipv4_be,
-										ii_read_uint16(&tcp_hdr[2]),
-										ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque) + 6,
-										src_ipv4_be,
-										ii_read_uint16(&tcp_hdr[0]),
-										ii_read_uint32(&tcp_hdr[4]));
-								if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_OPT_HAS_WS)
-									II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_WS;
-								else {
-									II_TCP_CONN(conn_id).flags &= II_TCP_CONN_FLAGS_OPT_WS;
-									II_TCP_CONN(conn_id).ws = 0;
-								}
-								if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_OPT_HAS_TS)
-									II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
-								else
-									II_TCP_CONN(conn_id).flags &= II_TCP_CONN_FLAGS_OPT_SET_TS;
-							}
-						}
-					}
-					if (conn_id < II_CONF_POOL_NUM_TCP_CONN &&
-							(II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_SENT || II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_RECVD))
-						II_TCP_CONN(conn_id).seq_next_expected = ii_tcp_seq_le_raw(w, pb_id);
-				}
-				if (IE_UNLIKELY(conn_id == II_CONF_POOL_NUM_TCP_CONN)) {
-					if (IE_UNLIKELY(!ii_tcp_hdr_has_ack(w, pb_id) && !ii_tcp_hdr_has_syn(w, pb_id) && !ii_tcp_hdr_has_rst(w, pb_id))) {
-						bool iip_ret_bool;
-						IIP_OPS_TCP_ACCEPT();
-						if (iip_ret_bool) {
-							return IIP_ERR_INVALID_RX;
-						}
-					}
-					if (IE_UNLIKELY(!ii_tcp_hdr_has_rst(w, pb_id))) {
-						uint8_t src_mac[II_ETH_ADDR_LEN];
-						uint8_t dst_mac[II_ETH_ADDR_LEN];
-						ii_extract_ethernet_src(src_mac, ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque));
-						ii_extract_ethernet_dst(dst_mac, ii_call_pkt_get_data(II_PB(pb_id).part_pkt[0], opaque));
-						if (IE_UNLIKELY(ii_tcp_send_rst_immediate(
-									dst_mac, dst_ipv4_be, ii_extract_tcp_dst_be(tcp_hdr),
-									src_mac, src_ipv4_be, ii_extract_tcp_src_be(tcp_hdr),
-									ii_tcp_hdr_has_ack(w, pb_id) ? ii_extract_tcp_ack_seq_be(tcp_hdr) : 0,
-									ii_tcp_hdr_has_ack(w, pb_id) ? 0 : ii_htonl(ii_tcp_seq_re_raw(w, pb_id)),
-									!ii_tcp_hdr_has_ack(w, pb_id),
-									opaque) != IIP_ERR_OK)) {
-							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-						}
-					}
-					return IIP_ERR_INVALID_RX;
-				}
-				if (IE_UNLIKELY(!ii_tcp_hdr_has_ack(w, pb_id) && !ii_tcp_hdr_has_syn(w, pb_id) && !ii_tcp_hdr_has_rst(w, pb_id)))
-					return IIP_ERR_INVALID_RX;
-				II_PB(pb_id).tcp.rx_cnt = II_TCP_CONN(conn_id).rx_cnt++;
-				if (ii_ipv4_tcp_input__parse_opt(w, conn_id, pb_id, opaque) != IIP_ERR_OK)
-					return IIP_ERR_INVALID_RX;
-				return ii_tcp_rx_push(w, conn_id, pb_id, opaque);
-			}
-		}
-	}
+	return ii_ipv4_tcp_input__inner1(w, pb_id, opaque);
 }
 
 /*
