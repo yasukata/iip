@@ -6678,13 +6678,13 @@ static enum iip_rc ii_ipv4_tcp_input__inner3_has_syn(IIP_MEM_P w, IIP_TCP_CONN_P
 			if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_OPT_HAS_WS)
 				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_WS;
 			else {
-				II_TCP_CONN(conn_id).flags &= II_TCP_CONN_FLAGS_OPT_WS;
+				II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_OPT_WS;
 				II_TCP_CONN(conn_id).ws = 0;
 			}
 			if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_OPT_HAS_TS)
 				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
 			else
-				II_TCP_CONN(conn_id).flags &= II_TCP_CONN_FLAGS_OPT_SET_TS;
+				II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_OPT_SET_TS;
 			*conn_id_ret = conn_id;
 		}
 	}
