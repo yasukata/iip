@@ -192,13 +192,13 @@ frama-c -cpp-extra-args=-CC -wp-prover alt-ergo,cvc4,cvc5,z3 -wp -wp-rte -wp-smo
 We can attempt the verification for a particular function specified through the ```-wp-fct``` option. This may complete in a few seconds. The following is an example command that performs the verification only for ```iip_run``` (without ```-wp-print```).
 
 ```
-frama-c -cpp-extra-args=-D_ENABLE_FRAMA_C_CHECK,-CC -wp-prover alt-ergo,cvc4,cvc5,z3 -wp -wp-rte -wp-smoke-tests main.c -wp-fct iip_run
+frama-c -cpp-extra-args=-CC -wp-prover alt-ergo,cvc4,cvc5,z3 -wp -wp-rte -wp-smoke-tests main.c -wp-fct iip_run
 ```
 
 The following is an example output. The key line is ```Proved goals:   50 / 50```: this indicates all goals generated for ```iip_run``` in this run are proved.
 
 ```
-$ frama-c -cpp-extra-args=-D_ENABLE_FRAMA_C_CHECK,-CC -wp-prover alt-ergo,cvc4,cvc5,z3 -wp -wp-rte -wp-smoke-tests main.c -wp-fct iip_run 
+$ frama-c -cpp-extra-args=-CC -wp-prover alt-ergo,cvc4,cvc5,z3 -wp -wp-rte -wp-smoke-tests main.c -wp-fct iip_run 
 [kernel] Parsing main.c (with preprocessing)
 [wp] Warning: Skipped RTE guards: unaligned pointers (\aligned not supported)
 [wp] Warning: Skipped RTE guards: invalid function pointer calls (\valid_function not supported)
