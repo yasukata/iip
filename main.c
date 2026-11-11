@@ -540,8 +540,11 @@ int printf_nothing(const char *format, ...) { (void) format; return 0; }
 #ifndef IIP_OPS_PKT_FREE
 #define IIP_OPS_PKT_FREE() do { iip_ret_int = 0; } while (0)
 #endif
-#ifndef IIP_OPS_PKT_GET_DATA
-#define IIP_OPS_PKT_GET_DATA() do { iip_ret_u8_ptr = (uint8_t *) 0; } while (0)
+#ifndef IIP_OPS_PKT_DATA_READ
+#define IIP_OPS_PKT_DATA_READ() do { iip_ret_long = 0; } while (0)
+#endif
+#ifndef IIP_OPS_PKT_DATA_WRITE
+#define IIP_OPS_PKT_DATA_WRITE() do { iip_ret_long = 0; } while (0)
 #endif
 #ifndef IIP_OPS_PKT_GET_LEN
 #define IIP_OPS_PKT_GET_LEN() do { iip_ret_len = 0; } while (0)
@@ -704,6 +707,9 @@ static long ii_call_pkt_data_read(IIP_PKT_P pkt, uint8_t *buf, IIP_PKT_LEN_T len
 	return iip_ret_long;
 	{ /* unsused */
 		(void) pkt;
+		(void) buf;
+		(void) len;
+		(void) off;
 		(void) opaque;
 	}
 }
@@ -722,6 +728,9 @@ static long ii_call_pkt_data_write(IIP_PKT_P pkt, const uint8_t *buf, IIP_PKT_LE
 	return iip_ret_long;
 	{ /* unsused */
 		(void) pkt;
+		(void) buf;
+		(void) len;
+		(void) off;
 		(void) opaque;
 	}
 }
