@@ -7605,11 +7605,22 @@ static enum iip_rc ii_ipv4_push_one(IIP_MEM_P w, IIP_PKT_P rx_pkt, struct ii_wor
 }
 
 /*@
+	requires \valid(opaque);
 	requires \valid_read(buf + (0 .. II_IPV4_HDR_LEN_MINIMAL - 1));
+	requires f_iip_ops_pkt_valid(rx_pkt, opaque);
 	assigns \nothing;
+	ensures \result == IIP_ERR_OK ==> f_iip_ops_pkt_get_len(rx_pkt, opaque) >= II_ETH_HDR_LEN + II_IPV4_HDR_LEN_MINIMAL;
+	ensures \result == IIP_ERR_OK ==> f_extract_ipv4_version(buf) == 4;
+	ensures \result == IIP_ERR_OK ==> f_extract_ipv4_hdr_len(buf) <= f_iip_ops_pkt_get_len(rx_pkt, opaque) - II_ETH_HDR_LEN;
+	ensures \result == IIP_ERR_OK ==> f_extract_ipv4_hdr_len(buf) <= f_extract_ipv4_tot_len(buf);
+	ensures \result == IIP_ERR_OK ==> f_extract_ipv4_tot_len(buf) <= f_iip_ops_pkt_get_len(rx_pkt, opaque) - II_ETH_HDR_LEN;
+	ensures \result == IIP_ERR_OK ==> f_extract_ipv4_reserved_flag(buf) == 0;
+	ensures \result == IIP_ERR_OK ==> f_extract_ipv4_more_flag(buf) ==> f_extract_ipv4_payload_len(buf) % 8 == 0;
+	ensures \result == IIP_ERR_OK ==> (f_extract_ipv4_proto(buf) == 1 || f_extract_ipv4_proto(buf) == 6 || f_extract_ipv4_proto(buf) == 17);
  */
-static enum iip_rc ii_ipv4_validation(uint8_t buf[II_IPV4_HDR_LEN_MINIMAL], IIP_PKT_LEN_T buf_len)
+static enum iip_rc ii_ipv4_validation(IIP_PKT_P rx_pkt, uint8_t buf[II_IPV4_HDR_LEN_MINIMAL], IIP_OPAQUE_P opaque)
 {
+	IIP_PKT_LEN_T buf_len = ii_call_pkt_get_len(rx_pkt, opaque);
 	if (buf_len < II_ETH_HDR_LEN)
 		return IIP_ERR_INVALID_RX;
 	buf_len -= II_ETH_HDR_LEN;
@@ -7741,7 +7752,7 @@ static enum iip_rc ii_ipv4_input(IIP_MEM_P w, IIP_PKT_P rx_pkt, struct ii_work *
 		if (ii_call_pkt_data_read(rx_pkt, work->l3_hdr, II_IPV4_HDR_LEN_MINIMAL, II_ETH_HDR_LEN, opaque) < 0) {
 			IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
 		}
-		if (ii_ipv4_validation(work->l3_hdr, buf_len) != IIP_ERR_OK)
+		if (ii_ipv4_validation(rx_pkt, work->l3_hdr, opaque) != IIP_ERR_OK)
 			return IIP_ERR_INVALID_RX;
 		{
 			uint32_t src = ii_ntohl(ii_extract_ipv4_src_be(work->l3_hdr));
