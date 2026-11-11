@@ -30,6 +30,9 @@
 #ifndef II_CONF_IPV4_FRAG_CNT_MAX
 #define II_CONF_IPV4_FRAG_CNT_MAX (4)
 #endif
+#if II_CONF_IPV4_FRAG_CNT_MAX <= 1
+#error "II_CONF_IPV4_FRAG_CNT_MAX must be larger than 1"
+#endif
 #ifndef II_CONF_EXTENT_QUEUE_SIZE
 #define II_CONF_EXTENT_QUEUE_SIZE (4)
 #endif
@@ -7199,6 +7202,7 @@ static enum iip_rc ii_ipv4_received_invalid_option(const uint8_t *buf)
 	requires \valid(frag);
 	requires \separated(frag, opaque);
 	assigns frag->cnt, *opaque;
+	ensures \result == IIP_ERR_OK ==> frag->cnt == 0;
  */
 static enum iip_rc ii_ipv4_frag_push__discard_slot(struct ii_pb *frag, IIP_OPAQUE_P opaque)
 {
@@ -7438,6 +7442,114 @@ static enum iip_rc ii_ipv4_rx_push(IIP_MEM_P w, uint16_t pb_id, IIP_OPAQUE_P opa
 	requires \valid(w);
 	requires \valid_read(work);
 	requires \separated(w, opaque, work);
+	requires f_iip_ops_pkt_valid(rx_pkt, opaque);
+	requires slot < II_CONF_IPV4_FRAG_ARRAY_LEN;
+	assigns *w, *opaque;
+ */
+static enum iip_rc ii_ipv4_frag_push__to_slot(IIP_MEM_P w, IIP_PKT_P rx_pkt, struct ii_work *work, uint16_t slot, IIP_OPAQUE_P opaque)
+{
+	if (IE_UNLIKELY(ii_ipv4_frag_validation(&w->ipv4_frag[slot], opaque) != IIP_ERR_OK)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	/* ensured by ii_ipv4_frag_validation */
+	/*@ assert \forall integer i; 0 <= i < w->ipv4_frag[slot].cnt ==> f_iip_ops_pkt_valid(w->ipv4_frag[slot].part_pkt[i].p, opaque); */
+	/*@ assert w->ipv4_frag[slot].cnt <= II_CONF_IPV4_FRAG_CNT_MAX; */
+	if (w->ipv4_frag[slot].cnt == II_CONF_IPV4_FRAG_CNT_MAX) { /* no space to add */
+		/*
+		 * this is unlikely to occur but may happen when new packets are pushed in ii_ipv4_rx_push
+		 * mainly by user-provided callback functions
+		 */
+		if (ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[slot], opaque) != IIP_ERR_OK) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
+		return IIP_ERR_INVALID_RX;
+	}
+	/*@ assert w->ipv4_frag[slot].cnt < II_CONF_IPV4_FRAG_CNT_MAX; */
+	{
+		IIP_PKT_P cloned_rx_pkt;
+		if (IE_UNLIKELY(ii_call_pkt_clone(rx_pkt, &cloned_rx_pkt, opaque))) {
+			IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+		}
+		if (!w->ipv4_frag[slot].cnt)
+			w->ipv4_frag[slot].tcp.opt.ts[0] = w->now_ms; /* XXX: reusing the field for tcp */
+		{
+			IIP_PKT_LEN_T i;
+			/*@
+			  loop invariant 0 <= i <= II_ETH_ADDR_LEN;
+			  loop assigns i, w->ipv4_frag[slot].part_pkt[w->ipv4_frag[slot].cnt].l2_dst[0 .. II_ETH_ADDR_LEN - 1] \from work->l2_hdr[0 .. II_ETH_ADDR_LEN - 1];
+			  loop assigns i, w->ipv4_frag[slot].part_pkt[w->ipv4_frag[slot].cnt].l2_src[0 .. II_ETH_ADDR_LEN - 1] \from work->l2_hdr[II_ETH_ADDR_LEN .. II_ETH_ADDR_LEN + II_ETH_ADDR_LEN - 1];
+			  loop variant II_ETH_HDR_LEN - i;
+			  */
+			for (i = 0; i < II_ETH_ADDR_LEN; i++) {
+				w->ipv4_frag[slot].part_pkt[w->ipv4_frag[slot].cnt].l2_dst[i] = work->l2_hdr[i];
+				w->ipv4_frag[slot].part_pkt[w->ipv4_frag[slot].cnt].l2_src[i] = work->l2_hdr[II_ETH_ADDR_LEN + i];
+			}
+		}
+		{
+			IIP_PKT_LEN_T i;
+			/*@
+			  loop invariant 0 <= i <= II_IPV4_HDR_LEN_MINIMAL;
+			  loop assigns i, w->ipv4_frag[slot].part_pkt[w->ipv4_frag[slot].cnt].l3[0 .. II_IPV4_HDR_LEN_MINIMAL - 1] \from work->l3_hdr[0 .. II_IPV4_HDR_LEN_MINIMAL - 1];
+			  loop variant II_IPV4_HDR_LEN_MINIMAL - i;
+			  */
+			for (i = 0; i < II_IPV4_HDR_LEN_MINIMAL; i++)
+				w->ipv4_frag[slot].part_pkt[w->ipv4_frag[slot].cnt].l3[i] = work->l3_hdr[i];
+		}
+		w->ipv4_frag[slot].part_pkt[w->ipv4_frag[slot].cnt].p = cloned_rx_pkt;
+		w->ipv4_frag[slot].cnt++;
+		if (w->ipv4_frag[slot].cnt < 2)
+			return IIP_ERR_OK;
+		if (IE_UNLIKELY(ii_ipv4_frag_push__ordering(&w->ipv4_frag[slot]) != IIP_ERR_OK)) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
+		switch (ii_ipv4_frag_push__check_complete(&w->ipv4_frag[slot])) {
+		case IIP_ERR_OK: /* complete */
+			{
+				II_PB_P pb_id;
+				{
+					enum iip_rc rc = ii_alloc_pb(&w->pbs, &pb_id);
+					if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+				}
+				II_PB(pb_id) = w->ipv4_frag[slot];
+				w->ipv4_frag[slot].cnt = 0;
+				{
+					enum iip_rc rc = ii_ipv4_rx_push(w, pb_id, opaque);
+					if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
+						if (IE_UNLIKELY(ii_free_pb_and_pkt(w, pb_id, opaque))) {
+							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+						}
+						return rc;
+					}
+				}
+				return IIP_ERR_OK;
+			}
+		case IIP_ERR_AGAIN: /* wait */
+			if (w->ipv4_frag[slot].cnt == II_CONF_IPV4_FRAG_CNT_MAX) {
+				if (ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[slot], opaque) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
+			}
+			return IIP_ERR_OK;
+		case IIP_ERR_INVALID_RX: /* discard */
+			if (ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[slot], opaque) != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+			return IIP_ERR_INVALID_RX;
+		default:
+			{
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+		}
+	}
+}
+
+/*@
+	requires \valid(opaque);
+	requires \valid(w);
+	requires \valid_read(work);
+	requires \separated(w, opaque, work);
 	assigns *w, *opaque;
  */
 static enum iip_rc ii_ipv4_frag_push(IIP_MEM_P w, IIP_PKT_P rx_pkt, struct ii_work *work, IIP_OPAQUE_P opaque)
@@ -7447,86 +7559,16 @@ static enum iip_rc ii_ipv4_frag_push(IIP_MEM_P w, IIP_PKT_P rx_pkt, struct ii_wo
 	}
 	{
 		uint16_t slot;
-		if (IE_UNLIKELY(ii_ipv4_frag_push__slot(work->l3_hdr, w->ipv4_frag, &slot) != IIP_ERR_OK)) {
-			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-		}
-		if (IE_UNLIKELY(ii_ipv4_frag_validation(&w->ipv4_frag[slot], opaque) != IIP_ERR_OK)) {
-			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-		}
-		if (IE_UNLIKELY(w->ipv4_frag[slot].cnt >= II_CONF_IPV4_FRAG_CNT_MAX)) {
-			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-		}
 		{
-			IIP_PKT_P cloned_rx_pkt;
-			if (IE_UNLIKELY(ii_call_pkt_clone(rx_pkt, &cloned_rx_pkt, opaque))) {
-				IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
-			}
-			if (!w->ipv4_frag[slot].cnt)
-				w->ipv4_frag[slot].tcp.opt.ts[0] = w->now_ms; /* XXX: reusing the field for tcp */
-			{
-				IIP_PKT_LEN_T i;
-				/*@
-				  loop invariant 0 <= i <= II_ETH_ADDR_LEN;
-				  loop assigns i, w->ipv4_frag[slot].part_pkt[w->ipv4_frag[slot].cnt].l2_dst[0 .. II_ETH_ADDR_LEN - 1] \from work->l2_hdr[0 .. II_ETH_ADDR_LEN - 1];
-				  loop assigns i, w->ipv4_frag[slot].part_pkt[w->ipv4_frag[slot].cnt].l2_src[0 .. II_ETH_ADDR_LEN - 1] \from work->l2_hdr[II_ETH_ADDR_LEN .. II_ETH_ADDR_LEN + II_ETH_ADDR_LEN - 1];
-				  loop variant II_ETH_HDR_LEN - i;
-				  */
-				for (i = 0; i < II_ETH_ADDR_LEN; i++) {
-					w->ipv4_frag[slot].part_pkt[w->ipv4_frag[slot].cnt].l2_dst[i] = work->l2_hdr[i];
-					w->ipv4_frag[slot].part_pkt[w->ipv4_frag[slot].cnt].l2_src[i] = work->l2_hdr[II_ETH_ADDR_LEN + i];
-				}
-			}
-			{
-				IIP_PKT_LEN_T i;
-				/*@
-				  loop invariant 0 <= i <= II_IPV4_HDR_LEN_MINIMAL;
-				  loop assigns i, w->ipv4_frag[slot].part_pkt[w->ipv4_frag[slot].cnt].l3[0 .. II_IPV4_HDR_LEN_MINIMAL - 1] \from work->l3_hdr[0 .. II_IPV4_HDR_LEN_MINIMAL - 1];
-				  loop variant II_IPV4_HDR_LEN_MINIMAL - i;
-				  */
-				for (i = 0; i < II_IPV4_HDR_LEN_MINIMAL; i++)
-					w->ipv4_frag[slot].part_pkt[w->ipv4_frag[slot].cnt].l3[i] = work->l3_hdr[i];
-			}
-			w->ipv4_frag[slot].part_pkt[w->ipv4_frag[slot].cnt].p = cloned_rx_pkt;
-			w->ipv4_frag[slot].cnt++;
-			if (w->ipv4_frag[slot].cnt < 2)
-				return IIP_ERR_OK;
-			if (IE_UNLIKELY(ii_ipv4_frag_push__ordering(&w->ipv4_frag[slot]) != IIP_ERR_OK)) {
+			enum iip_rc rc = ii_ipv4_frag_push__slot(work->l3_hdr, w->ipv4_frag, &slot);
+			if (rc == IIP_ERR_FATAL_MEM) {
+				IIP_OPS_DEBUG_PRINTF("ipv4 fragment no space to store new entry\n");
+				return IIP_ERR_INVALID_RX; /* TODO: better error code */
+			} else if (rc != IIP_ERR_OK) {
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
-			switch (ii_ipv4_frag_push__check_complete(&w->ipv4_frag[slot])) {
-			case IIP_ERR_OK: /* complete */
-				{
-					II_PB_P pb_id;
-					{
-						enum iip_rc rc = ii_alloc_pb(&w->pbs, &pb_id);
-						if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
-							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-						}
-					}
-					II_PB(pb_id) = w->ipv4_frag[slot];
-					w->ipv4_frag[slot].cnt = 0;
-					{
-						enum iip_rc rc = ii_ipv4_rx_push(w, pb_id, opaque);
-						if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
-							if (IE_UNLIKELY(ii_free_pb_and_pkt(w, pb_id, opaque))) {
-								IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-							}
-							return rc;
-						}
-					}
-					return IIP_ERR_OK;
-				}
-			case IIP_ERR_AGAIN: /* wait */
-				return IIP_ERR_OK;
-			case IIP_ERR_INVALID_RX: /* discard */
-				ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[slot], opaque);
-				return IIP_ERR_INVALID_RX;
-			default:
-				{
-					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-				}
-			}
 		}
+		return ii_ipv4_frag_push__to_slot(w, rx_pkt, work, slot, opaque);
 	}
 }
 
