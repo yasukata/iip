@@ -7348,7 +7348,16 @@ static enum iip_rc ii_ipv4_frag_push__ordering(struct ii_pb *pb)
 
 /*@
 	requires \valid_read(pb);
+	requires 1 < pb->cnt;
 	assigns \nothing;
+	ensures \result == IIP_ERR_OK ==>
+		1 < pb->cnt <= II_CONF_IPV4_FRAG_CNT_MAX
+		&& f_extract_ipv4_off(&pb->part_pkt[0].l3[0]) == 0
+		&& (\forall integer i; 0 <= i < pb->cnt - 1 ==> f_extract_ipv4_more_flag(&pb->part_pkt[i].l3[0]))
+		&& !f_extract_ipv4_more_flag(&pb->part_pkt[pb->cnt - 1].l3[0])
+		&& (\forall integer i; 0 <= i < pb->cnt - 1 ==>
+			f_extract_ipv4_off(&pb->part_pkt[i].l3[0]) + f_extract_ipv4_payload_len(&pb->part_pkt[i].l3[0]) == f_extract_ipv4_off(&pb->part_pkt[i + 1].l3[0])
+		);
  */
 static enum iip_rc ii_ipv4_frag_push__check_complete(struct ii_pb *pb)
 {
@@ -7359,8 +7368,11 @@ static enum iip_rc ii_ipv4_frag_push__check_complete(struct ii_pb *pb)
 		uint16_t i, off, cnt = pb->cnt;
 		/*@
 			loop invariant 0 <= i <= cnt;
-			loop invariant 0 <= off <= 0xffff;
 			loop invariant 0 == i ==> off == 0;
+			loop invariant 0 < i ==> f_extract_ipv4_off(&pb->part_pkt[0].l3[0]) == 0;
+			loop invariant 0 < i ==> off == f_extract_ipv4_off(&pb->part_pkt[i - 1].l3[0]) + f_extract_ipv4_payload_len(&pb->part_pkt[i - 1].l3[0]);
+			loop invariant \forall integer j; 0 <= j < i ==> f_extract_ipv4_more_flag(&pb->part_pkt[j].l3[0]);
+			loop invariant \forall integer j; 1 <= j < i ==> f_extract_ipv4_off(&pb->part_pkt[j - 1].l3[0]) + f_extract_ipv4_payload_len(&pb->part_pkt[j - 1].l3[0]) == f_extract_ipv4_off(&pb->part_pkt[j].l3[0]);
 			loop assigns i, off;
 			loop variant cnt - i;
 		 */
@@ -7383,8 +7395,9 @@ static enum iip_rc ii_ipv4_frag_push__check_complete(struct ii_pb *pb)
 					if (!ii_extract_ipv4_more_flag(pb->part_pkt[i].l3)) {
 						if (i != cnt - 1)
 							return IIP_ERR_INVALID_RX;
-						else
+						else {
 							return IIP_ERR_OK;
+						}
 					} else
 						continue;
 				}
