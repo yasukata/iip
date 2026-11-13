@@ -7236,8 +7236,22 @@ static enum iip_rc ii_ipv4_frag_push__discard_slot(struct ii_pb *frag, IIP_OPAQU
 	requires \valid_read(buf + (0 .. II_IPV4_HDR_LEN_MINIMAL - 1));
 	requires \valid_read(ipv4_frag + (0 .. II_CONF_IPV4_FRAG_ARRAY_LEN - 1));
 	requires \valid(slot);
+	requires \separated(slot, buf + (0 .. II_IPV4_HDR_LEN_MINIMAL - 1), ipv4_frag + (0 .. II_CONF_IPV4_FRAG_ARRAY_LEN - 1));
 	assigns *slot \from buf, ipv4_frag[0 .. II_CONF_IPV4_FRAG_ARRAY_LEN - 1];
 	ensures \result == IIP_ERR_OK ==> *slot < II_CONF_IPV4_FRAG_ARRAY_LEN;
+	ensures \result == IIP_ERR_OK && ipv4_frag[*slot].cnt ==>
+		(f_extract_ipv4_src_be(buf) == f_extract_ipv4_src_be(&ipv4_frag[*slot].part_pkt[0].l3[0])
+		&& f_extract_ipv4_dst_be(buf) == f_extract_ipv4_dst_be(&ipv4_frag[*slot].part_pkt[0].l3[0])
+		&& f_extract_ipv4_id(buf) == f_extract_ipv4_id(&ipv4_frag[*slot].part_pkt[0].l3[0])
+		&& f_extract_ipv4_proto(buf) == f_extract_ipv4_proto(&ipv4_frag[*slot].part_pkt[0].l3[0]));
+	ensures \result == IIP_ERR_OK && ipv4_frag[*slot].cnt == 0 ==>
+		(\forall integer i; 0 <= i < II_CONF_IPV4_FRAG_ARRAY_LEN ==>
+			!(ipv4_frag[i].cnt
+				&& f_extract_ipv4_src_be(buf) == f_extract_ipv4_src_be(&ipv4_frag[i].part_pkt[0].l3[0])
+				&& f_extract_ipv4_dst_be(buf) == f_extract_ipv4_dst_be(&ipv4_frag[i].part_pkt[0].l3[0])
+				&& f_extract_ipv4_id(buf) == f_extract_ipv4_id(&ipv4_frag[i].part_pkt[0].l3[0])
+				&& f_extract_ipv4_proto(buf) == f_extract_ipv4_proto(&ipv4_frag[i].part_pkt[0].l3[0]))
+		);
  */
 static enum iip_rc ii_ipv4_frag_push__slot(const uint8_t *buf, struct ii_pb ipv4_frag[II_CONF_IPV4_FRAG_ARRAY_LEN], uint16_t *slot)
 {
@@ -7245,6 +7259,25 @@ static enum iip_rc ii_ipv4_frag_push__slot(const uint8_t *buf, struct ii_pb ipv4
 	/*@
 		loop invariant 0 <= i <= II_CONF_IPV4_FRAG_ARRAY_LEN;
 		loop invariant -1 <= unused < II_CONF_IPV4_FRAG_ARRAY_LEN;
+		loop invariant (\forall integer j; 0 <= j < i ==> ipv4_frag[j].cnt) ==> unused == -1;
+		loop invariant unused == -1 ==> (\forall integer j; 0 <= j < i ==> ipv4_frag[j].cnt);
+		loop invariant !(\forall integer j; 0 <= j < i ==> ipv4_frag[j].cnt) ==> unused != -1;
+		loop invariant unused != -1 ==> !(\forall integer j; 0 <= j < i ==> ipv4_frag[j].cnt);
+		loop invariant unused != -1 ==> ipv4_frag[unused].cnt == 0;
+		loop invariant \forall integer j; 0 <= j < i ==>
+			!(ipv4_frag[j].cnt
+			&& f_extract_ipv4_src_be(buf) == f_extract_ipv4_src_be(&ipv4_frag[j].part_pkt[0].l3[0])
+			&& f_extract_ipv4_dst_be(buf) == f_extract_ipv4_dst_be(&ipv4_frag[j].part_pkt[0].l3[0])
+			&& f_extract_ipv4_id(buf) == f_extract_ipv4_id(&ipv4_frag[j].part_pkt[0].l3[0])
+			&& f_extract_ipv4_proto(buf) == f_extract_ipv4_proto(&ipv4_frag[j].part_pkt[0].l3[0]));
+		loop invariant i == II_CONF_IPV4_FRAG_ARRAY_LEN ==>
+			(\forall integer j; 0 <= j < II_CONF_IPV4_FRAG_ARRAY_LEN ==>
+				!(ipv4_frag[j].cnt
+				&& f_extract_ipv4_src_be(buf) == f_extract_ipv4_src_be(&ipv4_frag[j].part_pkt[0].l3[0])
+				&& f_extract_ipv4_dst_be(buf) == f_extract_ipv4_dst_be(&ipv4_frag[j].part_pkt[0].l3[0])
+				&& f_extract_ipv4_id(buf) == f_extract_ipv4_id(&ipv4_frag[j].part_pkt[0].l3[0])
+				&& f_extract_ipv4_proto(buf) == f_extract_ipv4_proto(&ipv4_frag[j].part_pkt[0].l3[0]))
+			);
 		loop assigns i, unused;
 		loop variant II_CONF_IPV4_FRAG_ARRAY_LEN - i;
 	 */
@@ -7252,11 +7285,10 @@ static enum iip_rc ii_ipv4_frag_push__slot(const uint8_t *buf, struct ii_pb ipv4
 		if (!ipv4_frag[i].cnt)
 			unused = i;
 		else {
-			uint8_t *buf2 = ipv4_frag[i].part_pkt[0].l3;
-			if (ii_extract_ipv4_src_be(buf) == ii_extract_ipv4_src_be(buf2)
-					&& ii_extract_ipv4_dst_be(buf) == ii_extract_ipv4_dst_be(buf2)
-					&& ii_extract_ipv4_id(buf) == ii_extract_ipv4_id(buf2)
-					&& ii_extract_ipv4_proto(buf) == ii_extract_ipv4_proto(buf2))
+			if (ii_extract_ipv4_src_be(buf) == ii_extract_ipv4_src_be(ipv4_frag[i].part_pkt[0].l3)
+					&& ii_extract_ipv4_dst_be(buf) == ii_extract_ipv4_dst_be(ipv4_frag[i].part_pkt[0].l3)
+					&& ii_extract_ipv4_id(buf) == ii_extract_ipv4_id(ipv4_frag[i].part_pkt[0].l3)
+					&& ii_extract_ipv4_proto(buf) == ii_extract_ipv4_proto(ipv4_frag[i].part_pkt[0].l3))
 				break;
 		}
 	}
