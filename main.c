@@ -7271,78 +7271,210 @@ static enum iip_rc ii_ipv4_frag_push__slot(const uint8_t *buf, struct ii_pb ipv4
 }
 
 /*@
+	requires 0 < cnt;
+	requires \valid(buf1 + (0 .. cnt - 1));
+	requires \valid(buf2 + (0 .. cnt - 1));
+	requires \separated(buf1 + (0 .. cnt - 1), buf2 + (0 .. cnt - 1));
+	assigns buf1[0 .. cnt - 1] \from buf2[0 .. cnt - 1];
+	assigns buf2[0 .. cnt - 1] \from buf1[0 .. cnt - 1];
+	ensures \forall integer i; 0 <= i < cnt ==>
+		buf1[i] == \old(buf2[i]) && buf2[i] == \old(buf1[i]);
+ */
+static void buf_swap(uint8_t *buf1, uint8_t *buf2, uint16_t cnt)
+{
+	uint16_t i;
+	/*@
+		loop invariant 0 <= i <= cnt;
+		loop invariant \forall integer j; 0 <= j < i ==>
+			buf1[j] == \at(buf2[j], Pre) && buf2[j] == \at(buf1[j], Pre);
+		loop invariant \forall integer j; i <= j < cnt ==>
+			buf1[j] == \at(buf1[j], Pre) && buf2[j] == \at(buf2[j], Pre);
+		loop assigns i;
+		loop assigns buf1[0 .. cnt - 1] \from buf2[0 .. cnt - 1];
+		loop assigns buf2[0 .. cnt - 1] \from buf1[0 .. cnt - 1];
+		loop variant cnt - i;
+	 */
+	for (i = 0; i < cnt; i++) {
+		uint8_t tmp = buf1[i];
+		buf1[i] = buf2[i];
+		buf2[i] = tmp;
+	}
+}
+
+/*@
+	requires n != m;
+	requires n < II_CONF_IPV4_FRAG_CNT_MAX;
+	requires m < II_CONF_IPV4_FRAG_CNT_MAX;
+	requires 1 < pb->cnt <= II_CONF_IPV4_FRAG_CNT_MAX;
 	requires \valid(pb);
-	assigns pb->part_pkt[0 .. II_CONF_IPV4_FRAG_CNT_MAX - 1];
+	requires \valid(pb->part_pkt[n].l3 + (0 .. II_IPV4_HDR_LEN_MINIMAL - 1));
+	requires \valid(pb->part_pkt[m].l3 + (0 .. II_IPV4_HDR_LEN_MINIMAL - 1));
+	requires \valid(pb->part_pkt[n].l2_src + (0 .. II_ETH_ADDR_LEN - 1));
+	requires \valid(pb->part_pkt[m].l2_src + (0 .. II_ETH_ADDR_LEN - 1));
+	requires \valid(pb->part_pkt[n].l2_dst + (0 .. II_ETH_ADDR_LEN - 1));
+	requires \valid(pb->part_pkt[m].l2_dst + (0 .. II_ETH_ADDR_LEN - 1));
+	requires \separated(
+		pb->part_pkt[n].l3 + (0 .. II_IPV4_HDR_LEN_MINIMAL - 1),
+		pb->part_pkt[m].l3 + (0 .. II_IPV4_HDR_LEN_MINIMAL - 1),
+		pb->part_pkt[n].l2_src + (0 .. II_ETH_ADDR_LEN - 1),
+		pb->part_pkt[m].l2_src + (0 .. II_ETH_ADDR_LEN - 1),
+		pb->part_pkt[n].l2_dst + (0 .. II_ETH_ADDR_LEN - 1),
+		pb->part_pkt[m].l2_dst + (0 .. II_ETH_ADDR_LEN - 1));
+	assigns pb->part_pkt[n].l3[0 .. II_IPV4_HDR_LEN_MINIMAL - 1] \from pb->part_pkt[m].l3[0 .. II_IPV4_HDR_LEN_MINIMAL - 1];
+	assigns pb->part_pkt[m].l3[0 .. II_IPV4_HDR_LEN_MINIMAL - 1] \from pb->part_pkt[n].l3[0 .. II_IPV4_HDR_LEN_MINIMAL - 1];
+	assigns pb->part_pkt[n].l2_src[0 .. II_ETH_ADDR_LEN - 1] \from pb->part_pkt[m].l2_src[0 .. II_ETH_ADDR_LEN - 1];
+	assigns pb->part_pkt[m].l2_src[0 .. II_ETH_ADDR_LEN - 1] \from pb->part_pkt[n].l2_src[0 .. II_ETH_ADDR_LEN - 1];
+	assigns pb->part_pkt[n].l2_dst[0 .. II_ETH_ADDR_LEN - 1] \from pb->part_pkt[m].l2_dst[0 .. II_ETH_ADDR_LEN - 1];
+	assigns pb->part_pkt[m].l2_dst[0 .. II_ETH_ADDR_LEN - 1] \from pb->part_pkt[n].l2_dst[0 .. II_ETH_ADDR_LEN - 1];
+	assigns pb->part_pkt[n].p \from pb->part_pkt[m].p;
+	assigns pb->part_pkt[m].p \from pb->part_pkt[n].p;
+	ensures \forall integer i; 0 <= i < II_IPV4_HDR_LEN_MINIMAL ==> pb->part_pkt[n].l3[i] == \old(pb->part_pkt[m].l3[i]);
+	ensures \forall integer i; 0 <= i < II_ETH_ADDR_LEN ==> pb->part_pkt[n].l2_src[i] == \old(pb->part_pkt[m].l2_src[i]);
+	ensures \forall integer i; 0 <= i < II_ETH_ADDR_LEN ==> pb->part_pkt[n].l2_dst[i] == \old(pb->part_pkt[m].l2_dst[i]);
+	ensures f_extract_ipv4_off{Pre}(&pb->part_pkt[n].l3[0]) == f_extract_ipv4_off{Post}(&pb->part_pkt[m].l3[0]);
+	ensures f_extract_ipv4_off{Pre}(&pb->part_pkt[m].l3[0]) == f_extract_ipv4_off{Post}(&pb->part_pkt[n].l3[0]);
+	ensures f_extract_ipv4_off{Pre}(&pb->part_pkt[n].l3[0]) > f_extract_ipv4_off{Pre}(&pb->part_pkt[m].l3[0]) ==> f_extract_ipv4_off{Post}(&pb->part_pkt[n].l3[0]) <= f_extract_ipv4_off{Post}(&pb->part_pkt[m].l3[0]);
+	ensures f_extract_ipv4_off{Pre}(&pb->part_pkt[m].l3[0]) > f_extract_ipv4_off{Pre}(&pb->part_pkt[n].l3[0]) ==> f_extract_ipv4_off{Post}(&pb->part_pkt[m].l3[0]) <= f_extract_ipv4_off{Post}(&pb->part_pkt[n].l3[0]);
+	ensures pb->part_pkt[n].p == \old(pb->part_pkt[m].p);
+	ensures pb->part_pkt[m].p == \old(pb->part_pkt[n].p);
+	ensures \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(\forall integer j; 0 <= j < II_IPV4_HDR_LEN_MINIMAL ==> pb->part_pkt[i].l3[j] == \old(pb->part_pkt[i].l3[j]));
+	ensures \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(\forall integer j; 0 <= j < II_ETH_ADDR_LEN ==> pb->part_pkt[i].l2_src[j] == \old(pb->part_pkt[i].l2_src[j]));
+	ensures \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(\forall integer j; 0 <= j < II_ETH_ADDR_LEN ==> pb->part_pkt[i].l2_dst[j] == \old(pb->part_pkt[i].l2_dst[j]));
+	ensures \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(pb->part_pkt[i].p == \old(pb->part_pkt[i].p));
+	ensures \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(f_extract_ipv4_off{Pre}(&pb->part_pkt[i].l3[0]) == f_extract_ipv4_off{Post}(&pb->part_pkt[i].l3[0]));
+	ensures \forall integer i; 0 <= i < pb->cnt - 1 && i != n && i != m && i + 1 != n && i + 1 != m  ==>
+		(((f_extract_ipv4_off{Pre}(&pb->part_pkt[i].l3[0]) <= f_extract_ipv4_off{Pre}(&pb->part_pkt[i + 1].l3[0])) ==>
+			(f_extract_ipv4_off{Post}(&pb->part_pkt[i].l3[0]) <= f_extract_ipv4_off{Post}(&pb->part_pkt[i + 1].l3[0])))
+		&& ((f_extract_ipv4_off{Pre}(&pb->part_pkt[i].l3[0]) > f_extract_ipv4_off{Pre}(&pb->part_pkt[i + 1].l3[0])) ==>
+			(f_extract_ipv4_off{Post}(&pb->part_pkt[i].l3[0]) > f_extract_ipv4_off{Post}(&pb->part_pkt[i + 1].l3[0]))));
+ */
+static void swap_pb_entry(struct ii_pb *pb, uint16_t n, uint16_t m)
+{
+	buf_swap(&pb->part_pkt[n].l3[0], &pb->part_pkt[m].l3[0], II_IPV4_HDR_LEN_MINIMAL);
+	/*@ assert \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(\forall integer j; 0 <= j < II_IPV4_HDR_LEN_MINIMAL==> pb->part_pkt[i].l3[j] == \at(pb->part_pkt[i].l3[j], Pre)); */
+	/*@ assert \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(\forall integer j; 0 <= j < II_ETH_ADDR_LEN ==> pb->part_pkt[i].l2_src[j] == \at(pb->part_pkt[i].l2_src[j], Pre)); */
+	/*@ assert \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(\forall integer j; 0 <= j < II_ETH_ADDR_LEN ==> pb->part_pkt[i].l2_dst[j] == \at(pb->part_pkt[i].l2_dst[j], Pre)); */
+	buf_swap(&pb->part_pkt[n].l2_src[0], &pb->part_pkt[m].l2_src[0], II_ETH_ADDR_LEN);
+	/*@ assert \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(\forall integer j; 0 <= j < II_IPV4_HDR_LEN_MINIMAL==> pb->part_pkt[i].l3[j] == \at(pb->part_pkt[i].l3[j], Pre)); */
+	/*@ assert \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(\forall integer j; 0 <= j < II_ETH_ADDR_LEN ==> pb->part_pkt[i].l2_src[j] == \at(pb->part_pkt[i].l2_src[j], Pre)); */
+	/*@ assert \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(\forall integer j; 0 <= j < II_ETH_ADDR_LEN ==> pb->part_pkt[i].l2_dst[j] == \at(pb->part_pkt[i].l2_dst[j], Pre)); */
+	buf_swap(&pb->part_pkt[n].l2_dst[0], &pb->part_pkt[m].l2_dst[0], II_ETH_ADDR_LEN);
+	/*@ assert \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(\forall integer j; 0 <= j < II_IPV4_HDR_LEN_MINIMAL==> pb->part_pkt[i].l3[j] == \at(pb->part_pkt[i].l3[j], Pre)); */
+	/*@ assert \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(\forall integer j; 0 <= j < II_ETH_ADDR_LEN ==> pb->part_pkt[i].l2_src[j] == \at(pb->part_pkt[i].l2_src[j], Pre)); */
+	/*@ assert \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(\forall integer j; 0 <= j < II_ETH_ADDR_LEN ==> pb->part_pkt[i].l2_dst[j] == \at(pb->part_pkt[i].l2_dst[j], Pre)); */
+
+	/*@ assert \forall integer i; 0 <= i < II_ETH_ADDR_LEN ==> pb->part_pkt[n].l2_dst[i] == \at(pb->part_pkt[m].l2_dst[i], Pre); */
+	{
+		IIP_PKT_P tmp = pb->part_pkt[n].p;
+		pb->part_pkt[n].p = pb->part_pkt[m].p;
+		pb->part_pkt[m].p = tmp;
+	}
+	/*@ assert \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(\forall integer j; 0 <= j < II_IPV4_HDR_LEN_MINIMAL==> pb->part_pkt[i].l3[j] == \at(pb->part_pkt[i].l3[j], Pre)); */
+	/*@ assert \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(\forall integer j; 0 <= j < II_ETH_ADDR_LEN ==> pb->part_pkt[i].l2_src[j] == \at(pb->part_pkt[i].l2_src[j], Pre)); */
+	/*@ assert \forall integer i; 0 <= i < pb->cnt && i != n && i != m ==>
+		(\forall integer j; 0 <= j < II_ETH_ADDR_LEN ==> pb->part_pkt[i].l2_dst[j] == \at(pb->part_pkt[i].l2_dst[j], Pre)); */
+
+	/*@ assert \forall integer i; 0 <= i < II_IPV4_HDR_LEN_MINIMAL ==> pb->part_pkt[n].l3[i] == \at(pb->part_pkt[m].l3[i], Pre); */
+	/*@ assert \forall integer i; 0 <= i < II_IPV4_HDR_LEN_MINIMAL ==> pb->part_pkt[m].l3[i] == \at(pb->part_pkt[n].l3[i], Pre); */
+	/*@ assert (\forall integer i; 0 <= i < II_IPV4_HDR_LEN_MINIMAL ==> pb->part_pkt[n].l3[i] == \at(pb->part_pkt[m].l3[i], Pre)) ==>
+		f_extract_ipv4_off{Here}(&pb->part_pkt[n].l3[0]) == f_extract_ipv4_off{Pre}(&pb->part_pkt[m].l3[0]);
+	 */
+	/*@ assert (\forall integer i; 0 <= i < II_IPV4_HDR_LEN_MINIMAL ==> pb->part_pkt[m].l3[i] == \at(pb->part_pkt[n].l3[i], Pre)) ==>
+		f_extract_ipv4_off{Here}(&pb->part_pkt[m].l3[0]) == f_extract_ipv4_off{Pre}(&pb->part_pkt[n].l3[0]);
+	 */
+}
+
+/*@
+	requires \valid(pb);
+	requires 0 < pb->cnt <= II_CONF_IPV4_FRAG_CNT_MAX;
+	assigns pb->part_pkt[0 .. pb->cnt - 1].l3[0 .. II_IPV4_HDR_LEN_MINIMAL - 1] \from pb->part_pkt[0 .. pb->cnt - 1].l3[0 .. II_IPV4_HDR_LEN_MINIMAL - 1];
+	assigns pb->part_pkt[0 .. pb->cnt - 1].l2_src[0 .. II_ETH_ADDR_LEN - 1] \from pb->part_pkt[0 .. pb->cnt - 1].l2_src[0 .. II_ETH_ADDR_LEN - 1];
+	assigns pb->part_pkt[0 .. pb->cnt - 1].l2_dst[0 .. II_ETH_ADDR_LEN - 1] \from pb->part_pkt[0 .. pb->cnt - 1].l2_dst[0 .. II_ETH_ADDR_LEN - 1];
+	assigns pb->part_pkt[0 .. pb->cnt - 1].p \from pb->part_pkt[0 .. pb->cnt - 1].p;
+	ensures \result == IIP_ERR_OK ==>
+		pb->cnt <= II_CONF_IPV4_FRAG_CNT_MAX
+		&& (\forall integer p, q; 0 <= p <= q < pb->cnt ==>
+			f_extract_ipv4_off(&pb->part_pkt[p].l3[0]) <= f_extract_ipv4_off(&pb->part_pkt[q].l3[0]));
  */
 static enum iip_rc ii_ipv4_frag_push__ordering(struct ii_pb *pb)
 {
-	if (pb->cnt > II_CONF_IPV4_FRAG_CNT_MAX) {
-		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-	}
+	/* XXX: long timeout setting is necessary to verify this function */
+	if (pb->cnt < 2)
+		return IIP_ERR_OK;
 	{
-		uint16_t j, cnt = pb->cnt;
+		uint16_t edge = pb->cnt - 1;
 		/*@
-			loop invariant 0 <= j <= cnt;
-			loop assigns j, pb->part_pkt[0 .. cnt - 1];
-			loop variant cnt - j;
+			loop invariant 0 <= edge < pb->cnt <= II_CONF_IPV4_FRAG_CNT_MAX;
+			loop invariant \forall integer p, q; edge <= p <= q < pb->cnt ==>
+				f_extract_ipv4_off(&pb->part_pkt[p].l3[0]) <= f_extract_ipv4_off(&pb->part_pkt[q].l3[0]);
+			loop invariant \forall integer p, q; 0 <= p <= edge < q < pb->cnt ==>
+				f_extract_ipv4_off(&pb->part_pkt[p].l3[0]) <= f_extract_ipv4_off(&pb->part_pkt[q].l3[0]);
+			loop assigns edge;
+			loop assigns pb->part_pkt[0 .. pb->cnt - 1].l3[0 .. II_IPV4_HDR_LEN_MINIMAL - 1] \from pb->part_pkt[0 .. pb->cnt - 1].l3[0 .. II_IPV4_HDR_LEN_MINIMAL - 1];
+			loop assigns pb->part_pkt[0 .. pb->cnt - 1].l2_src[0 .. II_ETH_ADDR_LEN - 1] \from pb->part_pkt[0 .. pb->cnt - 1].l2_src[0 .. II_ETH_ADDR_LEN - 1];
+			loop assigns pb->part_pkt[0 .. pb->cnt - 1].l2_dst[0 .. II_ETH_ADDR_LEN - 1] \from pb->part_pkt[0 .. pb->cnt - 1].l2_dst[0 .. II_ETH_ADDR_LEN - 1];
+			loop assigns pb->part_pkt[0 .. pb->cnt - 1].p \from pb->part_pkt[0 .. pb->cnt - 1].p;
+			loop variant edge;
 		 */
-		for (j = 0; j < cnt; j++) {
-			uint16_t i;
+		while (edge > 0) {
+			uint16_t j = 0;
 			/*@
-				loop invariant 0 <= i <= cnt - 1 - j;
-				loop assigns i, pb->part_pkt[0 .. cnt - 1];
-				loop variant cnt - 1 - j - i;
+				loop invariant 0 <= j <= edge < pb->cnt <= II_CONF_IPV4_FRAG_CNT_MAX;
+				loop invariant \forall integer k; 0 <= k <= j ==>
+					f_extract_ipv4_off(&pb->part_pkt[k].l3[0]) <= f_extract_ipv4_off(&pb->part_pkt[j].l3[0]);
+				loop invariant \forall integer p, q; edge < p <= q < pb->cnt ==>
+					f_extract_ipv4_off(&pb->part_pkt[p].l3[0]) <= f_extract_ipv4_off(&pb->part_pkt[q].l3[0]);
+				loop invariant \forall integer p, q; 0 <= p <= edge < q < pb->cnt ==>
+					f_extract_ipv4_off(&pb->part_pkt[p].l3[0]) <= f_extract_ipv4_off(&pb->part_pkt[q].l3[0]);
+				loop assigns j;
+				loop assigns pb->part_pkt[0 .. edge].l3[0 .. II_IPV4_HDR_LEN_MINIMAL - 1] \from pb->part_pkt[0 .. edge].l3[0 .. II_IPV4_HDR_LEN_MINIMAL - 1];
+				loop assigns pb->part_pkt[0 .. edge].l2_src[0 .. II_ETH_ADDR_LEN - 1] \from pb->part_pkt[0 .. edge].l2_src[0 .. II_ETH_ADDR_LEN - 1];
+				loop assigns pb->part_pkt[0 .. edge].l2_dst[0 .. II_ETH_ADDR_LEN - 1] \from pb->part_pkt[0 .. edge].l2_dst[0 .. II_ETH_ADDR_LEN - 1];
+				loop assigns pb->part_pkt[0 .. edge].p \from pb->part_pkt[0 .. edge].p;
+				loop variant edge - j;
 			 */
-			for (i = 0; i < cnt - 1 - j; i++) {
-				if (ii_extract_ipv4_off(pb->part_pkt[i].l3) > ii_extract_ipv4_off(pb->part_pkt[i + 1].l3)) {
-					{
-						IIP_PKT_P tmp = pb->part_pkt[i].p;
-						pb->part_pkt[i].p = pb->part_pkt[i + 1].p;
-						pb->part_pkt[i + 1].p = tmp;
-					}
-					{
-						uint8_t k;
-						/*@
-						  loop invariant 0 <= k <= II_ETH_ADDR_LEN;
-						  loop assigns k, pb->part_pkt[i].l2_src[0 .. II_ETH_ADDR_LEN - 1], pb->part_pkt[i + 1].l2_src[0 .. II_ETH_ADDR_LEN - 1];
-						  loop variant II_ETH_ADDR_LEN - k;
-						 */
-						for (k = 0; k < II_ETH_ADDR_LEN; k++) {
-							uint8_t tmp = pb->part_pkt[i].l2_src[k];
-							pb->part_pkt[i].l2_src[k] = pb->part_pkt[i + 1].l2_src[k];
-							pb->part_pkt[i + 1].l2_src[k] = tmp;
-						}
-					}
-					{
-						uint8_t k;
-						/*@
-						  loop invariant 0 <= k <= II_ETH_ADDR_LEN;
-						  loop assigns k, pb->part_pkt[i].l2_dst[0 .. II_ETH_ADDR_LEN - 1], pb->part_pkt[i + 1].l2_dst[0 .. II_ETH_ADDR_LEN - 1];
-						  loop variant II_ETH_ADDR_LEN - k;
-						 */
-						for (k = 0; k < II_ETH_ADDR_LEN; k++) {
-							uint8_t tmp = pb->part_pkt[i].l2_dst[k];
-							pb->part_pkt[i].l2_dst[k] = pb->part_pkt[i + 1].l2_dst[k];
-							pb->part_pkt[i + 1].l2_dst[k] = tmp;
-						}
-					}
-					{
-						uint8_t k;
-						/*@
-						  loop invariant 0 <= k <= II_IPV4_HDR_LEN_MINIMAL;
-						  loop assigns k, pb->part_pkt[i].l3[0 .. II_IPV4_HDR_LEN_MINIMAL - 1], pb->part_pkt[i + 1].l3[0 .. II_IPV4_HDR_LEN_MINIMAL - 1];
-						  loop variant II_IPV4_HDR_LEN_MINIMAL - k;
-						 */
-						for (k = 0; k < II_IPV4_HDR_LEN_MINIMAL; k++) {
-							uint8_t tmp = pb->part_pkt[i].l3[k];
-							pb->part_pkt[i].l3[k] = pb->part_pkt[i + 1].l3[k];
-							pb->part_pkt[i + 1].l3[k] = tmp;
-						}
-					}
+			while (j < edge) {
+				/*@ assert \forall integer p, q; 0 <= p <= edge < q < pb->cnt ==>
+					f_extract_ipv4_off(&pb->part_pkt[p].l3[0]) <= f_extract_ipv4_off(&pb->part_pkt[q].l3[0]); */
+				/*@ assert \forall integer i; edge <= i < pb->cnt - 1 ==>
+					f_extract_ipv4_off(&pb->part_pkt[i].l3[0]) <= f_extract_ipv4_off(&pb->part_pkt[i + 1].l3[0]); */
+				/*@ assert \forall integer i; edge <= i < pb->cnt ==>
+					f_extract_ipv4_off(&pb->part_pkt[edge].l3[0]) <= f_extract_ipv4_off(&pb->part_pkt[i].l3[0]); */
+				/*@ assert \forall integer p, q; 0 <= p <= edge < q < pb->cnt ==>
+					f_extract_ipv4_off(&pb->part_pkt[p].l3[0]) <= f_extract_ipv4_off(&pb->part_pkt[q].l3[0]); */
+Before:
+				if (ii_extract_ipv4_off(pb->part_pkt[j].l3) > ii_extract_ipv4_off(pb->part_pkt[j + 1].l3)) {
+					swap_pb_entry(pb, j, j + 1);
 				}
+				/*@ assert \forall integer p, q; edge < q < pb->cnt ==>
+					f_extract_ipv4_off{Here}(&pb->part_pkt[q].l3[0]) == f_extract_ipv4_off{Before}(&pb->part_pkt[q].l3[0]); */
+				/*@ assert f_extract_ipv4_off(&pb->part_pkt[j].l3[0]) <= f_extract_ipv4_off(&pb->part_pkt[j + 1].l3[0]); */
+				/*@ assert \forall integer p, q; 0 <= p <= edge < q < pb->cnt ==>
+					f_extract_ipv4_off(&pb->part_pkt[p].l3[0]) <= f_extract_ipv4_off(&pb->part_pkt[q].l3[0]); */
+				j++;
 			}
+			edge--;
 		}
 		return IIP_ERR_OK;
+		{ /* unused */
+			goto Before;
+		}
 	}
 }
 
