@@ -7186,21 +7186,6 @@ static enum iip_rc ii_ipv4_frag_validation(struct ii_pb *frag, IIP_OPAQUE_P opaq
 }
 
 /*@
-	requires \valid_read(buf + (0 .. II_IPV4_HDR_LEN_MINIMAL - 1));
-	assigns \nothing;
-	ensures \result == IIP_ERR_OK;
- */
-static enum iip_rc ii_ipv4_received_invalid_option(const uint8_t *buf)
-{
-	if (ii_extract_ipv4_off(buf)) /* skip fragment */
-		return IIP_ERR_OK;
-	if (ii_extract_ipv4_proto(buf) == 1 /* icmp */) {
-	}
-	/* TODO: send icmp error */
-	return IIP_ERR_OK;
-}
-
-/*@
 	requires \valid(opaque);
 	requires \valid(frag);
 	requires \separated(frag, opaque);
@@ -8636,8 +8621,6 @@ static int iip_run(IIP_MEM_P w, IIP_PKT_P pkt[], IIP_PKT_CNT_T cnt, uint32_t *ne
 	*next_us = 0;
 	return 0;
 	{ /* unused */
-		(void) ii_ipv4_received_invalid_option;
-		(void) ii_ipv4_received_invalid_option;
 		(void) ii_tcp_seq_expected;
 		(void) ii_tcp_hdr_has_cwr;
 		(void) ii_tcp_hdr_has_ece;
