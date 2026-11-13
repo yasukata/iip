@@ -679,6 +679,9 @@ int printf_nothing(const char *format, ...) { (void) format; return 0; }
 /*@ logic integer f_extract_ipv4_tot_len{L}(uint8_t * buf) = f_ntohs((uint16_t)(((uint32_t) buf[3] * 256) | (uint32_t) buf[2])); */
 /*@ logic integer f_extract_ipv4_payload_len{L}(uint8_t * buf) = f_extract_ipv4_tot_len{L}(buf) - f_extract_ipv4_hdr_len{L}(buf); */
 /*@ logic integer f_extract_ipv4_off{L}(uint8_t * buf) = ((f_ntohs((uint16_t)(((uint32_t) buf[7] * 256) | (uint32_t) buf[6])) % 0x2000) * 8) % 0x10000; */
+/*@ logic integer f_extract_ipv4_id{L}(uint8_t *buf) = f_ntohs((uint16_t)(((uint32_t) buf[5] * 256) | (uint32_t) buf[4])); */
+/*@ logic integer f_extract_ipv4_src_be{L}(uint8_t *buf) = (uint32_t)(((uint64_t) buf[15] * 16777216) | ((uint64_t) buf[14] * 65536) | ((uint64_t) buf[13] * 256) | (uint64_t) buf[12]); */
+/*@ logic integer f_extract_ipv4_dst_be{L}(uint8_t *buf) = (uint32_t)(((uint64_t) buf[19] * 16777216) | ((uint64_t) buf[18] * 65536) | ((uint64_t) buf[17] * 256) | (uint64_t) buf[16]); */
 
 /*@
 	requires \valid(opaque);
@@ -1523,7 +1526,7 @@ static uint8_t ii_extract_ipv4_tos(const uint8_t *buf)
 /*@
 	requires \valid_read(buf + (0 .. II_IPV4_HDR_LEN_MINIMAL - 1));
 	assigns \nothing;
-	ensures \result == f_ntohs((uint16_t)(((uint32_t) buf[5] * 256) | (uint32_t) buf[4]));
+	ensures \result == f_extract_ipv4_id(buf);
  */
 static uint16_t ii_extract_ipv4_id(const uint8_t *buf)
 {
@@ -1604,7 +1607,7 @@ static uint16_t ii_extract_ipv4_csum_be(const uint8_t *buf)
 /*@
 	requires \valid_read(buf + (0 .. II_IPV4_HDR_LEN_MINIMAL - 1));
 	assigns \nothing;
-	ensures \result == (uint32_t)(((uint64_t) buf[15] * 16777216) | ((uint64_t) buf[14] * 65536) | ((uint64_t) buf[13] * 256) | (uint64_t) buf[12]);
+	ensures \result == f_extract_ipv4_src_be(buf);
  */
 static uint32_t ii_extract_ipv4_src_be(const uint8_t *buf)
 {
@@ -1614,7 +1617,7 @@ static uint32_t ii_extract_ipv4_src_be(const uint8_t *buf)
 /*@
 	requires \valid_read(buf + (0 .. II_IPV4_HDR_LEN_MINIMAL - 1));
 	assigns \nothing;
-	ensures \result == (uint32_t)(((uint64_t) buf[19] * 16777216) | ((uint64_t) buf[18] * 65536) | ((uint64_t) buf[17] * 256) | (uint64_t) buf[16]);
+	ensures \result == f_extract_ipv4_dst_be(buf);
  */
 static uint32_t ii_extract_ipv4_dst_be(const uint8_t *buf)
 {
