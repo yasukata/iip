@@ -3169,8 +3169,9 @@ static enum iip_rc ii_tcp_send(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uint16_t fla
 			II_PB(pb_id).tcp.seq = II_TCP_CONN(conn_id).seq;
 			II_PB(pb_id).tcp.ack_seq = II_TCP_CONN(conn_id).ack_seq;
 			II_PB(pb_id).tcp.flags = flags;
-			II_PB(pb_id).tcp.urg_p = 0;
 			II_PB(pb_id).tcp.payload_len = 0;
+			II_PB(pb_id).tcp.sent_bytes = 0;
+			II_PB(pb_id).tcp.urg_p = 0;
 			II_PB(pb_id).tcp.opt.ts[0] = w->tcp.pkt_ts;
 			II_PB(pb_id).tcp.opt.ts[1] = II_TCP_CONN(conn_id).ts;
 			II_PB(pb_id).tcp.inc_head = 0;
