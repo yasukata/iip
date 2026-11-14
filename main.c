@@ -3537,7 +3537,7 @@ static enum iip_rc ii_tcp_rx_push__pending(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 							IIP_PKT_CNT_T i;
 							/*@
 								loop invariant 0 <= i <= cnt;
-								loop assigns i, *opaque;
+								loop assigns i, *w, *opaque;
 								loop variant cnt - i;
 							 */
 							for (i = 0; i < cnt; i++) {
@@ -3547,13 +3547,7 @@ static enum iip_rc ii_tcp_rx_push__pending(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 								if (IE_UNLIKELY(II_TCP_CONN(conn_id).pending_ring.slot[slot_idx] >= II_CONF_POOL_NUM_PB)) {
 									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 								}
-								if (IE_UNLIKELY(II_PB(II_TCP_CONN(conn_id).pending_ring.slot[slot_idx]).cnt > II_CONF_IPV4_FRAG_CNT_MAX)) {
-									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-								}
-								if (IE_UNLIKELY(!II_PB(II_TCP_CONN(conn_id).pending_ring.slot[slot_idx]).cnt)) {
-									IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-								}
-								if (IE_UNLIKELY(ii_free_pkts(&II_PB(II_TCP_CONN(conn_id).pending_ring.slot[slot_idx]), opaque))) {
+								if (IE_UNLIKELY(ii_free_pb_and_pkt(w, II_TCP_CONN(conn_id).pending_ring.slot[slot_idx], opaque)) != IIP_ERR_OK) {
 									IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
 								}
 							}
