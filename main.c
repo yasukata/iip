@@ -7067,6 +7067,7 @@ static enum iip_rc ii_ipv4_udp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 			if (IE_UNLIKELY(ii_icmp_error_send(w, pb_id, 3 /* unreachable */, 3 /* closed udp port */, 0, opaque) != IIP_ERR_OK)) {
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
+			return IIP_ERR_INVALID_RX;
 		}
 	}
 	return IIP_ERR_OK;
