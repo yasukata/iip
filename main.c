@@ -6355,42 +6355,69 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 									uint8_t sackbuf_len = tcp_opt[l + 1] - 2;
 									/*@ assert sackbuf_len % 8 == 0; */
 									if (sackbuf_len) {
-										uint8_t i;
-										/*@
-											loop invariant 0 <= i <= sackbuf_len;
-											loop invariant i % 8 == 0;
-											loop invariant sackbuf_len % 8 == 0;
-											loop assigns i, II_TCP_CONN(conn_id).sack;
-											loop variant sackbuf_len - i;
-										 */
-										for (i = 0; i < sackbuf_len; i += 8) {
-											uint32_t sle = ii_ntohl(ii_read_uint32(tcp_opt + l + 2 + i + 0));
-											uint32_t sre = ii_ntohl(ii_read_uint32(tcp_opt + l + 2 + i + 4));
-											if (ii_seq_ordered(sle, sre)) {
-												struct ii_extent_queue eq = II_TCP_CONN(conn_id).sack;
-												{
-													enum iip_rc rc = ii_extent_queue_add(w, conn_id, &eq, sle, sre - sle, II_PB(pb_id).tcp.rx_cnt);
-													if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
-														if (rc == IIP_ERR_BUF_FULL) {
-															II_TCP_CONN(conn_id).sack.cnt = 0; /* XXX: clear sack extent because it's full */
-															break;
-														} else {
-															IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+										bool range_valid = true;
+										{ /* range validation */
+											uint8_t i;
+											/*@
+												loop invariant 0 <= i <= sackbuf_len;
+												loop invariant i % 8 == 0;
+												loop invariant sackbuf_len % 8 == 0;
+												loop assigns i, range_valid;
+												loop variant sackbuf_len - i;
+											 */
+											for (i = 0; i < sackbuf_len; i += 8) {
+												uint32_t sle = ii_ntohl(ii_read_uint32(tcp_opt + l + 2 + i + 0));
+												uint32_t sre = ii_ntohl(ii_read_uint32(tcp_opt + l + 2 + i + 4));
+												if (ii_seq_ordered(sle, sre)) {
+													if (!(((II_TCP_CONN(conn_id).acked_seq == sle || ii_seq_ordered(II_TCP_CONN(conn_id).acked_seq, sle)) && ii_seq_ordered(sle, II_TCP_CONN(conn_id).sent_seq))
+															&& (ii_seq_ordered(II_TCP_CONN(conn_id).acked_seq, sre)) && (II_TCP_CONN(conn_id).sent_seq == sre || ii_seq_ordered(sre, II_TCP_CONN(conn_id).sent_seq)))) {
+														range_valid = false;
+														break;
+													}
+												} else {
+													range_valid = false;
+													break;
+												}
+											}
+										}
+										if (range_valid) {
+											uint8_t i;
+											/*@
+												loop invariant 0 <= i <= sackbuf_len;
+												loop invariant i % 8 == 0;
+												loop invariant sackbuf_len % 8 == 0;
+												loop assigns i, II_TCP_CONN(conn_id).sack;
+												loop variant sackbuf_len - i;
+											 */
+											for (i = 0; i < sackbuf_len; i += 8) {
+												uint32_t sle = ii_ntohl(ii_read_uint32(tcp_opt + l + 2 + i + 0));
+												uint32_t sre = ii_ntohl(ii_read_uint32(tcp_opt + l + 2 + i + 4));
+												if (ii_seq_ordered(sle, sre)) {
+													struct ii_extent_queue eq = II_TCP_CONN(conn_id).sack;
+													{
+														enum iip_rc rc = ii_extent_queue_add(w, conn_id, &eq, sle, sre - sle, II_PB(pb_id).tcp.rx_cnt);
+														if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
+															if (rc == IIP_ERR_BUF_FULL) {
+																II_TCP_CONN(conn_id).sack.cnt = 0; /* XXX: clear sack extent because it's full */
+																break;
+															} else {
+																IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+															}
 														}
 													}
-												}
-												II_TCP_CONN(conn_id).sack = eq;
-											} else
-												break;
-										}
-										if (i == sackbuf_len) {
-											II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_RX_SACKBUF;
-											if (ii_seq_ordered(II_TCP_CONN(conn_id).acked_seq, II_TCP_CONN(conn_id).seq)) {
-												if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
-													if (IE_UNLIKELY(ii_tcp_loss_detected(w, conn_id) != IIP_ERR_OK)) {
-														IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+													II_TCP_CONN(conn_id).sack = eq;
+												} else
+													break;
+											}
+											if (i == sackbuf_len) {
+												II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_RX_SACKBUF;
+												if (ii_seq_ordered(II_TCP_CONN(conn_id).acked_seq, II_TCP_CONN(conn_id).seq)) {
+													if (!(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
+														if (IE_UNLIKELY(ii_tcp_loss_detected(w, conn_id) != IIP_ERR_OK)) {
+															IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+														}
+														IIP_OPS_DEBUG_PRINTF("loss detected because of sack\n");
 													}
-													IIP_OPS_DEBUG_PRINTF("loss detected because of sack\n");
 												}
 											}
 										}
