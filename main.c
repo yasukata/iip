@@ -6592,7 +6592,7 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 		{
 			enum iip_rc rc = ii_alloc_tcp_conn(&w->tcp_conns, &conn_id);
 			if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
-				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				IIP_OPS_ERROR_FATAL_SYS(); return -1;
 			}
 			ii_ipv4_tcp_conn_init(w, conn_id,
 					src_mac,
