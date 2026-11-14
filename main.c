@@ -6097,13 +6097,13 @@ static enum iip_rc ii_tcp_rx_push(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P p
 				if (IE_UNLIKELY(II_TCP_CONN(conn_id).buf.used > II_TCP_CONN(conn_id).buf.capacity)) {
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 				}
-				if (ii_tcp_retransmitted_syn_ack(w, conn_id, pb_id))
+				if (ii_tcp_retransmitted_syn_ack(w, conn_id, push_pb_id))
 					II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING; /* send ack */
 				if (IE_UNLIKELY(ii_seq_ordered(II_TCP_CONN(conn_id).sent_seq, II_PB(push_pb_id).tcp.ack_seq)
 							&& II_TCP_CONN(conn_id).state != II_TCP_STATE_SYN_SENT
 							&& II_TCP_CONN(conn_id).state != II_TCP_STATE_SYN_RECVD
-							&& !ii_tcp_hdr_has_syn(w, pb_id)
-							&& !ii_tcp_hdr_has_rst(w, pb_id))) {
+							&& !ii_tcp_hdr_has_syn(w, push_pb_id)
+							&& !ii_tcp_hdr_has_rst(w, push_pb_id))) {
 					II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING;
 					if (IE_UNLIKELY(ii_free_pb_and_pkt(w, push_pb_id, opaque) != IIP_ERR_OK)) {
 						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
