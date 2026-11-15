@@ -138,6 +138,7 @@ struct ii_pb {
 		uint8_t sackbuf[28];
 		struct {
 			uint32_t ts[2];
+			uint8_t ws;
 		} opt;
 	} tcp;
 };
@@ -419,6 +420,7 @@ struct ii_tcp_conn {
 	uint8_t retrans_r1;
 	uint8_t retrans_r2;
 	uint32_t rx_cnt;
+	uint8_t my_ws;
 	uint8_t ws;
 	uint8_t diffserv;
 	uint16_t mss;
@@ -432,6 +434,7 @@ struct ii_tcp_conn {
 	uint32_t seq;
 	uint32_t ack_seq;
 	uint32_t acked_seq;
+	uint32_t flow_win;
 	uint16_t peer_win;
 	uint32_t peer_win_seq;
 	uint32_t peer_win_ack;
@@ -3269,7 +3272,7 @@ static enum iip_rc ii_pb_tcp_payload_len(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LEN
 	}
 }
 
-/*@ logic integer f_tcp_rx_window{L}(IIP_MEM_P w, IIP_TCP_CONN_P conn_id) = f_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, II_TCP_CONN(conn_id).ws); */
+/*@ logic integer f_tcp_rx_window{L}(IIP_MEM_P w, IIP_TCP_CONN_P conn_id) = f_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, II_TCP_CONN(conn_id).my_ws); */
 /*@
 	requires \valid(w);
 	requires conn_id < II_CONF_POOL_NUM_TCP_CONN;
@@ -3279,12 +3282,40 @@ static enum iip_rc ii_pb_tcp_payload_len(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LEN
  */
 static uint32_t ii_tcp_rx_window(IIP_MEM_P w, IIP_TCP_CONN_P conn_id)
 {
-	return ii_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, II_TCP_CONN(conn_id).ws);
+	return ii_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, II_TCP_CONN(conn_id).my_ws);
 }
 
-/*@ logic integer f_tcp_seq_entirely_exceed_win{L}(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id) = ((f_tcp_rx_window(w, conn_id) == 0) || (f_seq_ordered((uint32_t) f_tcp_rx_window(w, conn_id), (uint32_t) f_tcp_seq_le(w, conn_id, pb_id))) || f_tcp_rx_window(w, conn_id) == f_tcp_seq_le(w, conn_id, pb_id)) ? true : false; */
+/*@ logic integer f_shift(integer n, integer c) = 0 < c ? f_shift(n, c - 1) * 2 : n; */
+/*@ logic integer f_tcp_rx_window_b{L}(IIP_MEM_P w, IIP_TCP_CONN_P conn_id) = f_shift(f_tcp_rx_window(w, conn_id), II_TCP_CONN(conn_id).my_ws); */
 /*@
 	requires \valid(w);
+	requires II_TCP_CONN(conn_id).my_ws <= 14;
+	requires conn_id < II_CONF_POOL_NUM_TCP_CONN;
+	requires II_TCP_CONN(conn_id).buf.used <= II_TCP_CONN(conn_id).buf.capacity;
+	assigns \nothing;
+	ensures \result == f_tcp_rx_window_b(w, conn_id);
+ */
+static uint32_t ii_tcp_rx_window_b(IIP_MEM_P w, IIP_TCP_CONN_P conn_id)
+{
+	uint32_t v = ii_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, II_TCP_CONN(conn_id).my_ws);
+	{
+		uint8_t i;
+		/*@
+			loop invariant 0 <= i <= II_TCP_CONN(conn_id).my_ws <= 14;
+			loop invariant v == f_shift(\at(v, LoopEntry), i);
+			loop assigns i, v;
+			loop variant II_TCP_CONN(conn_id).my_ws - i;
+		 */
+		for (i = 0; i < II_TCP_CONN(conn_id).my_ws; i++)
+			v *= 2;
+	}
+	return v;
+}
+
+/*@ logic integer f_tcp_seq_entirely_exceed_win{L}(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id) = ((f_tcp_rx_window_b(w, conn_id) == 0) || (f_seq_ordered((uint32_t) f_tcp_rx_window_b(w, conn_id), (uint32_t) f_tcp_seq_le(w, conn_id, pb_id))) || f_tcp_rx_window_b(w, conn_id) == f_tcp_seq_le(w, conn_id, pb_id)) ? true : false; */
+/*@
+	requires \valid(w);
+	requires II_TCP_CONN(conn_id).my_ws <= 14;
 	requires pb_id < II_CONF_POOL_NUM_PB;
 	requires conn_id < II_CONF_POOL_NUM_TCP_CONN;
 	requires II_TCP_CONN(conn_id).buf.used <= II_TCP_CONN(conn_id).buf.capacity;
@@ -3293,9 +3324,9 @@ static uint32_t ii_tcp_rx_window(IIP_MEM_P w, IIP_TCP_CONN_P conn_id)
  */
 static bool ii_tcp_seq_entirely_exceed_win(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id)
 {
-	if (ii_tcp_rx_window(w, conn_id) == 0
-			|| ii_seq_ordered(ii_tcp_rx_window(w, conn_id), ii_tcp_seq_le(w, conn_id, pb_id))
-			|| ii_tcp_rx_window(w, conn_id) == ii_tcp_seq_le(w, conn_id, pb_id)) {
+	if (ii_tcp_rx_window_b(w, conn_id) == 0
+			|| ii_seq_ordered(ii_tcp_rx_window_b(w, conn_id), ii_tcp_seq_le(w, conn_id, pb_id))
+			|| ii_tcp_rx_window_b(w, conn_id) == ii_tcp_seq_le(w, conn_id, pb_id)) {
 		/*
 		 *      le          re
 		 *       |-----------|
@@ -3307,9 +3338,10 @@ static bool ii_tcp_seq_entirely_exceed_win(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 		return false;
 }
 
-/*@ logic integer f_tcp_seq_partially_exceed_win{L}(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id) = f_seq_in_between((uint32_t) f_tcp_seq_le(w, conn_id, pb_id), (uint32_t) f_tcp_rx_window(w, conn_id), (uint32_t) f_tcp_seq_re(w, conn_id, pb_id)) ? true : false; */
+/*@ logic integer f_tcp_seq_partially_exceed_win{L}(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id) = f_seq_in_between((uint32_t) f_tcp_seq_le(w, conn_id, pb_id), (uint32_t) f_tcp_rx_window_b(w, conn_id), (uint32_t) f_tcp_seq_re(w, conn_id, pb_id)) ? true : false; */
 /*@
 	requires \valid(w);
+	requires II_TCP_CONN(conn_id).my_ws <= 14;
 	requires pb_id < II_CONF_POOL_NUM_PB;
 	requires conn_id < II_CONF_POOL_NUM_TCP_CONN;
 	requires II_TCP_CONN(conn_id).buf.used <= II_TCP_CONN(conn_id).buf.capacity;
@@ -3319,7 +3351,7 @@ static bool ii_tcp_seq_entirely_exceed_win(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 static bool ii_tcp_seq_partially_exceed_win(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id)
 {
 	if (ii_tcp_seq_in_between(ii_tcp_seq_le(w, conn_id, pb_id),
-				ii_tcp_rx_window(w, conn_id),
+				ii_tcp_rx_window_b(w, conn_id),
 				ii_tcp_seq_re(w, conn_id, pb_id))) {
 		/*
 		 *  le          re
@@ -3416,6 +3448,9 @@ static enum iip_rc ii_tcp_check_input_seq(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, I
 	if (IE_UNLIKELY(II_TCP_CONN(conn_id).buf.used > II_TCP_CONN(conn_id).buf.capacity)) {
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
+	if (IE_UNLIKELY(II_TCP_CONN(conn_id).my_ws > 14)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
 	if (!ii_tcp_rx_window(w, conn_id)) {
 		if (ii_tcp_check_input_seq__zero_window_rst_urg(w, conn_id, pb_id))
 			return IIP_ERR_OK;
@@ -3450,7 +3485,7 @@ static enum iip_rc ii_tcp_check_input_seq(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, I
 		 *       |
 		 *      win
 		 */
-		II_PB(pb_id).tcp.dec_tail += ii_tcp_seq_re(w, conn_id, pb_id) - ii_tcp_rx_window(w, conn_id);
+		II_PB(pb_id).tcp.dec_tail += ii_tcp_seq_re(w, conn_id, pb_id) - ii_tcp_rx_window_b(w, conn_id);
 		/*
 		 *  le  re
 		 *   |---|
@@ -3802,6 +3837,10 @@ static enum iip_rc ii_tcp_conn_update_info(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 						&& (II_TCP_CONN(conn_id).peer_win_ack == II_PB(pb_id).tcp.ack_seq
 							|| ii_seq_ordered(II_TCP_CONN(conn_id).peer_win_ack, II_PB(pb_id).tcp.ack_seq)))) {
 				II_TCP_CONN(conn_id).peer_win = II_PB(pb_id).tcp.win;
+				if (ii_tcp_hdr_has_syn(w, pb_id))
+					II_TCP_CONN(conn_id).flow_win = II_PB(pb_id).tcp.win;
+				else
+					II_TCP_CONN(conn_id).flow_win = II_PB(pb_id).tcp.win << II_TCP_CONN(conn_id).ws;
 				if (II_TCP_CONN(conn_id).max_peer_win < II_TCP_CONN(conn_id).peer_win)
 					II_TCP_CONN(conn_id).max_peer_win = II_TCP_CONN(conn_id).peer_win;
 				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_WIN_UPDATED;
@@ -4549,7 +4588,7 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__craft_opt(IIP_MEM_P w, IIP_TCP_C
 			uint8_t opt_len = 3;
 			tcp_opt[tcp_opt_len + 0] = 3;
 			tcp_opt[tcp_opt_len + 1] = 3;
-			tcp_opt[tcp_opt_len + 2] = II_TCP_CONN(conn_id).ws;
+			tcp_opt[tcp_opt_len + 2] = II_TCP_CONN(conn_id).my_ws;
 			tcp_opt_len += opt_len;
 		}
 		if (II_CONF_TCP_OPT_SACK_OK
@@ -4929,7 +4968,13 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__trigger(IIP_MEM_P w, IIP_TCP_CON
 					ii_write_uint32(tcp_hdr +  4, ii_htonl(II_PB(pb_id).tcp.seq + seq_off));
 					ii_write_uint32(tcp_hdr +  8, ii_htonl(II_PB(pb_id).tcp.ack_seq));
 					ii_write_uint16(tcp_hdr + 12, ii_htons((tcp_flags & (xmit_len != tx_len ? ~II_TCP_FLAG_PSH : 0xffff)) | (((II_TCP_HDR_LEN_MINIMAL + tcp_opt_len) / 4) * 4096)));
-					ii_write_uint16(tcp_hdr + 14, ii_htons(ii_tcp_rx_window(w, conn_id)));
+					if (tcp_flags & II_TCP_FLAG_SYN) {
+						uint32_t l = II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used;
+						if (l > 0xffff)
+							l = 0xffff;
+						ii_write_uint16(tcp_hdr + 14, ii_htons(l));
+					} else
+						ii_write_uint16(tcp_hdr + 14, ii_htons(ii_tcp_rx_window(w, conn_id)));
 					ii_write_uint16(tcp_hdr + 16, 0); /* csum */
 					ii_write_uint16(tcp_hdr + 18, ii_htons(II_PB(pb_id).tcp.urg_p));
 					{
@@ -5534,7 +5579,7 @@ static enum iip_rc ii_tcp_conn_tx_space(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, uin
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
 	{
-		uint32_t flow_win = (uint32_t) II_TCP_CONN(conn_id).peer_win << II_TCP_CONN(conn_id).ws;
+		uint32_t flow_win = II_TCP_CONN(conn_id).flow_win;
 		uint32_t cc_win = (uint32_t) II_TCP_CONN(conn_id).cc.win * II_TCP_CONN(conn_id).mss;
 		{
 			uint32_t win;
@@ -6334,9 +6379,7 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 							case 3: /* window scale */
 								if (tcp_opt[l + 1] == 3) {
 									if (II_PB(pb_id).tcp.flags & II_TCP_FLAG_SYN) { /* accept only with syn */
-										II_TCP_CONN(conn_id).ws = tcp_opt[l + 2];
-										if (II_TCP_CONN(conn_id).ws > 14)
-											II_TCP_CONN(conn_id).ws = 14;
+										II_PB(pb_id).tcp.opt.ws = tcp_opt[l + 2];
 										II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_TCP_OPT_HAS_WS;
 									}
 								} else
@@ -6509,6 +6552,7 @@ static void ii_ipv4_tcp_conn_init(IIP_MEM_P w, IIP_TCP_CONN_P conn_id,
 	II_TCP_CONN(conn_id).retrans_r1 = 3;
 	II_TCP_CONN(conn_id).retrans_r2 = 12; /* retransmission must continue longer than 180 seconds */
 	II_TCP_CONN(conn_id).rx_cnt = 0;
+	II_TCP_CONN(conn_id).my_ws = 0;
 	II_TCP_CONN(conn_id).ws = 0;
 	II_TCP_CONN(conn_id).diffserv = 0;
 	II_TCP_CONN(conn_id).mss = IIP_CONF_TCP_INIT_MSS;
@@ -6522,6 +6566,7 @@ static void ii_ipv4_tcp_conn_init(IIP_MEM_P w, IIP_TCP_CONN_P conn_id,
 	II_TCP_CONN(conn_id).seq = II_TCP_CONN(conn_id).iss;
 	II_TCP_CONN(conn_id).ack_seq = 0;
 	II_TCP_CONN(conn_id).acked_seq = II_TCP_CONN(conn_id).iss;
+	II_TCP_CONN(conn_id).flow_win = 0;
 	II_TCP_CONN(conn_id).peer_win = 0;
 	II_TCP_CONN(conn_id).peer_win_seq = 0;
 	II_TCP_CONN(conn_id).peer_win_ack = 0;
@@ -6603,9 +6648,10 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 					dst_port_be,
 					0);
 			II_HOOK_TCP_IPV4_ETHERNET_CONNECT();
+			II_TCP_CONN(conn_id).flow_win = 0xffffffff;
 			II_TCP_CONN(conn_id).peer_win = 0xffff;
 			II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_WS;
-			II_TCP_CONN(conn_id).ws = 7;
+			II_TCP_CONN(conn_id).my_ws = 7;
 			II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
 			if (fastopen_cookie_len) {
 				if (fastopen_cookie_len > sizeof(II_TCP_CONN(conn_id).fastopen_cookie.buf)) {
@@ -6753,12 +6799,6 @@ static enum iip_rc ii_ipv4_tcp_input__inner3_has_syn(IIP_MEM_P w, IIP_TCP_CONN_P
 					src_ipv4_be,
 					ii_read_uint16(&tcp_hdr[0]),
 					ii_read_uint32(&tcp_hdr[4]));
-			if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_OPT_HAS_WS)
-				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_WS;
-			else {
-				II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_OPT_WS;
-				II_TCP_CONN(conn_id).ws = 0;
-			}
 			if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_OPT_HAS_TS)
 				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_SET_TS;
 			else
@@ -6885,6 +6925,21 @@ static enum iip_rc ii_ipv4_tcp_input__inner3(IIP_MEM_P w, II_PB_P pb_id,
 		II_PB(pb_id).tcp.rx_cnt = II_TCP_CONN(conn_id).rx_cnt++;
 		if (ii_ipv4_tcp_input__parse_opt(w, conn_id, pb_id, opaque) != IIP_ERR_OK)
 			return IIP_ERR_INVALID_RX;
+		if (ii_tcp_hdr_has_syn(w, pb_id)
+				&& (II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_SENT
+					|| II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_RECVD)) {
+			if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_TCP_OPT_HAS_WS) {
+				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_OPT_WS;
+				II_TCP_CONN(conn_id).my_ws = 7;
+				II_TCP_CONN(conn_id).ws = II_PB(pb_id).tcp.opt.ws;
+				if (II_TCP_CONN(conn_id).ws > 14)
+					II_TCP_CONN(conn_id).ws = 14;
+			} else if (II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_SENT) {
+				II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_OPT_WS;
+				II_TCP_CONN(conn_id).my_ws = 0;
+				II_TCP_CONN(conn_id).ws = 0;
+			}
+		}
 		return ii_tcp_rx_push(w, conn_id, pb_id, opaque);
 	}
 }
