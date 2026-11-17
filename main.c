@@ -490,6 +490,10 @@ struct iip_workspace {
 		uint32_t pkt_ts;
 		uint32_t iss;
 		IIP_TCP_CONN_P conns_ht[IIP_CONF_TCP_CONN_HT_SIZE];
+		struct {
+			uint16_t cnt;
+			IIP_TCP_CONN_P conn_id[II_CONF_POOL_NUM_TCP_CONN];
+		} used_conns;
 	} tcp;
 	struct {
 		uint32_t prev_fast;
@@ -1345,7 +1349,7 @@ static enum iip_rc ii_free_pkts(struct ii_pb *pb, IIP_OPAQUE_P opaque)
 	requires \valid(opaque);
 	requires \valid(w);
 	requires \separated(w, opaque);
-	assigns *w, *opaque;
+	assigns w->pbs, *opaque;
  */
 static enum iip_rc ii_free_pb_and_pkt(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque)
 {
@@ -3901,12 +3905,19 @@ static enum iip_rc ii_tcp_conn_update_info(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 /*@
 	requires \valid(opaque);
 	requires \valid(w);
-	requires \separated(w, opaque);
-	assigns *w, *opaque;
+	requires \valid(closed);
+	requires \separated(w, closed, opaque);
+	assigns w->pbs, w->tcp_conns, *closed, *opaque;
  */
-static enum iip_rc ii_tcp_conn_close_check(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPAQUE_P opaque)
+static enum iip_rc ii_tcp_conn_close_check(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, bool *closed, IIP_OPAQUE_P opaque)
 {
 	if (IE_UNLIKELY(conn_id >= II_CONF_POOL_NUM_TCP_CONN)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (!w->tcp.used_conns.cnt) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (w->tcp.used_conns.cnt > II_CONF_POOL_NUM_TCP_CONN) {
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
 	if (IE_UNLIKELY(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_CLOSING)) {
@@ -3922,7 +3933,15 @@ static enum iip_rc ii_tcp_conn_close_check(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 			uint8_t j;
 			/*@
 				loop invariant 0 <= j <= 3;
-				loop assigns j, *w, *opaque;
+				loop assigns j;
+				loop assigns II_TCP_CONN(conn_id).tx_ring.head;
+				loop assigns II_TCP_CONN(conn_id).tx_ring.tail;
+				loop assigns II_TCP_CONN(conn_id).sent_ring.head;
+				loop assigns II_TCP_CONN(conn_id).sent_ring.tail;
+				loop assigns II_TCP_CONN(conn_id).pending_ring.head;
+				loop assigns II_TCP_CONN(conn_id).pending_ring.tail;
+				loop assigns w->pbs;
+				loop assigns *opaque;
 				loop variant 3 - j;
 			 */
 			for (j = 0; j < 3; j++) {
@@ -3947,7 +3966,7 @@ static enum iip_rc ii_tcp_conn_close_check(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 						IIP_PKT_CNT_T i;
 						/*@
 						  loop invariant 0 <= i <= cnt;
-						  loop assigns i, *w, *opaque;
+						  loop assigns i, w->pbs, *opaque;
 						  loop variant cnt - i;
 						 */
 						for (i = 0; i < cnt; i++) {
@@ -3966,7 +3985,10 @@ static enum iip_rc ii_tcp_conn_close_check(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 				}
 			}
 		}
-		ii_free_tcp_conn(&w->tcp_conns, conn_id);
+		if (IE_UNLIKELY(ii_free_tcp_conn(&w->tcp_conns, conn_id) != IIP_ERR_OK)) {
+			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		}
+		*closed = true;
 	}
 	return IIP_ERR_OK;
 }
@@ -6106,7 +6128,6 @@ static enum iip_rc ii_tcp_conn_work(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, IIP_OPA
 			}
 		}
 	}
-	ii_tcp_conn_close_check(w, conn_id, opaque);
 	return IIP_ERR_OK;
 }
 
@@ -6637,6 +6658,13 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 			if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
 				IIP_OPS_ERROR_FATAL_SYS(); return -1;
 			}
+			if (w->tcp.used_conns.cnt >= II_CONF_POOL_NUM_TCP_CONN) {
+				if (ii_free_tcp_conn(&w->tcp_conns, conn_id) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return -1;
+				}
+				IIP_OPS_ERROR_FATAL_SYS(); return -1;
+			}
+			w->tcp.used_conns.conn_id[w->tcp.used_conns.cnt++] = conn_id;
 			ii_ipv4_tcp_conn_init(w, conn_id,
 					src_mac,
 					src_ipv4_be,
@@ -6655,7 +6683,6 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 				if (fastopen_cookie_len > sizeof(II_TCP_CONN(conn_id).fastopen_cookie.buf)) {
 					II_TCP_CONN(conn_id).state = II_TCP_STATE_CLOSED;
 					II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_CLOSING | II_TCP_CONN_FLAGS_CLOSE_API_SKIP;
-					ii_tcp_conn_close_check(w, conn_id, opaque);
 					return -1;
 				}
 				{
@@ -6671,13 +6698,11 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 					if (cnt > II_CONF_IPV4_FRAG_CNT_MAX) {
 						II_TCP_CONN(conn_id).state = II_TCP_STATE_CLOSED;
 						II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_CLOSING | II_TCP_CONN_FLAGS_CLOSE_API_SKIP;
-						ii_tcp_conn_close_check(w, conn_id, opaque);
 						return -1;
 					}
 					if (ii_tcp_send(w, conn_id, II_TCP_FLAG_SYN, pkt, cnt, opaque) != IIP_ERR_OK) {
 						II_TCP_CONN(conn_id).state = II_TCP_STATE_CLOSED;
 						II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_CLOSING | II_TCP_CONN_FLAGS_CLOSE_API_SKIP;
-						ii_tcp_conn_close_check(w, conn_id, opaque);
 						return -1;
 					}
 				}
@@ -6685,7 +6710,6 @@ static int iip_tcp_ipv4_ethernet_connect(IIP_MEM_P w,
 				if (ii_tcp_tx_push_control(w, conn_id, II_TCP_FLAG_SYN) != IIP_ERR_OK) {
 					II_TCP_CONN(conn_id).state = II_TCP_STATE_CLOSED;
 					II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_CLOSING | II_TCP_CONN_FLAGS_CLOSE_API_SKIP;
-					ii_tcp_conn_close_check(w, conn_id, opaque);
 					return -1;
 				}
 			}
@@ -6784,11 +6808,13 @@ static enum iip_rc ii_ipv4_tcp_input__inner3_has_syn(IIP_MEM_P w, IIP_TCP_CONN_P
 			if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
-			if (IE_UNLIKELY(!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0].p, opaque))) {
-				II_TCP_CONN(conn_id).state = II_TCP_STATE_CLOSED;
-				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_CLOSING | II_TCP_CONN_FLAGS_CLOSE_API_SKIP;
+			if (w->tcp.used_conns.cnt >= II_CONF_POOL_NUM_TCP_CONN) {
+				if (ii_free_tcp_conn(&w->tcp_conns, conn_id) != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
+			w->tcp.used_conns.conn_id[w->tcp.used_conns.cnt++] = conn_id;
 			ii_ipv4_tcp_conn_init(w, conn_id,
 					II_PB(pb_id).part_pkt[0].l2_dst,
 					dst_ipv4_be,
@@ -8598,23 +8624,32 @@ static enum iip_rc ii_ethernet_input(IIP_MEM_P w, IIP_PKT_P rx_pkt, struct ii_wo
  */
 static enum iip_rc ii_periodic_timer__delayed_ack(IIP_MEM_P w, IIP_OPAQUE_P opaque)
 {
-	uint16_t i;
-	/*@
-		loop invariant 0 <= i <= II_CONF_POOL_NUM_TCP_CONN;
-		loop assigns i, *w, *opaque;
-		loop variant II_CONF_POOL_NUM_TCP_CONN - i;
-	 */
-	for (i = 0; i < II_CONF_POOL_NUM_TCP_CONN; i++) {
-		if (II_TCP_CONN(i).state == II_TCP_STATE_ESTABLISHED
-				&& !(II_TCP_CONN(i).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
-			if ((II_TCP_CONN(i).ack_seq) != II_TCP_CONN(i).ack_seq_xmitted) { /* we got payload, but ack is not pushed by the app */
-				if (IE_UNLIKELY(ii_tcp_send_ack_immediate(w, i, false, opaque) != IIP_ERR_OK)) {
-					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	if (IE_UNLIKELY(w->tcp.used_conns.cnt > II_CONF_POOL_NUM_TCP_CONN)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	{
+		uint16_t i, cnt = w->tcp.used_conns.cnt;
+		/*@
+			loop invariant 0 <= i <= cnt <= II_CONF_POOL_NUM_TCP_CONN;
+			loop assigns i, *w, *opaque;
+			loop variant cnt - i;
+		 */
+		for (i = 0; i < cnt; i++) {
+			IIP_TCP_CONN_P conn_id = w->tcp.used_conns.conn_id[i];
+			if (IE_UNLIKELY(conn_id >= II_CONF_POOL_NUM_TCP_CONN)) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+			if (II_TCP_CONN(conn_id).state == II_TCP_STATE_ESTABLISHED
+					&& !(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_PEER_RX_FAILED)) {
+				if ((II_TCP_CONN(conn_id).ack_seq) != II_TCP_CONN(conn_id).ack_seq_xmitted) { /* we got payload, but ack is not pushed by the app */
+					if (IE_UNLIKELY(ii_tcp_send_ack_immediate(w, conn_id, false, opaque) != IIP_ERR_OK)) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
 				}
 			}
 		}
+		return IIP_ERR_OK;
 	}
-	return IIP_ERR_OK;
 }
 
 /*@
@@ -8625,24 +8660,33 @@ static enum iip_rc ii_periodic_timer__delayed_ack(IIP_MEM_P w, IIP_OPAQUE_P opaq
  */
 static enum iip_rc ii_periodic_timer__keep_alive(IIP_MEM_P w, IIP_OPAQUE_P opaque)
 {
-	uint16_t i;
-	/*@
-		loop invariant 0 <= i <= II_CONF_POOL_NUM_TCP_CONN;
-		loop assigns i, *w, *opaque;
-		loop variant II_CONF_POOL_NUM_TCP_CONN - i;
-	 */
-	for (i = 0; i < II_CONF_POOL_NUM_TCP_CONN; i++) {
-		if (II_TCP_CONN(i).flags & II_TCP_CONN_FLAGS_KEEPALIVE_ENABLED
-				&& II_TCP_CONN(i).keepalive_interval_ms
-				&& II_TCP_CONN(i).keepalive_interval_ms < w->now_ms - II_TCP_CONN(i).keepalive_ts
-				&& !(II_TCP_CONN(i).flags & II_TCP_CONN_FLAGS_SET_PROBE)
-				&& II_TCP_CONN(i).state == II_TCP_STATE_ESTABLISHED) {
-			if (ii_tcp_send_ack_immediate(w, i, true, opaque) != IIP_ERR_OK)
-				return IIP_ERR_OK;
-			II_TCP_CONN(i).keepalive_ts = w->now_ms;
-		}
+	if (IE_UNLIKELY(w->tcp.used_conns.cnt > II_CONF_POOL_NUM_TCP_CONN)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
-	return IIP_ERR_OK;
+	{
+		uint16_t i, cnt = w->tcp.used_conns.cnt;
+		/*@
+			loop invariant 0 <= i <= cnt <= II_CONF_POOL_NUM_TCP_CONN;
+			loop assigns i, *w, *opaque;
+			loop variant cnt - i;
+		 */
+		for (i = 0; i < cnt; i++) {
+			IIP_TCP_CONN_P conn_id = w->tcp.used_conns.conn_id[i];
+			if (IE_UNLIKELY(conn_id >= II_CONF_POOL_NUM_TCP_CONN)) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+			if (II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_KEEPALIVE_ENABLED
+					&& II_TCP_CONN(conn_id).keepalive_interval_ms
+					&& II_TCP_CONN(conn_id).keepalive_interval_ms < w->now_ms - II_TCP_CONN(conn_id).keepalive_ts
+					&& !(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_SET_PROBE)
+					&& II_TCP_CONN(conn_id).state == II_TCP_STATE_ESTABLISHED) {
+				if (ii_tcp_send_ack_immediate(w, conn_id, true, opaque) != IIP_ERR_OK)
+					return IIP_ERR_OK;
+				II_TCP_CONN(conn_id).keepalive_ts = w->now_ms;
+			}
+		}
+		return IIP_ERR_OK;
+	}
 }
 
 /*@
@@ -8651,21 +8695,30 @@ static enum iip_rc ii_periodic_timer__keep_alive(IIP_MEM_P w, IIP_OPAQUE_P opaqu
  */
 static enum iip_rc ii_periodic_timer__tcp_close_check(IIP_MEM_P w)
 {
-	uint16_t i;
-	/*@
-		loop invariant 0 <= i <= II_CONF_POOL_NUM_TCP_CONN;
-		loop assigns i, *w;
-		loop variant II_CONF_POOL_NUM_TCP_CONN - i;
-	 */
-	for (i = 0; i < II_CONF_POOL_NUM_TCP_CONN; i++) {
-		if (II_TCP_CONN(i).state == II_TCP_STATE_TIME_WAIT) {
-			if (IIP_CONF_TCP_MSL_SEC * 1000U * 2 < w->now_ms - II_TCP_CONN(i).time_wait_ts_ms) {
-				ii_tcp_conn_set_state(w, i, II_TCP_STATE_CLOSED);
-				ii_tcp_conn_enter_close_phase(w, i);
+	if (IE_UNLIKELY(w->tcp.used_conns.cnt > II_CONF_POOL_NUM_TCP_CONN)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	{
+		uint16_t i, cnt = w->tcp.used_conns.cnt;
+		/*@
+			loop invariant 0 <= i <= cnt <= II_CONF_POOL_NUM_TCP_CONN;
+			loop assigns i, *w;
+			loop variant cnt - i;
+		 */
+		for (i = 0; i < cnt; i++) {
+			IIP_TCP_CONN_P conn_id = w->tcp.used_conns.conn_id[i];
+			if (IE_UNLIKELY(conn_id >= II_CONF_POOL_NUM_TCP_CONN)) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+			if (II_TCP_CONN(conn_id).state == II_TCP_STATE_TIME_WAIT) {
+				if (IIP_CONF_TCP_MSL_SEC * 1000U * 2 < w->now_ms - II_TCP_CONN(conn_id).time_wait_ts_ms) {
+					ii_tcp_conn_set_state(w, conn_id, II_TCP_STATE_CLOSED);
+					ii_tcp_conn_enter_close_phase(w, conn_id);
+				}
 			}
 		}
+		return IIP_ERR_OK;
 	}
-	return IIP_ERR_OK;
 }
 
 /*@
@@ -8761,14 +8814,46 @@ static enum iip_rc ii_preiodic_timer(IIP_MEM_P w, IIP_OPAQUE_P opaque)
  */
 static enum iip_rc ii_work(IIP_MEM_P w, IIP_OPAQUE_P opaque)
 {
-	uint16_t i;
-	/*@
-		loop invariant 0 <= i <= II_CONF_POOL_NUM_TCP_CONN;
-		loop assigns i, *w, *opaque;
-		loop variant II_CONF_POOL_NUM_TCP_CONN - i;
-	 */
-	for (i = 0; i < II_CONF_POOL_NUM_TCP_CONN; i++)
-		ii_tcp_conn_work(w, i, opaque);
+	if (w->tcp.used_conns.cnt > II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	{
+		uint16_t i, cnt = w->tcp.used_conns.cnt;
+		/*@
+			loop invariant 0 <= i <= cnt <= II_CONF_POOL_NUM_TCP_CONN;
+			loop assigns i, *w, *opaque;
+			loop variant cnt - i;
+		 */
+		for (i = 0; i < cnt; i++) {
+			enum iip_rc rc = ii_tcp_conn_work(w, w->tcp.used_conns.conn_id[i], opaque);
+			if (rc != IIP_ERR_OK)
+				return rc;
+		}
+	}
+	if (w->tcp.used_conns.cnt > II_CONF_POOL_NUM_TCP_CONN) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	{
+		uint16_t i = 0;
+		/*@
+			loop invariant 0 <= i <= w->tcp.used_conns.cnt <= II_CONF_POOL_NUM_TCP_CONN;
+			loop assigns i, *w, *opaque;
+			loop variant w->tcp.used_conns.cnt - i;
+		 */
+		while (i < w->tcp.used_conns.cnt) {
+			bool closed = false;
+			{
+				enum iip_rc rc = ii_tcp_conn_close_check(w, w->tcp.used_conns.conn_id[i], &closed, opaque);
+				if (rc != IIP_ERR_OK)
+					return rc;
+			}
+			if (closed) {
+				w->tcp.used_conns.conn_id[i] = w->tcp.used_conns.conn_id[w->tcp.used_conns.cnt - 1];
+				w->tcp.used_conns.cnt--;
+			} else
+				i++;
+		}
+	}
 	return IIP_ERR_OK;
 }
 
