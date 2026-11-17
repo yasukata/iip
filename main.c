@@ -4698,113 +4698,18 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__craft_opt(IIP_MEM_P w, IIP_TCP_C
 /*@
 	requires \valid(opaque);
 	requires \valid(w);
-	requires bcnt <= II_CONF_IPV4_FRAG_CNT_MAX;
-	requires \valid_read(buf_ptr + (0 .. 3 + bcnt - 1));
-	requires \valid_read(len + (0 .. 3 + bcnt - 1));
-	requires \forall integer i; 0 <= i < 3 + bcnt ==> (len[i] ==> \valid_read(buf_ptr[i] + (0 .. len[i] - 1)));
-	requires \separated(w, buf_ptr + (0 .. 3 + bcnt - 1), len + (0 .. 3 + bcnt - 1), opaque);
-	assigns *w, *opaque;
- */
-static enum iip_rc ii_tcp_xmit_queued_data_one__trigger_inner3(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id,
-		uint16_t xmit_len,
-		const uint8_t *buf_ptr[], IIP_PKT_LEN_T len[], IIP_PKT_LEN_T bcnt, IIP_OPAQUE_P opaque)
-{
-	if (IE_UNLIKELY(pb_id >= II_CONF_POOL_NUM_PB)) {
-		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-	}
-	if (IE_UNLIKELY(conn_id >= II_CONF_POOL_NUM_TCP_CONN)) {
-		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-	}
-	{
-		bool sent = false;
-		{
-			bool iip_ret_bool;
-			IIP_OPS_NIC_FEATURE_OFFLOAD_TX_SCATTER_GATHER();
-			if (iip_ret_bool) {
-				if (II_PB(pb_id).cnt == 1) {
-					if (IE_UNLIKELY(!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0].p, opaque))) {
-						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-					}
-					if (xmit_len == ii_call_pkt_get_len(II_PB(pb_id).part_pkt[0].p, opaque)) {
-						if (IE_UNLIKELY(ii_ipv4_send_ethernet_zero_copy(II_TCP_CONN(conn_id).src_mac, ii_htonl(II_TCP_CONN(conn_id).src_ip[0]),
-										II_TCP_CONN(conn_id).dst_mac, ii_htonl(II_TCP_CONN(conn_id).dst_ip[0]), 6 /* tcp */, II_TCP_CONN(conn_id).diffserv,
-										&buf_ptr[1], &len[1], 2, II_PB(pb_id).part_pkt[0].p, II_PB(pb_id).tcp.payload_len, opaque) != IIP_ERR_OK)) {
-							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-						}
-						sent = true;
-					}
-				}
-			}
-		}
-		if (!sent) {
-			if (IE_UNLIKELY(ii_ipv4_send_ethernet(II_TCP_CONN(conn_id).src_mac, ii_htonl(II_TCP_CONN(conn_id).src_ip[0]),
-							II_TCP_CONN(conn_id).dst_mac, ii_htonl(II_TCP_CONN(conn_id).dst_ip[0]), 6 /* tcp */, II_TCP_CONN(conn_id).diffserv,
-							&buf_ptr[1], &len[1], 2 + bcnt, opaque) != IIP_ERR_OK)) {
-				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-			}
-		}
-	}
-	return IIP_ERR_OK;
-}
-
-/*@
-	requires \valid(opaque);
-	requires \valid(w);
-	requires bcnt <= II_CONF_IPV4_FRAG_CNT_MAX;
 	requires \valid(tcp_hdr + (0 .. II_TCP_HDR_LEN_MINIMAL - 1));
-	requires \valid_read(buf_ptr + (0 .. 3 + bcnt - 1));
-	requires \valid_read(len + (0 .. 3 + bcnt - 1));
-	requires \forall integer i; 0 <= i < 3 + bcnt ==> (len[i] ==> \valid_read(buf_ptr[i] + (0 .. len[i] - 1)));
-	requires \separated(w, tcp_hdr + (0 .. II_TCP_HDR_LEN_MINIMAL - 1), buf_ptr + (0 .. 3 + bcnt - 1), len + (0 .. 3 + bcnt - 1), opaque);
-	assigns *w, tcp_hdr[0 .. II_TCP_HDR_LEN_MINIMAL - 1], *opaque;
- */
-static enum iip_rc ii_tcp_xmit_queued_data_one__trigger_inner2(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id,
-		uint16_t tcp_flags, uint16_t xmit_len,
-		uint8_t *tcp_hdr, uint8_t *tcp_opt, uint8_t tcp_opt_len,
-		const uint8_t *buf_ptr[], IIP_PKT_LEN_T len[], IIP_PKT_LEN_T bcnt, IIP_OPAQUE_P opaque)
-{
-	if (IE_UNLIKELY(pb_id >= II_CONF_POOL_NUM_PB)) {
-		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-	}
-	if (IE_UNLIKELY(conn_id >= II_CONF_POOL_NUM_TCP_CONN)) {
-		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-	}
-	(void) tcp_opt;
-	(void) tcp_opt_len;
-	{
-		bool iip_ret_bool;
-		IIP_OPS_TCP_TX_SKIP_SW_CHECKSUM();
-		if (!iip_ret_bool)
-			ii_write_uint16(tcp_hdr + 16, ii_htons(ii_csum16(buf_ptr, len, 3 + bcnt, 0)));
-	}
-	if (ii_tcp_xmit_queued_data_one__trigger_inner3(w, conn_id, pb_id,
-				xmit_len, buf_ptr, len, bcnt, opaque) != IIP_ERR_OK) {
-		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-	}
-	if (tcp_flags & II_TCP_FLAG_ACK) {
-		II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_ACK_PENDING;
-		II_TCP_CONN(conn_id).ack_seq_xmitted = ii_ntohl(ii_extract_tcp_ack_seq_be(tcp_hdr));
-	}
-	return IIP_ERR_OK;
-}
-
-/*@
-	requires \valid(opaque);
-	requires \valid(w);
+	requires \valid_read(_buf_ptr + (0 .. 3 - 1));
+	requires \valid_read(_len + (0 .. 3 - 1));
 	requires \valid(head_forwarded);
-	requires \valid(tcp_hdr + (0 .. II_TCP_HDR_LEN_MINIMAL - 1));
-	requires \valid(_buf_ptr + (0 .. 3 - 1));
-	requires \valid(_len + (0 .. 3 - 1));
 	requires \forall integer i; 0 <= i < 3 ==> (_len[i] ==> \valid_read(_buf_ptr[i] + (0 .. _len[i] - 1)));
 	requires \separated(w, head_forwarded, tcp_hdr + (0 .. II_TCP_HDR_LEN_MINIMAL - 1), _buf_ptr + (0 .. 3 - 1), _len + (0 .. 3 - 1), opaque);
-	assigns *w, *head_forwarded, tcp_hdr[0 .. II_TCP_HDR_LEN_MINIMAL - 1], *opaque;
+	assigns *w, tcp_hdr[0 .. II_TCP_HDR_LEN_MINIMAL - 1], *head_forwarded, *opaque;
 	ensures \result == IIP_ERR_OK ==> *head_forwarded <= head_off;
  */
-static enum iip_rc ii_tcp_xmit_queued_data_one__trigger_inner1(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id,
-		uint16_t tcp_flags,
+static enum iip_rc ii_tcp_xmit_queued_data_one__trigger_inner2(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id,
 		uint16_t head_off, uint16_t *head_forwarded, uint16_t xmit_len,
-		uint8_t *tcp_hdr, uint8_t *tcp_opt, uint8_t tcp_opt_len,
-		const uint8_t *_buf_ptr[3], IIP_PKT_LEN_T _len[3], IIP_OPAQUE_P opaque)
+		uint8_t *tcp_hdr, const uint8_t *_buf_ptr[], IIP_PKT_LEN_T _len[], IIP_OPAQUE_P opaque)
 {
 	if (IE_UNLIKELY(pb_id >= II_CONF_POOL_NUM_PB)) {
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
@@ -4887,17 +4792,87 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__trigger_inner1(IIP_MEM_P w, IIP_
 				if (IE_UNLIKELY(l != xmit_len)) {
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 				}
-				*head_forwarded = head_fwd;
-				if (ii_tcp_xmit_queued_data_one__trigger_inner2(w, conn_id, pb_id,
-							tcp_flags, xmit_len,
-							tcp_hdr, tcp_opt, tcp_opt_len,
-							buf_ptr, len, i, opaque) != IIP_ERR_OK) {
+				ii_write_uint16(tcp_hdr + 16, ii_htons(ii_csum16(buf_ptr, len, 3 + i, 0)));
+				if (IE_UNLIKELY(ii_ipv4_send_ethernet(II_TCP_CONN(conn_id).src_mac, ii_htonl(II_TCP_CONN(conn_id).src_ip[0]),
+								II_TCP_CONN(conn_id).dst_mac, ii_htonl(II_TCP_CONN(conn_id).dst_ip[0]), 6 /* tcp */, II_TCP_CONN(conn_id).diffserv,
+								&buf_ptr[1], &len[1], 2 + i, opaque) != IIP_ERR_OK)) {
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 				}
+				*head_forwarded = head_fwd;
 			}
 		}
 	}
 	return IIP_ERR_OK;
+}
+
+/*@
+	requires \valid(opaque);
+	requires \valid(w);
+	requires \valid(head_forwarded);
+	requires \valid(tcp_hdr + (0 .. II_TCP_HDR_LEN_MINIMAL - 1));
+	requires \valid(_buf_ptr + (0 .. 3 - 1));
+	requires \valid(_len + (0 .. 3 - 1));
+	requires \forall integer i; 0 <= i < 3 ==> (_len[i] ==> \valid_read(_buf_ptr[i] + (0 .. _len[i] - 1)));
+	requires \separated(w, head_forwarded, tcp_hdr + (0 .. II_TCP_HDR_LEN_MINIMAL - 1), _buf_ptr + (0 .. 3 - 1), _len + (0 .. 3 - 1), opaque);
+	assigns *w, *head_forwarded, tcp_hdr[0 .. II_TCP_HDR_LEN_MINIMAL - 1], *opaque;
+	ensures \result == IIP_ERR_OK ==> *head_forwarded <= head_off;
+ */
+static enum iip_rc ii_tcp_xmit_queued_data_one__trigger_inner1(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id,
+		uint16_t tcp_flags, uint16_t head_off, uint16_t *head_forwarded, uint16_t xmit_len, uint8_t *tcp_hdr,
+		const uint8_t *_buf_ptr[3], IIP_PKT_LEN_T _len[3], IIP_OPAQUE_P opaque)
+{
+	if (IE_UNLIKELY(pb_id >= II_CONF_POOL_NUM_PB)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (IE_UNLIKELY(conn_id >= II_CONF_POOL_NUM_TCP_CONN)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (IE_UNLIKELY(II_PB(pb_id).cnt > II_CONF_IPV4_FRAG_CNT_MAX)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	{
+		bool csum_offload, zerocopy;
+		{
+			bool iip_ret_bool;
+			IIP_OPS_TCP_TX_SKIP_SW_CHECKSUM();
+			if (iip_ret_bool)
+				csum_offload = true;
+			else
+				csum_offload = false;
+		}
+		{
+			bool iip_ret_bool;
+			IIP_OPS_NIC_FEATURE_OFFLOAD_TX_SCATTER_GATHER();
+			if (iip_ret_bool)
+				zerocopy = true;
+			else
+				zerocopy = false;
+		}
+		if (csum_offload
+				&& zerocopy
+				&& II_PB(pb_id).cnt == 1
+				&& ii_call_pkt_valid(II_PB(pb_id).part_pkt[0].p, opaque)
+				&& !head_off
+				&& xmit_len == ii_call_pkt_get_len(II_PB(pb_id).part_pkt[0].p, opaque)) { /* fast path */
+			*head_forwarded = 0;
+			if (ii_ipv4_send_ethernet_zero_copy(II_TCP_CONN(conn_id).src_mac, ii_htonl(II_TCP_CONN(conn_id).src_ip[0]),
+							II_TCP_CONN(conn_id).dst_mac, ii_htonl(II_TCP_CONN(conn_id).dst_ip[0]), 6 /* tcp */, II_TCP_CONN(conn_id).diffserv,
+							&_buf_ptr[1], &_len[1], 2, II_PB(pb_id).part_pkt[0].p, II_PB(pb_id).tcp.payload_len, opaque) != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+		} else { /* slow path */
+			if (ii_tcp_xmit_queued_data_one__trigger_inner2(w, conn_id, pb_id,
+						head_off, head_forwarded, xmit_len,
+						tcp_hdr, _buf_ptr, _len, opaque) != IIP_ERR_OK) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
+		}
+		if (tcp_flags & II_TCP_FLAG_ACK) {
+			II_TCP_CONN(conn_id).flags &= ~II_TCP_CONN_FLAGS_ACK_PENDING;
+			II_TCP_CONN(conn_id).ack_seq_xmitted = ii_ntohl(ii_extract_tcp_ack_seq_be(tcp_hdr));
+		}
+		return IIP_ERR_OK;
+	}
 }
 
 /*@
@@ -4932,8 +4907,7 @@ static enum iip_rc ii_tcp_xmit_queued_data_one__trigger_inner(IIP_MEM_P w, IIP_T
 	len[2] = tcp_opt_len;
 	if (ii_tcp_xmit_queued_data_one__trigger_inner1(w, conn_id, pb_id, tcp_flags,
 				head_off, head_forwarded, xmit_len,
-				tcp_hdr, tcp_opt, tcp_opt_len,
-				buf_ptr, len, opaque) != IIP_ERR_OK) {
+				tcp_hdr, buf_ptr, len, opaque) != IIP_ERR_OK) {
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 	}
 	return IIP_ERR_OK;
