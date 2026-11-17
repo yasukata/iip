@@ -403,7 +403,9 @@ static int iip_ops_ethernet_flush(IIP_OPAQUE_P opaque)
 
 #define IIP_OPS_IPV4_ADDR_MATCH() do { iip_ret_bool = (rx_pkt % 2 ? true : false); } while (0)
 
-#define IIP_OPS_NIC_FEATURE_OFFLOAD_TX_SCATTER_GATHER() do { iip_ret_bool = true; } while (0)
+#define IIP_OPS_NIC_FEATURE_OFFLOAD_TX_SCATTER_GATHER() do { iip_ret_bool = conn_id % 2 ? true : false; } while (0)
+
+#define IIP_OPS_TCP_TX_SKIP_SW_CHECKSUM() do { iip_ret_bool = conn_id % 2 ? true : false; } while (0)
 
 #undef NUM_PKT
 #undef PKT_BUF_SIZE
