@@ -2726,20 +2726,14 @@ static enum iip_rc ii_icmp_error_send(IIP_MEM_P w, II_PB_P pb_id, uint8_t error_
 	logic integer f_tcp_compute_win{L}(integer w, integer ws) = UINT16_MAX <= f_div_loop(w, ws) ? UINT16_MAX : f_div_loop(w, ws);
 */
 /*@
+	requires ws <= 14;
 	assigns \nothing;
 	ensures \result == f_tcp_compute_win(w, ws);
+	ensures \result <= UINT16_MAX;
  */
 static uint16_t ii_tcp_compute_win(uint32_t w, uint8_t ws)
 {
-	uint8_t i;
-	/*@
-		loop invariant 0 <= i <= ws;
-		loop invariant w == f_div_loop(\at(w, Pre), i);
-		loop assigns i, w;
-		loop variant ws - i;
-	 */
-	for (i = 0; i < ws; i++)
-		w /= 2;
+	w >>= ws;
 	if (UINT16_MAX <= w)
 		w = UINT16_MAX;
 	return w;
@@ -3277,18 +3271,20 @@ static enum iip_rc ii_pb_tcp_payload_len(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LEN
 /*@ logic integer f_tcp_rx_window{L}(IIP_MEM_P w, IIP_TCP_CONN_P conn_id) = f_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, II_TCP_CONN(conn_id).my_ws); */
 /*@
 	requires \valid(w);
+	requires II_TCP_CONN(conn_id).my_ws <= 14;
 	requires conn_id < II_CONF_POOL_NUM_TCP_CONN;
 	requires II_TCP_CONN(conn_id).buf.used <= II_TCP_CONN(conn_id).buf.capacity;
 	assigns \nothing;
 	ensures \result == f_tcp_rx_window(w, conn_id);
+	ensures \result <= UINT16_MAX;
  */
 static uint32_t ii_tcp_rx_window(IIP_MEM_P w, IIP_TCP_CONN_P conn_id)
 {
 	return ii_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, II_TCP_CONN(conn_id).my_ws);
 }
 
-/*@ logic integer f_shift(integer n, integer c) = 0 < c ? f_shift(n, c - 1) * 2 : n; */
-/*@ logic integer f_tcp_rx_window_b{L}(IIP_MEM_P w, IIP_TCP_CONN_P conn_id) = f_shift(f_tcp_rx_window(w, conn_id), II_TCP_CONN(conn_id).my_ws); */
+/*@ logic integer f_mul_loop{L}(integer w, integer cnt) = cnt <= 0 ? w : f_mul_loop(w, cnt - 1) * 2; */
+/*@ logic integer f_tcp_rx_window_b{L}(IIP_MEM_P w, IIP_TCP_CONN_P conn_id) = f_mul_loop(f_tcp_rx_window(w, conn_id), II_TCP_CONN(conn_id).my_ws); */
 /*@
 	requires \valid(w);
 	requires II_TCP_CONN(conn_id).my_ws <= 14;
@@ -3300,18 +3296,41 @@ static uint32_t ii_tcp_rx_window(IIP_MEM_P w, IIP_TCP_CONN_P conn_id)
 static uint32_t ii_tcp_rx_window_b(IIP_MEM_P w, IIP_TCP_CONN_P conn_id)
 {
 	uint32_t v = ii_tcp_compute_win(II_TCP_CONN(conn_id).buf.capacity - II_TCP_CONN(conn_id).buf.used, II_TCP_CONN(conn_id).my_ws);
-	{
-		uint8_t i;
-		/*@
-			loop invariant 0 <= i <= II_TCP_CONN(conn_id).my_ws <= 14;
-			loop invariant v == f_shift(\at(v, LoopEntry), i);
-			loop assigns i, v;
-			loop variant II_TCP_CONN(conn_id).my_ws - i;
-		 */
-		for (i = 0; i < II_TCP_CONN(conn_id).my_ws; i++)
-			v *= 2;
+	switch (II_TCP_CONN(conn_id).my_ws) {
+	case 0:
+		return v;
+	case 1:
+		return v * 2;
+	case 2:
+		return v * 4;
+	case 3:
+		return v * 8;
+	case 4:
+		return v * 16;
+	case 5:
+		return v * 32;
+	case 6:
+		return v * 64;
+	case 7:
+		return v * 128;
+	case 8:
+		return v * 256;
+	case 9:
+		return v * 512;
+	case 10:
+		return v * 1024;
+	case 11:
+		return v * 2048;
+	case 12:
+		return v * 4096;
+	case 13:
+		return v * 8192;
+	case 14:
+		return v * 16384;
+	default:
+		/*@ assert \false; */
+		return 0;
 	}
-	return v;
 }
 
 /*@ logic integer f_tcp_seq_entirely_exceed_win{L}(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, II_PB_P pb_id) = ((f_tcp_rx_window_b(w, conn_id) == 0) || (f_seq_ordered((uint32_t) f_tcp_rx_window_b(w, conn_id), (uint32_t) f_tcp_seq_le(w, conn_id, pb_id))) || f_tcp_rx_window_b(w, conn_id) == f_tcp_seq_le(w, conn_id, pb_id)) ? true : false; */
