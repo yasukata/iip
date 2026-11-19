@@ -3860,8 +3860,12 @@ static enum iip_rc ii_tcp_conn_update_info(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 				II_TCP_CONN(conn_id).peer_win = II_PB(pb_id).tcp.win;
 				if (ii_tcp_hdr_has_syn(w, pb_id))
 					II_TCP_CONN(conn_id).flow_win = II_PB(pb_id).tcp.win;
-				else
-					II_TCP_CONN(conn_id).flow_win = II_PB(pb_id).tcp.win << II_TCP_CONN(conn_id).ws;
+				else {
+					if (II_TCP_CONN(conn_id).ws > 14) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					II_TCP_CONN(conn_id).flow_win = (uint32_t) II_PB(pb_id).tcp.win << II_TCP_CONN(conn_id).ws;
+				}
 				if (II_TCP_CONN(conn_id).max_peer_win < II_TCP_CONN(conn_id).peer_win)
 					II_TCP_CONN(conn_id).max_peer_win = II_TCP_CONN(conn_id).peer_win;
 				II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_WIN_UPDATED;
