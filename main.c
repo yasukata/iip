@@ -1702,7 +1702,71 @@ static enum iip_rc ii_pb_ipv4_payload_len(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LE
 	requires 0 < buf_len ==> \separated(buf + (0 .. buf_len - 1), opaque);
 	assigns buf[0 .. buf_len - 1], *copied_len;
  */
-static enum iip_rc ii_pb_payload_copy(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LEN_T skip, uint8_t *buf, IIP_PKT_LEN_T buf_len, IIP_PKT_LEN_T *copied_len, IIP_OPAQUE_P opaque)
+static enum iip_rc ii_pb_ipv4_payload_copy(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LEN_T skip, uint8_t *buf, IIP_PKT_LEN_T buf_len, IIP_PKT_LEN_T *copied_len, IIP_OPAQUE_P opaque)
+{
+	if (IE_UNLIKELY(pb_id >= II_CONF_POOL_NUM_PB)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	if (IE_UNLIKELY(w->pbs.array[pb_id].cnt > II_CONF_IPV4_FRAG_CNT_MAX)) {
+		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+	}
+	{
+		IIP_PKT_LEN_T len = 0;
+		{
+			IIP_PKT_CNT_T i, s, cnt = w->pbs.array[pb_id].cnt;
+			/*@
+				loop invariant 0 <= i <= cnt <= II_CONF_IPV4_FRAG_CNT_MAX;
+				loop invariant 0 <= s <= skip;
+				loop invariant 0 <= len <= buf_len;
+				loop assigns i, s, len, buf[0 .. buf_len - 1];
+				loop variant cnt - i;
+			 */
+			for (i = 0, s = 0; i < cnt; i++) {
+				if (IE_UNLIKELY(!ii_call_pkt_valid(w->pbs.array[pb_id].part_pkt[i].p, opaque))) {
+					IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+				} else {
+					IIP_PKT_LEN_T off = skip - s, payload_len = ii_call_pkt_get_len(w->pbs.array[pb_id].part_pkt[i].p, opaque), ipv4_hdr_len = ii_extract_ipv4_hdr_len(w->pbs.array[pb_id].part_pkt[i].l3);
+					if (payload_len < II_ETH_HDR_LEN + ipv4_hdr_len) {
+						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+					}
+					payload_len -= II_ETH_HDR_LEN + ipv4_hdr_len;
+					if (!payload_len)
+						continue;
+					if (payload_len < off) {
+						s += payload_len;
+						continue;
+					}
+					{
+						IIP_PKT_LEN_T cp_len = payload_len - off;
+						if (cp_len > buf_len - len)
+							cp_len = buf_len - len;
+						if (cp_len) {
+							if (ii_call_pkt_data_read(w->pbs.array[pb_id].part_pkt[i].p, &buf[len], cp_len,
+										II_ETH_HDR_LEN + ipv4_hdr_len + off, opaque) < 0) {
+								IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+							}
+							len += cp_len;
+						}
+					}
+					s += off;
+				}
+			}
+		}
+		*copied_len = len;
+	}
+	return IIP_ERR_OK;
+}
+
+/*@
+	requires \valid(opaque);
+	requires \valid(w);
+	requires \valid(copied_len);
+	requires \valid(buf + (0 .. buf_len - 1));
+	requires 0 < buf_len ==> \separated(w, buf + (0 .. buf_len - 1));
+	requires 0 < buf_len ==> \separated(buf + (0 .. buf_len - 1), opaque);
+	assigns buf[0 .. buf_len - 1], *copied_len;
+ */
+static enum iip_rc ii_pb_data_copy(IIP_MEM_P w, II_PB_P pb_id, IIP_PKT_LEN_T skip, uint8_t *buf, IIP_PKT_LEN_T buf_len, IIP_PKT_LEN_T *copied_len, IIP_OPAQUE_P opaque)
 {
 	if (IE_UNLIKELY(pb_id >= II_CONF_POOL_NUM_PB)) {
 		IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
@@ -2603,7 +2667,7 @@ static enum iip_rc ii_icmp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P opaque
 				if (IE_UNLIKELY(!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0].p, opaque))) {
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 				}
-				if (ii_pb_payload_copy(w, pb_id, II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(II_PB(pb_id).part_pkt[0].l3), tmp, buf_len, &copied_len, opaque) != IIP_ERR_OK)
+				if (ii_pb_ipv4_payload_copy(w, pb_id, 0, tmp, buf_len, &copied_len, opaque) != IIP_ERR_OK)
 					return IIP_ERR_INVALID_RX;
 				if (copied_len != buf_len)
 					return IIP_ERR_INVALID_RX;
@@ -2656,20 +2720,16 @@ static enum iip_rc ii_icmp_error_send(IIP_MEM_P w, II_PB_P pb_id, uint8_t error_
 	{
 		uint8_t ipv4_hdr[60];
 		uint8_t ipv4_hdr_len = ii_extract_ipv4_hdr_len(II_PB(pb_id).part_pkt[0].l3);
-		{
-			IIP_PKT_LEN_T copied_len;
-			if (IE_UNLIKELY(ii_pb_payload_copy(w, pb_id, II_ETH_HDR_LEN, ipv4_hdr, ipv4_hdr_len, &copied_len, opaque) != IIP_ERR_OK)) {
-				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
-			}
-			if (IE_UNLIKELY(ipv4_hdr_len != copied_len)) {
-				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		if (ipv4_hdr_len) {
+			if (ii_call_pkt_data_read(II_PB(pb_id).part_pkt[0].p, ipv4_hdr, ipv4_hdr_len, II_ETH_HDR_LEN, opaque) < 0) {
+				IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
 			}
 		}
 		{
 			uint8_t l4_hdr[8];
 			{
 				IIP_PKT_LEN_T copied_len;
-				if (IE_UNLIKELY(ii_pb_payload_copy(w, pb_id, II_ETH_HDR_LEN + ipv4_hdr_len, l4_hdr, 8, &copied_len, opaque) != IIP_ERR_OK)) {
+				if (IE_UNLIKELY(ii_pb_ipv4_payload_copy(w, pb_id, 0, l4_hdr, 8, &copied_len, opaque) != IIP_ERR_OK)) {
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 				}
 				if (IE_UNLIKELY(copied_len != 8)) {
@@ -5285,7 +5345,7 @@ static enum iip_rc ii_tcp_conn_copy_sent_payload(IIP_MEM_P w, IIP_TCP_CONN_P con
 								}
 								{
 									IIP_PKT_LEN_T copied_len;
-									if (IE_UNLIKELY(ii_pb_payload_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], 0, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK)) {
+									if (IE_UNLIKELY(ii_pb_data_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], 0, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK)) {
 										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 									}
 									if (IE_UNLIKELY(copied_len != l)) {
@@ -5315,7 +5375,7 @@ static enum iip_rc ii_tcp_conn_copy_sent_payload(IIP_MEM_P w, IIP_TCP_CONN_P con
 								}
 								{
 									IIP_PKT_LEN_T copied_len;
-									if (IE_UNLIKELY(ii_pb_payload_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], 0, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK)) {
+									if (IE_UNLIKELY(ii_pb_data_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], 0, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK)) {
 										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 									}
 									if (IE_UNLIKELY(copied_len != l)) {
@@ -5367,7 +5427,7 @@ static enum iip_rc ii_tcp_conn_copy_sent_payload(IIP_MEM_P w, IIP_TCP_CONN_P con
 								}
 								{
 									IIP_PKT_LEN_T copied_len;
-									if (IE_UNLIKELY(ii_pb_payload_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], s, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK)) {
+									if (IE_UNLIKELY(ii_pb_data_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], s, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK)) {
 										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 									}
 									if (IE_UNLIKELY(copied_len != l)) {
@@ -5397,7 +5457,7 @@ static enum iip_rc ii_tcp_conn_copy_sent_payload(IIP_MEM_P w, IIP_TCP_CONN_P con
 								}
 								{
 									IIP_PKT_LEN_T copied_len;
-									if (IE_UNLIKELY(ii_pb_payload_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], s, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK)) {
+									if (IE_UNLIKELY(ii_pb_data_copy(w, II_TCP_CONN(conn_id).sent_ring.slot[slot_idx], s, &payload[buf_off], l, &copied_len, opaque) != IIP_ERR_OK)) {
 										IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 									}
 									if (IE_UNLIKELY(copied_len != l)) {
@@ -6355,7 +6415,7 @@ static enum iip_rc ii_ipv4_tcp_input__parse_opt(IIP_MEM_P w, IIP_TCP_CONN_P conn
 					if (IE_UNLIKELY(!ii_call_pkt_valid(II_PB(pb_id).part_pkt[0].p, opaque))) {
 						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 					}
-					if (ii_pb_payload_copy(w, pb_id, II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(II_PB(pb_id).part_pkt[0].l3) + II_TCP_HDR_LEN_MINIMAL, tcp_opt, tcp_opt_len, &copied_len, opaque) != IIP_ERR_OK)
+					if (ii_pb_ipv4_payload_copy(w, pb_id, II_TCP_HDR_LEN_MINIMAL, tcp_opt, tcp_opt_len, &copied_len, opaque) != IIP_ERR_OK)
 						return IIP_ERR_INVALID_RX;
 					if (copied_len != tcp_opt_len)
 						return IIP_ERR_INVALID_RX;
@@ -6992,7 +7052,7 @@ static enum iip_rc ii_ipv4_tcp_input__inner2(IIP_MEM_P w, II_PB_P pb_id, IIP_OPA
 			uint8_t tcp_hdr[II_TCP_HDR_LEN_MINIMAL];
 			{
 				IIP_PKT_LEN_T copied_len;
-				if (IE_UNLIKELY(ii_pb_payload_copy(w, pb_id, II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(II_PB(pb_id).part_pkt[0].l3), tcp_hdr, sizeof(tcp_hdr), &copied_len, opaque) != IIP_ERR_OK)) {
+				if (IE_UNLIKELY(ii_pb_ipv4_payload_copy(w, pb_id, 0, tcp_hdr, sizeof(tcp_hdr), &copied_len, opaque) != IIP_ERR_OK)) {
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 				}
 				if (copied_len != sizeof(tcp_hdr))
@@ -7113,9 +7173,8 @@ static enum iip_rc ii_ipv4_udp_input(IIP_MEM_P w, II_PB_P pb_id, IIP_OPAQUE_P op
 					uint8_t udp_hdr[II_UDP_HDR_LEN];
 					{
 						IIP_PKT_LEN_T copied_len;
-						if (IE_UNLIKELY(ii_pb_payload_copy(w, pb_id,
-										II_ETH_HDR_LEN + ii_extract_ipv4_hdr_len(II_PB(pb_id).part_pkt[0].l3),
-										udp_hdr, II_UDP_HDR_LEN, &copied_len, opaque) != IIP_ERR_OK)) {
+						if (IE_UNLIKELY(ii_pb_ipv4_payload_copy(w, pb_id,
+										0, udp_hdr, II_UDP_HDR_LEN, &copied_len, opaque) != IIP_ERR_OK)) {
 							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 						}
 						if (IE_UNLIKELY(copied_len != II_UDP_HDR_LEN)) {
