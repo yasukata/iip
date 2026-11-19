@@ -8476,8 +8476,11 @@ static enum iip_rc ii_arp_input__ipv4(IIP_MEM_P w, IIP_PKT_P rx_pkt, struct ii_w
 	case 0x0002: /* reply */
 		return ii_arp_input__ipv4_reply(w, rx_pkt, opaque);
 	default:
-		if (IE_UNLIKELY(ii_call_pkt_free(rx_pkt, opaque))) {
-			IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+		{
+			int r = ii_call_pkt_free(rx_pkt, opaque);
+			if (IE_UNLIKELY(r)) {
+				IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+			}
 		}
 		return IIP_ERR_INVALID_RX;
 	}
@@ -8521,14 +8524,20 @@ static enum iip_rc ii_arp_input(IIP_MEM_P w, IIP_PKT_P rx_pkt, struct ii_work *w
 			case 0x0800: /* ipv4 */
 				return ii_arp_input__ipv4(w, rx_pkt, work, opaque);
 			default:
-				if (IE_UNLIKELY(ii_call_pkt_free(rx_pkt, opaque))) {
-					IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+				{
+					int r = ii_call_pkt_free(rx_pkt, opaque);
+					if (IE_UNLIKELY(r)) {
+						IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+					}
 				}
 				return IIP_ERR_INVALID_RX;
 			}
 		default:
-			if (IE_UNLIKELY(ii_call_pkt_free(rx_pkt, opaque))) {
-				IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+			{
+				int r = ii_call_pkt_free(rx_pkt, opaque);
+				if (IE_UNLIKELY(r)) {
+					IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+				}
 			}
 			return IIP_ERR_INVALID_RX;
 		}
@@ -8602,8 +8611,11 @@ static enum iip_rc ii_ethernet_input(IIP_MEM_P w, IIP_PKT_P rx_pkt, struct ii_wo
 				}
 			}
 		default:
-			if (IE_UNLIKELY(ii_call_pkt_free(rx_pkt, opaque))) {
-				IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+			{
+				int r = ii_call_pkt_free(rx_pkt, opaque);
+				if (IE_UNLIKELY(r)) {
+					IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
+				}
 			}
 			return IIP_ERR_INVALID_RX;
 		}
