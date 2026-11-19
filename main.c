@@ -7844,7 +7844,8 @@ static enum iip_rc ii_ipv4_frag_push__to_slot(IIP_MEM_P w, IIP_PKT_P rx_pkt, str
 				{
 					enum iip_rc rc = ii_alloc_pb(&w->pbs, &pb_id);
 					if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
-						if (ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[slot], opaque) != IIP_ERR_OK) {
+						enum iip_rc _rc = ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[slot], opaque);
+						if (_rc != IIP_ERR_OK) {
 							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 						}
 						IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
@@ -7855,7 +7856,8 @@ static enum iip_rc ii_ipv4_frag_push__to_slot(IIP_MEM_P w, IIP_PKT_P rx_pkt, str
 				{
 					enum iip_rc rc = ii_ipv4_rx_push(w, pb_id, opaque);
 					if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
-						if (IE_UNLIKELY(ii_free_pb_and_pkt(w, pb_id, opaque))) {
+						enum iip_rc _rc = ii_free_pb_and_pkt(w, pb_id, opaque);
+						if (IE_UNLIKELY(_rc != IIP_ERR_OK)) {
 							IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 						}
 						return rc;
@@ -7865,19 +7867,27 @@ static enum iip_rc ii_ipv4_frag_push__to_slot(IIP_MEM_P w, IIP_PKT_P rx_pkt, str
 			}
 		case IIP_ERR_AGAIN: /* wait */
 			if (w->ipv4_frag[slot].cnt == II_CONF_IPV4_FRAG_CNT_MAX) {
-				if (ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[slot], opaque) != IIP_ERR_OK) {
+				enum iip_rc rc = ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[slot], opaque);
+				if (rc != IIP_ERR_OK) {
 					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 				}
 			}
 			return IIP_ERR_OK;
 		case IIP_ERR_INVALID_RX: /* discard */
-			if (ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[slot], opaque) != IIP_ERR_OK) {
-				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			{
+				enum iip_rc rc = ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[slot], opaque);
+				if (rc != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 			}
+
 			return IIP_ERR_INVALID_RX;
 		default:
-			if (ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[slot], opaque) != IIP_ERR_OK) {
-				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			{
+				enum iip_rc rc = ii_ipv4_frag_push__discard_slot(&w->ipv4_frag[slot], opaque);
+				if (rc != IIP_ERR_OK) {
+					IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+				}
 			}
 			{
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
