@@ -162,7 +162,6 @@ struct ii_work {
 #define II_TCP_CONN_FLAGS_PEER_RX_FAILED (1U << 1)
 #define II_TCP_CONN_FLAGS_SET_PROBE (1U << 2)
 #define II_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN (1U << 3)
-#define II_TCP_CONN_FLAGS_SKIP_TCP_CLOSE_CALLBACK (1U << 4)
 #define II_TCP_CONN_FLAGS_CLOSING (1U << 5)
 #define II_TCP_CONN_FLAGS_SENDER_SWS (1U << 6)
 #define II_TCP_CONN_FLAGS_FASTOPEN (1U << 7)
@@ -4137,7 +4136,7 @@ static void ii_tcp_conn_handle_rst(IIP_MEM_P w, IIP_TCP_CONN_P conn_id)
 {
 	if (II_TCP_CONN(conn_id).state == II_TCP_STATE_SYN_RECVD
 			&& !(II_TCP_CONN(conn_id).flags & II_TCP_CONN_FLAGS_SIMULTANEOUS_OPEN)) /* passive open */
-		II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_SKIP_TCP_CLOSE_CALLBACK;
+		II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_CLOSE_API_SKIP;
 	if (II_TCP_CONN(conn_id).state != II_TCP_STATE_CLOSED) {
 		II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_CLOSE_RST;
 		ii_tcp_conn_set_state(w, conn_id, II_TCP_STATE_CLOSED);
