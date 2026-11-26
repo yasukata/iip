@@ -668,22 +668,25 @@ int printf_nothing(const char *format, ...) { (void) format; return 0; }
 #define II_HOOK_TCP_IPV4_ETHERNET_CONNECT() do { (void) opaque; } while (0)
 #endif
 
-/*@ logic integer f_ntohs{L}(integer x) = (uint16_t)(((uint32_t) x % 256) * 256) | (((uint32_t) x / 256) % 256); */
+/*@ logic integer f_ntohs{L}(integer x) = (uint16_t)(((uint32_t) x & 0xff) << 8) | (((uint32_t) x >> 8) & 0xff); */
 /*@ logic integer f_htons{L}(integer x) = f_ntohs{L}(x); */
-/*@ logic integer f_ntohl{L}(integer x) = (uint32_t)((x & 0xff000000) / 16777216) | (uint32_t)((x & 0xff0000) / 256) | (uint32_t)((x & 0xff00) * 256) | (uint32_t)((x & 0xff) * 16777216); */
+/*@ logic integer f_ntohl{L}(integer x) = (uint32_t)((x & 0xff000000) >> 24) | (uint32_t)((x & 0xff0000) >> 8) | (uint32_t)((x & 0xff00) << 8) | (uint32_t)((x & 0xff) << 24); */
 /*@ logic integer f_htonl{L}(integer x) = f_ntohl{L}(x); */
 
-/*@ logic integer f_extract_ipv4_version{L}(uint8_t * buf) = buf[0] / 16; */
-/*@ logic integer f_extract_ipv4_hdr_len{L}(uint8_t * buf) = (uint8_t)(((uint64_t) buf[0] % 16) * 4); */
+/*@ logic integer f_read_uint16{L}(uint8_t * buf) = (uint16_t)(((uint32_t) buf[1] << 8) | (uint32_t) buf[0]); */
+/*@ logic integer f_read_uint32{L}(uint8_t * buf) = (uint32_t)(((uint64_t) buf[3] << 24) | ((uint64_t) buf[2] << 16) | ((uint64_t) buf[1] << 8) | (uint64_t) buf[0]); */
+
+/*@ logic integer f_extract_ipv4_version{L}(uint8_t * buf) = buf[0] >> 4; */
+/*@ logic integer f_extract_ipv4_hdr_len{L}(uint8_t * buf) = (buf[0] % 16) * 4; */
 /*@ logic integer f_extract_ipv4_more_flag{L}(uint8_t * buf) = (buf[6] & 0x20); */
 /*@ logic integer f_extract_ipv4_reserved_flag{L}(uint8_t * buf) = (buf[6] & 0x80); */
 /*@ logic integer f_extract_ipv4_proto{L}(uint8_t * buf) = buf[9]; */
-/*@ logic integer f_extract_ipv4_tot_len{L}(uint8_t * buf) = f_ntohs((uint16_t)(((uint32_t) buf[3] * 256) | (uint32_t) buf[2])); */
+/*@ logic integer f_extract_ipv4_tot_len{L}(uint8_t * buf) = f_ntohs((uint16_t)(((uint32_t) buf[3] << 8) | (uint32_t) buf[2])); */
 /*@ logic integer f_extract_ipv4_payload_len{L}(uint8_t * buf) = f_extract_ipv4_tot_len{L}(buf) - f_extract_ipv4_hdr_len{L}(buf); */
-/*@ logic integer f_extract_ipv4_off{L}(uint8_t * buf) = ((f_ntohs((uint16_t)(((uint32_t) buf[7] * 256) | (uint32_t) buf[6])) % 0x2000) * 8) % 0x10000; */
-/*@ logic integer f_extract_ipv4_id{L}(uint8_t *buf) = f_ntohs((uint16_t)(((uint32_t) buf[5] * 256) | (uint32_t) buf[4])); */
-/*@ logic integer f_extract_ipv4_src_be{L}(uint8_t *buf) = (uint32_t)(((uint64_t) buf[15] * 16777216) | ((uint64_t) buf[14] * 65536) | ((uint64_t) buf[13] * 256) | (uint64_t) buf[12]); */
-/*@ logic integer f_extract_ipv4_dst_be{L}(uint8_t *buf) = (uint32_t)(((uint64_t) buf[19] * 16777216) | ((uint64_t) buf[18] * 65536) | ((uint64_t) buf[17] * 256) | (uint64_t) buf[16]); */
+/*@ logic integer f_extract_ipv4_off{L}(uint8_t * buf) = ((uint32_t)(((uint32_t) f_ntohs(f_read_uint16(&buf[6])) & 0x1fff) << 3) & 0xffff); */
+/*@ logic integer f_extract_ipv4_id{L}(uint8_t *buf) = f_ntohs(f_read_uint16(&buf[4])); */
+/*@ logic integer f_extract_ipv4_src_be{L}(uint8_t *buf) = f_read_uint32(&buf[12]); */
+/*@ logic integer f_extract_ipv4_dst_be{L}(uint8_t *buf) = f_read_uint32(&buf[16]); */
 
 /*@
 	requires \valid(opaque);
@@ -903,11 +906,11 @@ static int ii_call_ethernet_hdr_craft(uint8_t *buf, const uint8_t dst_addr[], ui
 /*@
   requires \valid_read(buf + (0 .. 1));
   assigns \nothing;
-  ensures \result == (uint16_t)(((uint32_t) buf[1] * 256) | (uint32_t) buf[0]);
+  ensures \result == f_read_uint16(buf);
  */
 static uint16_t ii_read_uint16(const uint8_t *buf)
 {
-	return (uint16_t)(((uint32_t) buf[1] * 256) | (uint32_t) buf[0]);
+	return (uint16_t)(((uint32_t) buf[1] << 8) | (uint32_t) buf[0]);
 }
 
 /*@
@@ -916,18 +919,18 @@ static uint16_t ii_read_uint16(const uint8_t *buf)
  */
 static void ii_write_uint16(uint8_t *buf, uint16_t val)
 {
-	buf[1] = val / 256;
-	buf[0] = val % 256;
+	buf[1] = val >> 8;
+	buf[0] = val & 0xff;
 }
 
 /*@
 	requires \valid_read(buf + (0 .. 3));
 	assigns \nothing;
-	ensures \result == (uint32_t)(((uint64_t) buf[3] * 16777216) | ((uint64_t) buf[2] * 65536) | ((uint64_t) buf[1] * 256) | (uint64_t) buf[0]);
+	ensures \result == f_read_uint32(buf);
  */
 static uint32_t ii_read_uint32(const uint8_t *buf)
 {
-	return (uint32_t)(((uint64_t) buf[3] * 16777216) | ((uint64_t) buf[2] * 65536) | ((uint64_t) buf[1] * 256) | (uint64_t) buf[0]);
+	return (uint32_t)(((uint64_t) buf[3] << 24) | ((uint64_t) buf[2] << 16) | ((uint64_t) buf[1] << 8) | (uint64_t) buf[0]);
 }
 
 /*@
@@ -936,10 +939,10 @@ static uint32_t ii_read_uint32(const uint8_t *buf)
  */
 static void ii_write_uint32(uint8_t *buf, uint32_t val)
 {
-	buf[3] = val / 16777216;
-	buf[2] = (val % 16777216) / 65536;
-	buf[1] = (val % 65536) / 256;
-	buf[0] = val % 256;
+	buf[3] = val >> 24;
+	buf[2] = (val & 0xffffff) >> 16;
+	buf[1] = (val & 0xffff) >> 8;
+	buf[0] = val & 0xff;
 }
 
 /*@
@@ -948,7 +951,7 @@ static void ii_write_uint32(uint8_t *buf, uint32_t val)
  */
 static uint16_t ii_ntohs(uint16_t x)
 {
-	return (uint16_t)(((uint32_t) x % 256) * 256) | (((uint32_t) x / 256) % 256);
+	return (uint16_t)(((uint32_t) x & 0xff) << 8) | (((uint32_t) x >> 8) & 0xff);
 }
 
 /*@
@@ -966,7 +969,7 @@ static uint16_t ii_htons(uint16_t x)
  */
 static uint32_t ii_ntohl(uint32_t x)
 {
-	return ((x & 0xff000000) / 16777216) | ((x & 0xff0000) / 256) | ((x & 0xff00) * 256) | ((x & 0xff) * 16777216);
+	return ((x & 0xff000000) >> 24) | ((x & 0xff0000) >> 8) | ((x & 0xff00) << 8) | ((x & 0xff) << 24);
 }
 
 /*@
@@ -1489,7 +1492,7 @@ static uint32_t ii_extract_tcp_urg_p_be(const uint8_t *buf)
  */
 static uint8_t ii_extract_ipv4_version(const uint8_t *buf)
 {
-	return buf[0] / 16;
+	return buf[0] >> 4;
 }
 
 /*@
@@ -1500,7 +1503,7 @@ static uint8_t ii_extract_ipv4_version(const uint8_t *buf)
  */
 static uint8_t ii_extract_ipv4_hdr_len(const uint8_t *buf)
 {
-	return (uint8_t)(((uint64_t) buf[0] % 16) * 4);
+	return (buf[0] % 16) * 4;
 }
 
 /*@
@@ -1540,7 +1543,7 @@ static uint16_t ii_extract_ipv4_id(const uint8_t *buf)
  */
 static uint16_t ii_extract_ipv4_off(const uint8_t *buf)
 {
-	return ((((uint32_t) ii_ntohs(ii_read_uint16(&buf[6])) % 0x2000 /* & 0x1fff */) * 8) % 0x10000);
+	return ((((uint32_t) ii_ntohs(ii_read_uint16(&buf[6])) & 0x1fff) << 3) & 0xffff);
 }
 
 /*@
