@@ -401,7 +401,7 @@ static int iip_ops_ethernet_flush(IIP_OPAQUE_P opaque)
 }
 #define IIP_OPS_ETHERNET_FLUSH() do { iip_ret_int = iip_ops_ethernet_flush(opaque); } while (0)
 
-#define IIP_OPS_IPV4_ADDR_MATCH() do { iip_ret_bool = (rx_pkt % 2 ? true : false); } while (0)
+#define IIP_OPS_IPV4_ADDR_MATCH() do { iip_ret_bool = (pb_id % 2 ? true : false); } while (0)
 
 #define IIP_OPS_NIC_FEATURE_OFFLOAD_TX_SCATTER_GATHER() do { iip_ret_bool = conn_id % 2 ? true : false; } while (0)
 
@@ -455,7 +455,7 @@ typedef unsigned long  uintptr_t;
 #include "./iosub.c"
 #undef SKIP_IOSUB_DEFINITION
 
-#define IIP_OPS_ARP_ETHERNET_REPLY() do { iip_ret_int = rx_pkt % 2 ? 1 : 0; } while (0)
+#define IIP_OPS_ARP_ETHERNET_REPLY() do { iip_ret_int = pb_id % 2 ? 1 : 0; } while (0)
 #define IIP_OPS_UDP_PAYLOAD() do { iip_ret_int = pb_id % 3 ? 1 : 0; } while (0)
 #define IIP_OPS_TCP_ACCEPT() do { iip_ret_bool = pb_id % 4 ? true : false; } while (0)
 #define IIP_OPS_TCP_CONNECTED() do { iip_ret_int = conn_id % 5 ? 1 : 0; if (conn_id) { II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PUSHED; } } while (0)
