@@ -401,11 +401,11 @@ static int iip_ops_ethernet_flush(IIP_OPAQUE_P opaque)
 }
 #define IIP_OPS_ETHERNET_FLUSH() do { iip_ret_int = iip_ops_ethernet_flush(opaque); } while (0)
 
-#define IIP_OPS_IPV4_ADDR_MATCH() do { iip_ret_bool = (pb_id % 2 ? true : false); } while (0)
+#define IIP_OPS_IPV4_ADDR_MATCH() do { iip_ret_bool = (pb_id->tcp.flags % 2 ? true : false); } while (0)
 
-#define IIP_OPS_NIC_FEATURE_OFFLOAD_TX_SCATTER_GATHER() do { iip_ret_bool = conn_id % 2 ? true : false; } while (0)
+#define IIP_OPS_NIC_FEATURE_OFFLOAD_TX_SCATTER_GATHER() do { iip_ret_bool = conn_id->flags % 2 ? true : false; } while (0)
 
-#define IIP_OPS_TCP_TX_SKIP_SW_CHECKSUM() do { iip_ret_bool = conn_id % 2 ? true : false; } while (0)
+#define IIP_OPS_TCP_TX_SKIP_SW_CHECKSUM() do { iip_ret_bool = conn_id->flags % 2 ? true : false; } while (0)
 
 #undef NUM_PKT
 #undef PKT_BUF_SIZE
@@ -455,21 +455,21 @@ typedef unsigned long  uintptr_t;
 #include "./iosub.c"
 #undef SKIP_IOSUB_DEFINITION
 
-#define IIP_OPS_ARP_ETHERNET_REPLY() do { iip_ret_int = pb_id % 2 ? 1 : 0; } while (0)
-#define IIP_OPS_UDP_PAYLOAD() do { iip_ret_int = pb_id % 3 ? 1 : 0; } while (0)
-#define IIP_OPS_TCP_ACCEPT() do { iip_ret_bool = pb_id % 4 ? true : false; } while (0)
-#define IIP_OPS_TCP_CONNECTED() do { iip_ret_int = conn_id % 5 ? 1 : 0; if (conn_id) { II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PUSHED; } } while (0)
-#define IIP_OPS_TCP_ACCEPTED() do { iip_ret_int = conn_id % 6 ? 1 : 0; if (conn_id) { II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PUSHED; } } while (0)
-#define IIP_OPS_TCP_URGENT() do { iip_ret_int = (conn_id % 7 ? 1 : 0); } while (0)
-#define IIP_OPS_TCP_FASTOPEN_REQUEST() do { iip_ret_int = (conn_id % 8 ? 1 : 0); } while (0)
-#define IIP_OPS_TCP_PAYLOAD() do { iip_ret_int = (conn_id % 9 ? 1 : 0); } while (0)
-#define IIP_OPS_TCP_STATE_CLOSE_WAIT() do { iip_ret_int = (conn_id % 10 ? 1 : 0); { II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PUSHED; } } while (0)
-#define IIP_OPS_TCP_CLOSED() do { iip_ret_int = (conn_id % 11 ? 1 : 0); } while (0)
-#define IIP_OPS_TCP_IPV4_FASTOPEN_CHECK() do { iip_ret_bool = (conn_id % 12 ? 1 : 0); } while (0)
-#define IIP_OPS_TCP_IP_NEGATIVE_ADVICE() do { iip_ret_int = (conn_id % 13 ? 1 : 0); } while (0)
+#define IIP_OPS_ARP_ETHERNET_REPLY() do { iip_ret_int = pb_id->tcp.flags % 2 ? 1 : 0; } while (0)
+#define IIP_OPS_UDP_PAYLOAD() do { iip_ret_int = pb_id->tcp.flags % 3 ? 1 : 0; } while (0)
+#define IIP_OPS_TCP_ACCEPT() do { iip_ret_bool = pb_id->tcp.flags % 4 ? true : false; } while (0)
+#define IIP_OPS_TCP_CONNECTED() do { iip_ret_int = conn_id->flags % 5 ? 1 : 0; if (conn_id) { II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PUSHED; } } while (0)
+#define IIP_OPS_TCP_ACCEPTED() do { iip_ret_int = conn_id->flags % 6 ? 1 : 0; if (conn_id) { II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PUSHED; } } while (0)
+#define IIP_OPS_TCP_URGENT() do { iip_ret_int = (conn_id->flags % 7 ? 1 : 0); } while (0)
+#define IIP_OPS_TCP_FASTOPEN_REQUEST() do { iip_ret_int = (conn_id->flags % 8 ? 1 : 0); } while (0)
+#define IIP_OPS_TCP_PAYLOAD() do { iip_ret_int = (conn_id->flags % 9 ? 1 : 0); } while (0)
+#define IIP_OPS_TCP_STATE_CLOSE_WAIT() do { iip_ret_int = (conn_id->flags % 10 ? 1 : 0); { II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PUSHED; } } while (0)
+#define IIP_OPS_TCP_CLOSED() do { iip_ret_int = (conn_id->flags % 11 ? 1 : 0); } while (0)
+#define IIP_OPS_TCP_IPV4_FASTOPEN_CHECK() do { iip_ret_bool = (conn_id->flags % 12 ? 1 : 0); } while (0)
+#define IIP_OPS_TCP_IP_NEGATIVE_ADVICE() do { iip_ret_int = (conn_id->flags & 13 ? 1 : 0); } while (0)
 #define IIP_OPS_IPV4_OPT_SEND() do { if (dst_ipv4_be) { ipv4_opt_len = 4; ipv4_opt[0] = 0; ipv4_opt[1] = 1; ipv4_opt[2] = 2; ipv4_opt[3] = 3; } } while (0)
-#define IIP_OPS_IPV4_TCP_INPUT_FILTER() do { if (pb_id % 2) iip_ret_bool = true; else iip_ret_bool = false;  } while (0)
-#define IIP_OPS_UDP_ACCEPT() do { iip_ret_bool = pb_id % 4 ? true : false; } while (0)
+#define IIP_OPS_IPV4_TCP_INPUT_FILTER() do { if (pb_id->tcp.flags % 2) iip_ret_bool = true; else iip_ret_bool = false;  } while (0)
+#define IIP_OPS_UDP_ACCEPT() do { iip_ret_bool = pb_id->tcp.flags % 4 ? true : false; } while (0)
 
 #define SKIP_IIP_DEFINITION
 #include "../main.c"
