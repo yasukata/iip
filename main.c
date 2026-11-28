@@ -3552,9 +3552,9 @@ static enum iip_rc ii_tcp_rx_push__pending(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 								IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 							}
 							{
-								II_PB_P pb_id = &w->pbs.array[idx];
+								II_PB_P pending_pb_id = &w->pbs.array[idx];
 								{
-									uint32_t _le = ii_tcp_seq_le_raw(pb_id);
+									uint32_t _le = ii_tcp_seq_le_raw(pending_pb_id);
 									if (le == _le || ii_seq_ordered(le, _le)) {
 										enum iip_rc rc = ii_pb_ring_insert(&II_TCP_CONN(conn_id).pending_ring, ii_idx_pb(&w->pbs, pb_id), slot_idx);
 										if (IE_UNLIKELY(rc != IIP_ERR_OK)) {
@@ -3564,7 +3564,7 @@ static enum iip_rc ii_tcp_rx_push__pending(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 											} else if (rc == IIP_ERR_FATAL_MEM)
 												queue_full = true;
 										} else
-											II_PB(pb_id).tcp.flags |= II_PB_FLAGS_USED;
+											II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_USED;
 										break;
 									}
 								}
@@ -3580,7 +3580,7 @@ static enum iip_rc ii_tcp_rx_push__pending(IIP_MEM_P w, IIP_TCP_CONN_P conn_id, 
 							} else if (rc == IIP_ERR_FATAL_MEM)
 								queue_full = true;
 						} else
-							II_PB(pb_id).tcp.flags |= II_PB_FLAGS_USED;
+							II_PB(pb_id).tcp.info_flags |= II_PB_FLAGS_USED;
 					}
 				}
 			}
@@ -6309,7 +6309,7 @@ static enum iip_rc ii_tcp_rx_push_inner_loop_inner2(IIP_MEM_P w, IIP_TCP_CONN_P 
 				}
 			}
 		}
-		if (II_PB(pb_id).tcp.flags & II_PB_FLAGS_USED) {
+		if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_USED) {
 			if (IE_UNLIKELY(ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK)) {
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
@@ -6346,7 +6346,7 @@ static enum iip_rc ii_tcp_rx_push_inner_loop_inner1(IIP_MEM_P w, IIP_TCP_CONN_P 
 					&& ii_tcp_seq_re_raw(pb_id) == II_TCP_CONN(conn_id).seq_next_expected)
 				II_TCP_CONN(conn_id).time_wait_ts_ms = w->now_ms;
 		}
-		if (II_PB(pb_id).tcp.flags & II_PB_FLAGS_USED) {
+		if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_USED) {
 			if (IE_UNLIKELY(ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK)) {
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
@@ -6393,7 +6393,7 @@ static enum iip_rc ii_tcp_rx_push_inner_loop(IIP_MEM_P w, IIP_TCP_CONN_P conn_id
 				&& !ii_tcp_hdr_has_syn(pb_id)
 				&& !ii_tcp_hdr_has_rst(pb_id))) {
 		II_TCP_CONN(conn_id).flags |= II_TCP_CONN_FLAGS_ACK_PENDING;
-		if (II_PB(pb_id).tcp.flags & II_PB_FLAGS_USED) {
+		if (II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_USED) {
 			if (IE_UNLIKELY(ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK)) {
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
@@ -7798,10 +7798,13 @@ static enum iip_rc ii_ipv4_frag_push__to_slot_inner3_complete(IIP_MEM_P w, uint1
 	}
 	ii_pb_base_copy(&II_PB(new_pb_id), &w->ipv4_frag[slot]);
 	w->ipv4_frag[slot].cnt = 0;
+	II_PB(new_pb_id).tcp.info_flags = 0;;
 	{
 		enum iip_rc rc = ii_ipv4_rx_push(w, new_pb_id, opaque);
-		if (IE_UNLIKELY(ii_free_pb_and_pkt(w, new_pb_id, opaque) != IIP_ERR_OK)) {
-			IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+		if (!(II_PB(new_pb_id).tcp.info_flags & II_PB_FLAGS_USED)) {
+			if (IE_UNLIKELY(ii_free_pb_and_pkt(w, new_pb_id, opaque) != IIP_ERR_OK)) {
+				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
+			}
 		}
 		return rc;
 	}
@@ -8545,7 +8548,7 @@ static enum iip_rc ii_periodic_timer__tcp_close_check(IIP_MEM_P w)
 				IIP_OPS_ERROR_FATAL_SYS(); return IIP_ERR_FATAL_SYS;
 			}
 			{
-				IIP_TCP_CONN_P conn_id = &w->tcp_conns.array[i];
+				IIP_TCP_CONN_P conn_id = &w->tcp_conns.array[idx];
 				if (II_TCP_CONN(conn_id).state == II_TCP_STATE_TIME_WAIT) {
 					if (IIP_CONF_TCP_MSL_SEC * 1000U * 2 < w->now_ms - II_TCP_CONN(conn_id).time_wait_ts_ms) {
 						ii_tcp_conn_set_state(conn_id, II_TCP_STATE_CLOSED);
@@ -8740,7 +8743,7 @@ static int iip_input(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaque)
 			}
 			II_PB(pb_id).part_pkt[0].p = rx_pkt;
 			II_PB(pb_id).cnt = 1;
-			II_PB(pb_id).tcp.flags = 0;
+			II_PB(pb_id).tcp.info_flags = 0;
 			II_PB(pb_id).part_pkt[0].head_len = sizeof(II_PB(pb_id).part_pkt[0].head);
 			if (II_PB(pb_id).part_pkt[0].head_len > data_len)
 				II_PB(pb_id).part_pkt[0].head_len = data_len;
@@ -8749,7 +8752,7 @@ static int iip_input(IIP_MEM_P w, IIP_PKT_P rx_pkt, IIP_OPAQUE_P opaque)
 			}
 			{
 				enum iip_rc rc = ii_ethernet_input(w, pb_id, opaque);
-				if (!(II_PB(pb_id).tcp.flags & II_PB_FLAGS_USED)) {
+				if (!(II_PB(pb_id).tcp.info_flags & II_PB_FLAGS_USED)) {
 					if (IE_UNLIKELY(ii_free_pb_and_pkt(w, pb_id, opaque) != IIP_ERR_OK)) {
 						IIP_OPS_ERROR_FATAL_EXT(); return IIP_ERR_FATAL_EXT;
 					}
